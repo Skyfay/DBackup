@@ -13,7 +13,7 @@ import type { CredentialType } from "@/lib/core/credentials";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { formatBytes } from "@/lib/utils";
 import type { SearchHit, TemplateKind } from "@/services/search/search-types";
-import { navGroups } from "./app-sidebar";
+import { ALL_NAV_ITEMS } from "./nav-sections";
 
 /** The groups of the search, in the order they show. */
 export type SearchGroup = "recent" | "jobs" | "connections" | "databases" | "backups" | "runs" | "access" | "templates" | "vault" | "settings" | "pages" | "actions";
@@ -79,11 +79,28 @@ export interface SearchItem {
     icon?: string;
     /** Every permission the page it opens needs, checked again for a recent entry. */
     needs?: readonly string[];
+    /** The tenant of the record, which a platform admin in All tenants opens it in. */
+    tenantId?: string;
+    /**
+     * Where a person was found, the tenant or `ALL_TENANTS`. An account belongs to no tenant, so a
+     * person kept as a recent entry shows again only where the search found them, see `recentShows`.
+     */
+    seenIn?: string;
 }
 
 /** Whether the viewer may open what a row leads to, for a recent entry kept from before. */
 export function mayOpen(item: SearchItem, can: (permission: string) => boolean): boolean {
     return (item.needs ?? []).every(can);
+}
+
+/**
+ * Whether a recent entry shows where the search opens now, `here` being the tenant or
+ * `ALL_TENANTS`. A person found in one tenant shows with name and email only in that tenant, never
+ * in another and never one kept without where it was found.
+ */
+export function recentShows(item: SearchItem, here: string | null): boolean {
+    if (item.icon !== "user") return true;
+    return here !== null && item.seenIn === here;
 }
 
 /** The second line of a row: what it is, how it is now and when it happened. */
@@ -92,7 +109,7 @@ export function subLine(item: SearchItem): string {
 }
 
 const NAMED_ICONS: Record<string, LucideIcon> = { backups: Archive, user: User, group: Users, apiKey: KeyRound, key: KeyRound, theme: SunMoon, run: Play };
-const PAGE_ICONS = new Map<string, LucideIcon>(navGroups.flatMap((group) => group.items.map((item) => [item.href, item.icon] as const)));
+const PAGE_ICONS = new Map<string, LucideIcon>(ALL_NAV_ITEMS.map((item) => [item.href, item.icon] as const));
 const TEMPLATE_ICONS: Record<TemplateKind, LucideIcon> = { retention: KIND_ICONS.retention, naming: KIND_ICONS.naming, schedules: KIND_ICONS.schedule, notifications: KIND_ICONS.notification, excludes: KIND_ICONS.exclude };
 
 /** The icon a row shows when it has no logo of an adapter, the one of the tab or page it opens. */
@@ -128,8 +145,25 @@ const TEMPLATE_WORDS: Record<TemplateKind, string> = { retention: "Retention pol
 const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
 const link = (path: string, params: Record<string, string>) => `${path}?${new URLSearchParams(params).toString()}`;
 
-/** A hit of the server as a row of the search, with what opening it needs. */
-export function hitItems(hit: SearchHit): SearchItem[] {
+/**
+ * A hit of the server as a row of the search, with what opening it needs and the tenant of its
+ * record. A person keeps `seenIn`, where the search ran, so it never shows as a recent entry elsewhere.
+ */
+export function hitItems(hit: SearchHit, seenIn?: string | null): SearchItem[] {
+    const tenantId = "tenantId" in hit ? hit.tenantId : undefined;
+    return rowsOf(hit).map((item) => {
+        const withTenant = tenantId ? { ...item, tenantId } : item;
+        return hit.kind === "user" && seenIn ? { ...withTenant, seenIn } : withTenant;
+    });
+}
+
+/** The second line of a person: the group in the tenant, or in All tenants the tenants they work in. */
+function personLine(hit: Extract<SearchHit, { kind: "user" }>): string {
+    if (hit.tenants !== undefined) return `${hit.email} · ${hit.tenants === 0 ? "No tenant" : count(hit.tenants, "tenant", "tenants")}`;
+    return `${hit.email} · ${hit.group ?? "No group"}`;
+}
+
+function rowsOf(hit: SearchHit): SearchItem[] {
     switch (hit.kind) {
         case "job": {
             const state = !hit.enabled ? "paused" : hit.lastStatus === "Failed" ? "failed on its last run" : hit.lastStatus === "Partial" ? "missed a copy on its last run" : null;
@@ -165,7 +199,10 @@ export function hitItems(hit: SearchHit): SearchItem[] {
         case "run":
             return [{ key: `run:${hit.id}`, group: "runs", title: `Run of ${hit.name}`, sub: "", state: RUN_WORDS[hit.status] ?? hit.status, at: hit.startedAt, kind: "Run", href: runHref(hit.id), adapterId: hit.adapterId, needs: [PERMISSIONS.HISTORY.READ] }];
         case "user":
-            return [{ key: `user:${hit.id}`, group: "access", title: hit.name, sub: `${hit.email} · ${hit.group ?? "No group"}`, kind: "User", href: link("/dashboard/users", { tab: "users", open: hit.id }), icon: "user", needs: [PERMISSIONS.USERS.READ] }];
+            // In All tenants (`tenants` set) an account of the whole instance, which Platform lists.
+            return [hit.tenants !== undefined
+                ? { key: `user:${hit.id}`, group: "access", title: hit.name, sub: personLine(hit), kind: "User", href: link("/dashboard/platform/users", { tab: "users", open: hit.id }), icon: "user", needs: [PERMISSIONS.PLATFORM.ACCOUNTS_READ] }
+                : { key: `user:${hit.id}`, group: "access", title: hit.name, sub: personLine(hit), kind: "User", href: link("/dashboard/users", { tab: "users", open: hit.id }), icon: "user", needs: [PERMISSIONS.USERS.READ] }];
         case "group":
             return [{ key: `group:${hit.id}`, group: "access", title: hit.name, sub: count(hit.people, "person", "people"), kind: "Group", href: link("/dashboard/users", { tab: "groups", open: hit.id }), icon: "group", needs: [PERMISSIONS.GROUPS.READ] }];
         case "apiKey":

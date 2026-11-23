@@ -288,3 +288,75 @@ describe("DBackupError code in log entry", () => {
     expect(parsed.error.code).toBe("BACKUP_ERROR");
   });
 });
+
+// ── Secrets in a line ─────────────────────────────────────────
+
+describe("secrets in a log line", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("LOG_LEVEL", "debug");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  const lastLine = (method: "log" | "error" = "log") => {
+    const calls = (console[method] as ReturnType<typeof vi.fn>).mock.calls;
+    return JSON.parse(calls[calls.length - 1][0] as string);
+  };
+
+  it("redacts the values of keys that hold a secret, also nested and in a child logger", async () => {
+    const log = (await getLogger()).child({ service: "Test", apiKey: "dbk_live_123" });
+
+    log.info("Connecting", {
+      host: "db.internal",
+      password: "hunter2",
+      dbPassword: "hunter3",
+      Authorization: "Bearer abc.def",
+      config: { secretAccessKey: "AKIA-SECRET", masterKeyHex: "ab".repeat(32), port: 5432 },
+      headers: [{ "x-auth-token": "tok-1" }],
+    });
+
+    const { context } = lastLine();
+    expect(context).toEqual({
+      service: "Test",
+      apiKey: "[REDACTED]",
+      host: "db.internal",
+      password: "[REDACTED]",
+      dbPassword: "[REDACTED]",
+      Authorization: "[REDACTED]",
+      config: { secretAccessKey: "[REDACTED]", masterKeyHex: "[REDACTED]", port: 5432 },
+      headers: [{ "x-auth-token": "[REDACTED]" }],
+    });
+  });
+
+  it("keeps the ids, names and flags of a secret, which say nothing of it", async () => {
+    const log = await getLogger();
+
+    log.info("Key used", { apiKeyId: "key-1", tokenExpiresAt: "2026-11-07", credentialIds: ["c-1"], hasPassword: true, keyCount: 2 });
+
+    expect(lastLine().context).toEqual({ apiKeyId: "key-1", tokenExpiresAt: "2026-11-07", credentialIds: ["c-1"], hasPassword: true, keyCount: 2 });
+  });
+
+  it("redacts the password of a connection string in any value, the message and the error", async () => {
+    const log = await getLogger();
+
+    log.error(
+      "Could not reach mysql://root:p@ss@db:3306/shop",
+      { target: "mongodb+srv://backup:s3cret@cluster0.example.net/admin", mssql: "Server=db;User Id=sa;Password=Str0ng!;" },
+      new Error("connect ECONNREFUSED https://user:tok@registry.example.com/v2")
+    );
+
+    const line = JSON.stringify(lastLine("error"));
+    for (const secret of ["p@ss", "s3cret", "Str0ng!", "tok@"]) expect(line).not.toContain(secret);
+    expect(line).toContain("mysql://root:[REDACTED]@db:3306/shop");
+    expect(line).toContain("mongodb+srv://backup:[REDACTED]@cluster0.example.net/admin");
+    expect(line).toContain("Password=[REDACTED]");
+  });
+});

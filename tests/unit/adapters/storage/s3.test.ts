@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Readable } from "stream";
+import { FileTooLargeError, SIDECAR_READ_LIMIT } from "@/lib/adapters/storage/common/read-limit";
 import {
     S3GenericAdapter,
     S3AWSAdapter,
@@ -19,10 +20,14 @@ vi.mock("@aws-sdk/client-s3", () => {
     const MockS3Client = vi.fn(function (this: Record<string, unknown>) {
         this.send = mockSend;
         this.destroy = vi.fn();
+        // Every client bounds what it reads of an answer, see `s3-response-limit.ts`.
+        this.middlewareStack = { add: vi.fn() };
     });
     return {
         S3Client: MockS3Client,
         ListObjectsV2Command: vi.fn(function (this: Record<string, unknown>, params: unknown) {
+            // The listing adds its bound on the answer to the stack of the command, see `s3-listing.ts`.
+            Object.defineProperty(this, "middlewareStack", { value: { add: vi.fn() }, enumerable: false });
             Object.assign(this, { _type: "list" }, params as object);
         }),
         GetObjectCommand: vi.fn(function (this: Record<string, unknown>, params: unknown) {
@@ -360,7 +365,7 @@ describe("S3 Adapters - shared logic via S3GenericAdapter", () => {
 
     describe("read()", () => {
         it("returns file content as string", async () => {
-            const bodyMock = { transformToString: vi.fn().mockResolvedValue('{"checksum":"abc"}') };
+            const bodyMock = Readable.from([Buffer.from('{"checksum":"abc"}')]);
             mockSend.mockResolvedValue({ Body: bodyMock });
 
             const result = await S3GenericAdapter.read!(genericConfig, "Job/backup.sql.meta.json");
@@ -382,6 +387,34 @@ describe("S3 Adapters - shared logic via S3GenericAdapter", () => {
             const result = await S3GenericAdapter.read!(genericConfig, "Job/missing.meta.json");
 
             expect(result).toBeNull();
+        });
+
+        it("refuses a sidecar whose announced size passes the default limit before reading it", async () => {
+            const body = Readable.from([Buffer.from("{}")]);
+            mockSend.mockResolvedValue({ Body: body, ContentLength: SIDECAR_READ_LIMIT + 1 });
+
+            await expect(S3GenericAdapter.read!(genericConfig, "Job/huge.meta.json")).rejects.toBeInstanceOf(FileTooLargeError);
+        });
+
+        it("stops a body that sends more than the limit, whatever it announced", async () => {
+            let sent = 0;
+            const body = new Readable({
+                read() {
+                    sent++;
+                    this.push(Buffer.alloc(1024));
+                },
+            });
+            mockSend.mockResolvedValue({ Body: body, ContentLength: 10 });
+
+            await expect(S3GenericAdapter.readBytes!(genericConfig, "Job/x.index", { maxBytes: 4096 })).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(sent).toBeLessThan(16);
+        });
+
+        it("reads a binary file byte for byte", async () => {
+            const bytes = Buffer.from([0xff, 0x00, 0xfe, 0x80]);
+            mockSend.mockResolvedValue({ Body: Readable.from([bytes]) });
+
+            expect(await S3GenericAdapter.readBytes!(genericConfig, "Job/x.index")).toEqual(bytes);
         });
     });
 });
@@ -465,14 +498,14 @@ describe("S3 Adapter variants - configuration wiring", () => {
     });
 
     it("S3HetznerAdapter - read delegates correctly", async () => {
-        const bodyMock = { transformToString: vi.fn().mockResolvedValue("meta content") };
+        const bodyMock = Readable.from([Buffer.from("meta content")]);
         mockSend.mockResolvedValue({ Body: bodyMock });
         const result = await S3HetznerAdapter.read!(hetznerConfig, "Job/file.sql.meta.json");
         expect(result).toBe("meta content");
     });
 
     it("S3R2Adapter - read delegates correctly", async () => {
-        const bodyMock = { transformToString: vi.fn().mockResolvedValue("r2 meta") };
+        const bodyMock = Readable.from([Buffer.from("r2 meta")]);
         mockSend.mockResolvedValue({ Body: bodyMock });
         const result = await S3R2Adapter.read!({ ...r2Config }, "Job/file.meta.json");
         expect(result).toBe("r2 meta");
@@ -517,7 +550,7 @@ describe("S3 Adapter variants - configuration wiring", () => {
     });
 
     it("S3AWSAdapter - read delegates correctly", async () => {
-        const bodyMock = { transformToString: vi.fn().mockResolvedValue("aws meta") };
+        const bodyMock = Readable.from([Buffer.from("aws meta")]);
         mockSend.mockResolvedValue({ Body: bodyMock });
         const result = await S3AWSAdapter.read!(awsConfig, "Job/file.meta.json");
         expect(result).toBe("aws meta");
@@ -754,7 +787,7 @@ describe("S3 pathPrefix is the adapter root", () => {
     });
 
     it("read() re-applies the prefix", async () => {
-        mockSend.mockResolvedValue({ Body: { transformToString: vi.fn().mockResolvedValue("{}") } });
+        mockSend.mockResolvedValue({ Body: Readable.from([Buffer.from("{}")]) });
         await S3GenericAdapter.read!(prefixed, "Images/a.jpg.meta.json");
         expect(mockSend.mock.calls[0][0].Key).toBe("test/Images/a.jpg.meta.json");
     });

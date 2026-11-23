@@ -1,13 +1,14 @@
 import type { ExecutionHost } from "@/lib/transport";
-import { MONGORESTORE, buildConnectionArgs, maskSecrets } from "./args";
+import { MONGORESTORE, maskSecrets, withToolConnection } from "./args";
+import { assertDatabaseArgument } from "@/lib/adapters/database/common/database-name";
 import { withMongoMeta } from "./meta";
 import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { MongoDBConfig } from "@/lib/adapters/definitions";
-import path from "path";
 import {
     isMultiDbTar,
     extractSelectedDatabases,
+    extractedFileOf,
     createTempDir,
     cleanupTempDir,
     shouldRestoreDatabase,
@@ -59,6 +60,21 @@ export async function prepareRestore(
 }
 
 /**
+ * The pattern of every collection of one database, for `--nsInclude`, `--nsFrom` and `--nsTo`.
+ * mongorestore reads `*` there as a wildcard, `$name$` as a variable and `\` as an escape, and a
+ * `.` ends the database part, so a name like `a*` matched other databases too. MongoDB itself
+ * refuses `/\. "$` in a database name, so a name holding one is refused here, and a `*`, which a
+ * server on Linux allows, is escaped.
+ */
+export function namespacePattern(database: string): string {
+    if (/[/\\. "$\0]/.test(database)) {
+        throw new Error(`The database name ${database} holds a character MongoDB does not allow in a database name.`);
+    }
+    // A backslash is refused above, and escaped here as well, so the pattern never depends on that check.
+    return `${database.replace(/[\\*]/g, "\\$&")}.*`;
+}
+
+/**
  * Restore a single MongoDB database from an archive file
  */
 async function restoreSingleDatabase(
@@ -73,20 +89,23 @@ async function restoreSingleDatabase(
 
     // mongorestore reads the archive from a path, so it is staged onto the
     // execution host. On a direct host that is the original file with no copy.
-    await host.stageInput(sourcePath, {}, async (stagedPath) => {
+    await host.stageInput(sourcePath, {}, (stagedPath) => withToolConnection(host, config, async (connection) => {
         const args = [
-            ...buildConnectionArgs(config),
+            ...connection,
             `--archive=${stagedPath}`,
             "--gzip",
             "--drop", // Drop collections before restoring, mirroring MySQL's --clean
         ];
 
+        // Names, never options, see `database-name.ts`, and patterns that match only this database.
+        if (sourceDb) assertDatabaseArgument(sourceDb);
+        if (targetDb) assertDatabaseArgument(targetDb);
         if (sourceDb && targetDb && sourceDb !== targetDb) {
-            args.push("--nsFrom", `${sourceDb}.*`);
-            args.push("--nsTo", `${targetDb}.*`);
+            args.push("--nsFrom", namespacePattern(sourceDb));
+            args.push("--nsTo", namespacePattern(targetDb));
             log(`Remapping database: ${sourceDb} -> ${targetDb}`, "info");
         } else if (targetDb) {
-            args.push("--nsInclude", `${targetDb}.*`);
+            args.push("--nsInclude", namespacePattern(targetDb));
         }
 
         log("Restoring database", "info", "command", `${mongorestore} ${maskSecrets(args, config.password)}`);
@@ -104,7 +123,7 @@ async function restoreSingleDatabase(
                 `mongorestore exited with code ${code ?? "null"}${signal ? ` (signal: ${signal})` : ""}`,
             );
         }
-    });
+    }));
 }
 
 /**
@@ -184,7 +203,7 @@ export async function restore(
 
                 // Determine target database name (supports renaming)
                 const targetDb = getTargetDatabaseName(dbEntry.name, mapping);
-                const archivePath = path.join(tempDir, dbEntry.filename);
+                const archivePath = extractedFileOf(files, dbEntry);
 
                 log(`Restoring database: ${dbEntry.name} -> ${targetDb}`, 'info');
 

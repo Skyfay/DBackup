@@ -67,7 +67,7 @@ interface SecretFieldProps {
     autoComplete?: string;
 }
 
-function SecretField({ label, value, onChange, autoFocus = false, autoComplete = "current-password" }: SecretFieldProps) {
+export function SecretField({ label, value, onChange, autoFocus = false, autoComplete = "current-password" }: SecretFieldProps) {
     const id = useId();
     return (
         <div className="grid gap-2">
@@ -227,8 +227,10 @@ export function TwoFactorOnDialog({ open, onOpenChange, onDone }: { open: boolea
                 toast.error(result.error.message || "The authenticator app could not be set up.");
                 return;
             }
-            setUri(result.data?.totpURI ?? null);
-            setCodes(result.data?.backupCodes ?? []);
+            // The authenticator app is the method asked for, the default, which alone answers with a URI and codes.
+            const totp = result.data?.method === "totp" ? result.data : null;
+            setUri(totp?.totpURI ?? null);
+            setCodes(totp?.backupCodes ?? []);
             setStep("scan");
         } catch (error) {
             log.warn("Starting the authenticator app failed", {}, wrapError(error));

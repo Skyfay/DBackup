@@ -17,7 +17,7 @@ Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-pro
 | **From** | Sender email address | - | ✅ |
 | **To** | Recipient email address(es) | - | ✅ |
 
-**Security modes:** `none` (port 25, unencrypted), `ssl` (port 465, implicit TLS), `starttls` (port 587, upgrade to TLS - recommended).
+**Security modes:** `none` (port 25, unencrypted), `ssl` (port 465, implicit TLS), `starttls` (port 587, upgrade to TLS - recommended). With `starttls` the upgrade is required: a server that does not offer STARTTLS fails the test and the send, and the login is never sent unencrypted. Only `none` sends in clear.
 
 ## Setup Guide
 

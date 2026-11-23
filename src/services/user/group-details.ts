@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { runAsSystem } from "@/lib/tenant/context";
 import { GROUP_TEMPLATES } from "@/lib/auth/group-templates";
 import { LEVEL_LABELS, PERMISSION_AREAS, type AreaLevel } from "@/lib/auth/permission-areas";
 import { listWords } from "@/lib/auth/access-summary";
@@ -60,13 +61,15 @@ export async function getGroupDetails(groupId: string): Promise<GroupDetails | n
     if (!group) return null;
 
     const [entries, moves, retention] = await Promise.all([
-        prisma.auditLog.findMany({
+        // A group is the same in every tenant, its entries are read wherever they were written.
+        runAsSystem(() => prisma.auditLog.findMany({
             where: { resource: AUDIT_RESOURCES.GROUP, resourceId: groupId, action: { in: [AUDIT_ACTIONS.CREATE, AUDIT_ACTIONS.UPDATE] } },
             orderBy: { createdAt: "desc" },
             take: HISTORY_LIMIT,
             select: { id: true, action: true, createdAt: true, details: true, actorName: true, user: { select: { name: true } } },
-        }),
-        // A change of the group of a user names the group in its details.
+        })),
+        // A change of the group of a user names the group in its details. Those are the moves of
+        // the tenant the viewer works in, like the members the tab shows.
         prisma.auditLog.findMany({
             where: { resource: AUDIT_RESOURCES.USER, action: AUDIT_ACTIONS.UPDATE, details: { contains: groupId } },
             orderBy: { createdAt: "desc" },

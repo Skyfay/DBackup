@@ -17,6 +17,7 @@ import { runRestorePipeline } from '@/services/restore/pipeline';
 import { restoreArchiveSnapshot } from '@/services/restore/archive-restore';
 import { createMultiDbTar } from '@/lib/adapters/database/common/tar-utils';
 import { createArchive } from '@/lib/archive/writer';
+import { promisedTempSpace, TEMP_SPACE_RESERVE } from '@/services/restore/temp-space';
 
 let workDir: string;
 let tempDir: string;
@@ -66,6 +67,8 @@ function wire(received: Received, traffic: { archiveDownloads: number }) {
     };
 
     prismaMock.execution.update.mockResolvedValue({} as never);
+    // No run of History wrote these backups, see `recorded-encryption.ts`.
+    prismaMock.execution.findMany.mockResolvedValue([]);
     prismaMock.adapterConfig.findUnique.mockImplementation((async ({ where }: { where: { id: string } }) =>
         where.id === 'storage-1' ? storageRow : where.id === 'source-1' ? sourceRow : null) as never);
     vi.mocked(registry.get).mockImplementation(((id: string) => (id === 'local-fs' ? storageAdapter : dbAdapter)) as never);
@@ -190,5 +193,60 @@ describe('restoring a seekable archive', () => {
         expect(finalStatus()).toBe('Failed');
         expect(received.calls).toBe(0);
         expect(loggedMessages().some((m) => m.includes('.meta.json sidecar could not be read'))).toBe(true);
+    });
+});
+
+describe('a plain dump laid where its run wrote an encrypted archive', () => {
+    /** The run of History that wrote an encrypted archive to this path of the destination. */
+    function encryptedRun(file: string) {
+        prismaMock.execution.findMany.mockResolvedValue([{
+            id: 'run-1',
+            metadata: JSON.stringify({
+                archive: { formatVersion: 2, indexFile: '.index', encrypted: true, profileId: 'key-shop' },
+                destinations: [{ configId: 'storage-1', path: file, status: 'success' }],
+            }),
+        }] as never);
+    }
+
+    it('is refused before it is downloaded, with or without a sidecar that calls it plain', async () => {
+        await fs.writeFile(path.join(workDir, 'Shop.tar'), 'DROP DATABASE shop;');
+        const received: Received = { calls: 0, firstBytes: null };
+        const traffic = { archiveDownloads: 0 };
+        wire(received, traffic);
+        encryptedRun('Shop.tar');
+
+        await runRestorePipeline('exec-swapped', { storageConfigId: 'storage-1', file: 'Shop.tar', targetSourceId: 'source-1' });
+        await writeMeta('Shop.tar', { multiDb: { format: 'tar', databases: ['shop'] } });
+        await runRestorePipeline('exec-swapped-meta', { storageConfigId: 'storage-1', file: 'Shop.tar', targetSourceId: 'source-1' });
+
+        expect(finalStatus()).toBe('Failed');
+        expect(loggedMessages().some((m) => m.includes('written encrypted, but the file at the destination is not encrypted'))).toBe(true);
+        expect(received.calls).toBe(0);
+        expect(traffic.archiveDownloads).toBe(0);
+    });
+});
+
+describe('a whole-file compressed dump and the temporary folder', () => {
+    it('inflates no further than the space it was promised, and gives it back once the restore ends', async () => {
+        // 8 MB of zeros gzip to a few KB, and the bound of a dump that small is 1 GiB.
+        await fs.writeFile(path.join(workDir, 'big.sql.gz'), zlib.gzipSync(Buffer.alloc(8 * 1024 * 1024)));
+        await writeMeta('big.sql.gz', { compression: 'GZIP' });
+        const received: Received = { calls: 0, firstBytes: null };
+        wire(received, { archiveDownloads: 0 });
+        // 1 MB free beside the reserve.
+        const statfs = vi.spyOn(fs, 'statfs').mockResolvedValue({ bavail: (TEMP_SPACE_RESERVE + 1024 * 1024) / 4096, bsize: 4096 } as Awaited<ReturnType<typeof fs.statfs>>);
+
+        try {
+            await runRestorePipeline('exec-inflate', { storageConfigId: 'storage-1', file: 'big.sql.gz', targetSourceId: 'source-1' });
+        } finally {
+            statfs.mockRestore();
+        }
+
+        expect(finalStatus()).toBe('Failed');
+        expect(loggedMessages().some((m) => m.includes('of temporary space at once, more than the server has free'))).toBe(true);
+        expect(received.calls).toBe(0);
+        expect(promisedTempSpace()).toBe(0);
+        // Nothing of the download or the inflated dump is left behind.
+        expect(await fs.readdir(tempDir, { recursive: true }).then((names) => names.filter((n) => n.endsWith('.sql') || n.endsWith('.gz')))).toEqual([]);
     });
 });

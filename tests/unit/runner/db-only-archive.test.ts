@@ -22,6 +22,7 @@ vi.mock('@/lib/prisma', () => ({
         systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
         namingTemplate: { findUnique: vi.fn().mockResolvedValue(null), findFirst: vi.fn().mockResolvedValue(null) },
         retentionPolicy: { findUnique: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
+        connectionShare: { count: vi.fn().mockResolvedValue(0) },
     },
 }));
 
@@ -65,14 +66,14 @@ afterEach(async () => {
     }
 });
 
-async function runDbOnlyJob(job: Record<string, unknown>, adapter: Record<string, unknown>) {
+async function runDbOnlyJob(job: Record<string, unknown>, adapter: Record<string, unknown>, onlyDatabases?: string[]) {
     const prisma = (await import('@/lib/prisma')).default;
     const { registry } = await import('@/lib/core/registry');
 
     (prisma.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'job-1', name: 'DB Only Job', pgCompression: undefined, namingTemplateId: null, compression: 'GZIP',
-        source: { id: 'src-1', adapterId: 'mysql', config: '{}', name: 'My MySQL', type: 'database' },
-        destinations: [{ id: 'dest-1', configId: 'cfg-1', priority: 0, retention: '{}', retentionPolicyId: null, config: { id: 'cfg-1', adapterId: 'local-filesystem', config: '{}', name: 'Local', type: 'storage' } }],
+        id: 'job-1', tenantId: 'tenant-1', name: 'DB Only Job', pgCompression: undefined, namingTemplateId: null, compression: 'GZIP',
+        source: { id: 'src-1', adapterId: 'mysql', config: '{}', name: 'My MySQL', type: 'database', tenantId: 'tenant-1' },
+        destinations: [{ id: 'dest-1', configId: 'cfg-1', priority: 0, retention: '{}', retentionPolicyId: null, config: { id: 'cfg-1', adapterId: 'local-filesystem', config: '{}', name: 'Local', type: 'storage', tenantId: 'tenant-1' } }],
         sources: [],
         notifications: [], notificationEvents: 'ALWAYS', notificationTemplates: [],
         ...job,
@@ -85,6 +86,10 @@ async function runDbOnlyJob(job: Record<string, unknown>, adapter: Record<string
     });
 
     const ctx = makeCtx();
+    if (onlyDatabases) {
+        ctx.onlyDatabases = onlyDatabases;
+        ctx.metadata = { onlyDatabases };
+    }
     await stepInitialize(ctx);
     await stepExecuteDump(ctx);
     createdFiles.push(ctx.tempFile!, ctx.indexFile!);
@@ -125,7 +130,7 @@ describe('a job that backs up databases only', () => {
 
         const blog = index.databases[1];
         const entry = index.entries.get(entryKey(undefined, blog.n))!;
-        expect((await readAll(await openArchiveEntry(source, manifest, entry))).toString()).toContain('-- dump of blog');
+        expect((await readAll(await openArchiveEntry(source, manifest, entry, undefined, blog.s))).toString()).toContain("-- dump of blog");
 
         expect(ctx.metadata.archive).toMatchObject({ formatVersion: 2, indexFile: '.index' });
         expect(ctx.metadata.combined).toBeUndefined();
@@ -208,6 +213,44 @@ describe('a job that backs up databases only', () => {
 
         await expect(runDbOnlyJob({ databases: '[]' }, adapter))
             .rejects.toThrow(/Could not list the databases on this server \(not authorized.*\)\. Select the databases to back up in the job/);
+        expect(adapter.dumpOne).not.toHaveBeenCalled();
+    });
+});
+
+describe('a run of single databases of a job', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it('writes an archive of the named database alone', async () => {
+        const adapter = fakeMysql();
+        const ctx = await runDbOnlyJob({ databases: '["shop","blog"]' }, adapter, ['blog']);
+
+        expect(adapter.dumpOne).toHaveBeenCalledTimes(1);
+        expect(adapter.dumpOne.mock.calls[0][1]).toBe('blog');
+        const source = await localFileSource(ctx.tempFile!);
+        const index = await readArchiveIndex(source, await readArchiveManifest(source));
+        expect(index.databases.map((d) => d.name)).toEqual(['blog']);
+        expect(ctx.metadata.names).toEqual(['blog']);
+        expect(ctx.metadata.onlyDatabases).toEqual(['blog']);
+    });
+
+    it('backs up a database of a job that backs up every database, after the server listed it', async () => {
+        const adapter = fakeMysql({ getDatabases: vi.fn().mockResolvedValue(['shop', 'blog', 'crm']) });
+        await runDbOnlyJob({ databases: '[]' }, adapter, ['crm']);
+        expect(adapter.dumpOne.mock.calls.map((call) => call[1])).toEqual(['crm']);
+    });
+
+    it('leaves the folders of the job out', async () => {
+        const adapter = fakeMysql();
+        const folder = { id: 'js-1', configId: 'files', path: '/srv', priority: 0, excludePatterns: '[]', excludePatternPresets: [], config: { id: 'files', adapterId: 'missing-folder-adapter', config: '{}', name: 'Files', type: 'storage' } };
+        const ctx = await runDbOnlyJob({ databases: '["shop"]', sources: [folder] }, adapter, ['shop']);
+        expect(ctx.sources).toEqual([]);
+        expect(ctx.metadata.combined).toBeUndefined();
+        expect(planChainMock).not.toHaveBeenCalled();
+    });
+
+    it('fails clearly when the job does not back up the named database', async () => {
+        const adapter = fakeMysql();
+        await expect(runDbOnlyJob({ databases: '["shop"]' }, adapter, ['wiki'])).rejects.toThrow(/does not back up wiki/);
         expect(adapter.dumpOne).not.toHaveBeenCalled();
     });
 });

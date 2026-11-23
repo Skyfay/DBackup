@@ -32,6 +32,48 @@ export const STORAGE = {
 /** The customer server of the end-to-end tests, lab/compose/customer, with one login for OpenSSH and every database. */
 export const CUSTOMER = { service: "customer", username: "dbackup", password: "customer-password" } as const;
 
+/**
+ * The identity provider of the SSO tests, Dex in lab/compose/e2e.yml, with one static client and
+ * people with a password. It listens on the same port inside and outside, since DBackup and the
+ * browser both reach it by its service name. Every attempt of a test gets a provider ID and people
+ * of its own, `attempts` of them, see `dexPerson`. `tests/unit/lab/lab-parts.test.ts` checks the
+ * Compose file against this.
+ */
+export const DEX = {
+    service: "dex",
+    port: 5556,
+    issuer: "http://dex:5556/dex",
+    clientId: "dbackup-e2e",
+    clientSecret: "dex-client-e2e-only-not-a-secret",
+    password: "Dex-Lantern-6042",
+    attempts: 2,
+} as const;
+
+/** A person of Dex for one attempt: a newcomer without an account in DBackup, or a member who has one. */
+export function dexPerson(kind: "newcomer" | "member", attempt: number): { name: string; email: string } {
+    const name = `${kind}-${attempt % DEX.attempts}`;
+    return { name, email: `${name}@sso.e2e.dbackup.test` };
+}
+
+/** The provider ID of the SSO tests for one attempt, the end of a redirect URI of the client. */
+export const dexProviderId = (attempt: number): string => `dex-${attempt % DEX.attempts}`;
+
+/**
+ * The domain the provider of a tenant claims in the SSO test of a tenant that blocks the local
+ * network. Apart from the people of `dexPerson`, since the provider of the platform adds nobody of
+ * a domain a tenant claims.
+ */
+export const DEX_TENANT_DOMAIN = "tenant.e2e.dbackup.test";
+
+/** The person of Dex of that tenant for one attempt, new to DBackup. */
+export function dexTenantPerson(attempt: number): { name: string; email: string } {
+    const name = `tenant-${attempt % DEX.attempts}`;
+    return { name, email: `${name}@${DEX_TENANT_DOMAIN}` };
+}
+
+/** The provider ID of that tenant's provider for one attempt. */
+export const dexTenantProviderId = (attempt: number): string => `dex-tenant-${attempt % DEX.attempts}`;
+
 export const NOTIFY = {
     mailpit: { service: "mailpit", smtpPort: 1025, uiPort: 8025 },
     ntfy: { service: "ntfy", port: 18081 },

@@ -12,7 +12,7 @@
  *   pnpm changelog:amend [version]   adds the fragments to a block the changelog has already
  *
  * `pnpm version:bump` writes that block and deletes the fragments, with the Docker tags of the new
- * version. Preview, release and amend thank the author of an outside pull request at the end of
+ * version. A beta leaves them, the notes of its GitHub release come from them (release-notes.mjs). Preview, release and amend thank the author of an outside pull request at the end of
  * each entry of its fragment, so a contributor never has to write the thanks and the maintainer
  * never has to add it.
  */
@@ -283,7 +283,7 @@ function byComponent(entries) {
  * @param {Fragment[]} fragments
  * @returns {string[]}
  */
-function renderSections(fragments) {
+export function renderSections(fragments) {
     /** @type {string[]} */
     const lines = [];
     for (const note of fragments.flatMap((fragment) => fragment.notes)) lines.push(note, "");
@@ -305,16 +305,26 @@ function renderSections(fragments) {
  * @returns {string}
  */
 export function renderBlock(version, tags, fragments) {
-    const lines = [`## v${version}`, "*Release: In Progress*", "", ...renderSections(fragments)];
-    lines.push(
+    return [`## v${version}`, "*Release: In Progress*", "", ...renderSections(fragments), ...dockerSection(version, tags)].join("\n");
+}
+
+/**
+ * The Docker section of a version, the last part of its block. A beta builds no CI image, so its
+ * section names none.
+ *
+ * @param {string} version Without the leading `v`.
+ * @param {string} tags The other Docker tags of the image.
+ * @returns {string[]}
+ */
+export function dockerSection(version, tags) {
+    return [
         DOCKER_SECTION,
         "",
         `- **Image**: \`skyfay/dbackup:v${version}\``,
         `- **Also tagged as**: ${tags}`,
-        "- **CI Image**: `skyfay/dbackup:ci`",
+        ...(version.includes("-") ? [] : ["- **CI Image**: `skyfay/dbackup:ci`"]),
         "- **Platforms**: linux/amd64, linux/arm64",
-    );
-    return lines.join("\n");
+    ];
 }
 
 /**
@@ -464,7 +474,7 @@ function fail(text) {
  * @param {Fragment[]} fragments
  * @returns {Fragment[]}
  */
-function creditWithWarning(fragments) {
+export function creditWithWarning(fragments) {
     const { fragments: credited, missing } = creditAll(fragments);
     if (missing.length > 0) {
         process.stderr.write(

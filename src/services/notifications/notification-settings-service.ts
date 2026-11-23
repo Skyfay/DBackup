@@ -4,6 +4,8 @@
  */
 
 import prisma from "@/lib/prisma";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { getAdapterOptions, type AdapterListItemDTO } from "@/lib/adapters/dto";
 import { EVENT_DEFINITIONS, getEventDefinition } from "@/lib/notifications/events";
 import type { NotificationEventDefinition, NotifyUserMode, SystemNotificationConfig } from "@/lib/notifications/types";
@@ -62,7 +64,8 @@ function rowOf(definition: NotificationEventDefinition, config: SystemNotificati
 }
 
 export async function getNotificationsModel(): Promise<NotificationsModel> {
-    const [config, channels] = await Promise.all([getNotificationConfig(), getAdapterOptions("notification")]);
+    // The channels of the platform, the home tenant's, whichever tenant the admin looks at.
+    const [config, channels] = await Promise.all([getNotificationConfig(), runAsTenant(HOME_TENANT_ID, () => getAdapterOptions("notification"))]);
     return {
         channels,
         defaultChannels: config.globalChannels.filter((id) => channels.some((channel) => channel.id === id)),
@@ -70,11 +73,11 @@ export async function getNotificationsModel(): Promise<NotificationsModel> {
     };
 }
 
-/** Refuses a channel that is no notification connection, before anything is stored. */
+/** Refuses a channel that is no notification connection of the home tenant, before anything is stored. */
 async function checkChannels(ids: string[]) {
     const unique = [...new Set(ids)];
     if (unique.length === 0) return;
-    const found = await prisma.adapterConfig.count({ where: { id: { in: unique }, type: "notification" } });
+    const found = await runAsTenant(HOME_TENANT_ID, () => prisma.adapterConfig.count({ where: { id: { in: unique }, type: "notification" } }));
     if (found !== unique.length) throw new ValidationError("A picked channel no longer exists.", { field: "channels" });
 }
 

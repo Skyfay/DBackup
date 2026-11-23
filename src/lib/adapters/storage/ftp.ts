@@ -1,15 +1,23 @@
-import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, ListTreeResult } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, ListTreeResult, StorageReadOptions, UploadOptions } from "@/lib/core/interfaces";
+import { ensureFtpRestoreDir } from "./ftp-restore-dir";
+import { restoreFolderOf } from "@/lib/adapters/storage/common/restore-folder";
 import { FTPSchema } from "@/lib/adapters/definitions";
 import { createConnectionPool } from "@/lib/adapters/storage/common/connection-pool";
-import { Client, FileInfo as FTPFileInfo } from "basic-ftp";
+import { relativeToPrefix } from "@/lib/adapters/storage/common/prefix";
+import { cappedSink, FileTooLargeError, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
+import { createListingGuard, descendableName } from "@/lib/adapters/storage/common/listing-limits";
+import { Client, FileInfo as FTPFileInfo, FTPError } from "basic-ftp";
 import { createReadStream, createWriteStream } from "fs";
 import { PassThrough, Readable, Writable } from "stream";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { trustsFtpCertificate } from "@/lib/adapters/later-switches";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { isAddressLiteral } from "@/lib/network/local-network";
+import { reachableAddress } from "@/lib/network/checked-socket";
+import { reachOf } from "@/lib/network/reach-policy";
 
 const log = logger.child({ adapter: "ftp" });
 
@@ -19,6 +27,8 @@ interface FTPConfig {
     username: string;
     password?: string;
     tls: boolean;
+    /** Accept any certificate of the server. Missing on a connection saved before the switch, see `trustsFtpCertificate`. */
+    trustServerCertificate?: boolean;
     pathPrefix?: string;
 }
 
@@ -49,17 +59,34 @@ function extractDateFromFilename(name: string): Date | undefined {
 /**
  * Creates and connects an FTP client with the given config.
  */
+/**
+ * The most bytes of one `LIST` or `MLSD` answer, the listing of one folder. A line is well under
+ * 100 bytes, so a folder of several hundred thousand entries fits. basic-ftp reads the answer
+ * into memory and fails the listing past this. It is the default of basic-ftp 6, named here so a
+ * later version of the library never loosens it, since the server may belong to a customer.
+ */
+export const FTP_MAX_LISTING_BYTES = 40 * 1024 * 1024;
+
 async function connectFTP(config: FTPConfig): Promise<Client> {
-    const client = new Client();
+    // A transfer host other than the host of the connection stays refused, the default of basic-ftp.
+    const client = new Client(undefined, { allowSeparateTransferHost: false, maxListingBytes: FTP_MAX_LISTING_BYTES });
     client.ftp.verbose = false;
 
+    // For a tenant that blocks the local network the control connection dials the address checked
+    // right before, see `reach-check.ts`, and the data connections follow it, since basic-ftp keeps
+    // them on the address of the control connection. TLS keeps the name for the certificate.
+    const reach = reachOf(config);
+    const address = reach ? await reachableAddress(config.host, config.port || 21, reach.allowed) : config.host;
+    const named = address !== config.host && !isAddressLiteral(config.host) ? { host: config.host, servername: config.host } : {};
+
     await client.access({
-        host: config.host,
+        host: address,
         port: config.port,
         user: config.username,
         password: config.password || "",
         secure: config.tls,
-        secureOptions: config.tls ? { rejectUnauthorized: false } : undefined,
+        // The certificate is checked unless the connection trusts its server, see `trustsFtpCertificate`.
+        secureOptions: config.tls ? { rejectUnauthorized: !trustsFtpCertificate(config), ...named } : undefined,
     });
 
     return client;
@@ -126,13 +153,18 @@ async function performFtpUpload(
     remotePath: string,
     onProgress: ((percent: number) => void) | undefined,
     onLog: ((msg: string, level?: LogLevel, type?: LogType, details?: string) => void) | undefined,
-    dirCache: Set<string>
+    dirCache: Set<string>,
+    options?: UploadOptions
 ): Promise<boolean> {
     try {
         const destination = resolvePath(config, remotePath);
         const dir = path.posix.dirname(destination);
 
-        if (!dirCache.has(dir)) {
+        if (options?.restoreRelativePath !== undefined) {
+            // A write of a restore enters no link below the folder of the restore, see `ftp-restore-dir.ts`.
+            const folder = restoreFolderOf(remotePath, options.restoreRelativePath);
+            await ensureFtpRestoreDir(client, folder === "" ? (config.pathPrefix ?? "") : resolvePath(config, folder), options.restoreRelativePath, dirCache);
+        } else if (!dirCache.has(dir)) {
             await ensureDir(client, destination);
             await client.cd("/");
             dirCache.add(dir);
@@ -170,6 +202,24 @@ async function performFtpUpload(
 }
 
 /**
+ * Whether a folder whose listing the server refused is not there.
+ *
+ * Servers answer a LIST of a missing folder differently: most with 550, ProFTPD with 450, and
+ * vsftpd with an empty listing. A CWD into the folder settles it, which every server refuses
+ * with 550 (RFC 959 "file unavailable") when the folder does not exist. Only a refusal of the
+ * server gets that far, a timeout or a dropped connection is no FTPError and still fails.
+ */
+async function isMissingFtpFolder(client: Client, error: unknown, folder: string): Promise<boolean> {
+    if (!(error instanceof FTPError)) return false;
+    try {
+        await client.cd(folder);
+        return false;
+    } catch (cdError: unknown) {
+        return cdError instanceof FTPError && cdError.code === 550;
+    }
+}
+
+/**
  * Recursively lists an FTP tree, separating out the symbolic links it cannot describe.
  *
  * One walker behind both `list()` and `listTree()`, so retention and collection can never
@@ -194,23 +244,27 @@ async function walkFtpTree(
         const files: FileInfo[] = [];
         const symlinkPaths: string[] = [];
         let warnedAboutMissingTimestamp = false;
+        // Every entry passes the guard first, so a tree of any size stops the walk, see `listing-limits.ts`.
+        const guard = createListingGuard();
 
-        /** Path relative to the adapter's configured root, the convention every adapter uses. */
-        const toAdapterPath = (fullPath: string): string => {
-            let relativePath = normalize(fullPath);
-            if (prefix && relativePath.startsWith(prefix)) {
-                relativePath = relativePath.substring(prefix.length);
-            }
-            return relativePath.startsWith("/") ? relativePath.substring(1) : relativePath;
-        };
+        /**
+         * Path relative to the adapter's configured root, the convention every adapter uses. The
+         * prefix is compared as `path.posix.join` writes the walk, so `/backups//shop/` strips too.
+         */
+        const toAdapterPath = (fullPath: string): string => relativeToPrefix(normalize(fullPath), prefix);
 
         const walk = async (currentDir: string) => {
             let items: FTPFileInfo[];
             try {
                 items = await client!.list(currentDir);
             } catch (error: unknown) {
-                // Root directory listing failure: propagate so the stats cache uses DB fallback.
-                if (currentDir === startDir) throw error;
+                if (currentDir === startDir) {
+                    // A subfolder nothing was written to yet is not there. It lists as empty,
+                    // like on the other destinations.
+                    if (dir !== "" && await isMissingFtpFolder(client!, error, currentDir)) return;
+                    // Root directory listing failure: propagate so the stats cache uses DB fallback.
+                    throw error;
+                }
                 // Sub-directory listing failure: skip silently and continue the walk.
                 return;
             }
@@ -220,9 +274,11 @@ async function walkFtpTree(
                 if (item.name === "." || item.name === "..") continue;
 
                 const fullPath = path.posix.join(currentDir, item.name);
+                guard.add(toAdapterPath(fullPath));
 
                 if (item.isDirectory) {
-                    await walk(fullPath);
+                    // A name with a slash would read this folder or one above it again.
+                    if (descendableName(item.name)) await walk(fullPath);
                 } else if (item.isSymbolicLink) {
                     // Recorded, not stored. `LIST` output is free-form per server and `MLSD`
                     // has no facet for a link target, so there is nothing dependable to put in
@@ -280,6 +336,29 @@ async function walkFtpTree(
     }
 }
 
+/**
+ * The bytes of a file, at most the limit of the read, see `read-limit.ts`. Into memory, a sidecar
+ * is small and no file of the temporary folder is written. The sink fails at the first chunk past
+ * the limit, which aborts the transfer. Null when the file is not there.
+ */
+async function readCappedBytes(config: FTPConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null> {
+    const limit = readLimitOf(options);
+    let client: Client | null = null;
+    const capped = cappedSink(limit);
+    try {
+        client = await connectFTP(config);
+        const source = resolvePath(config, remotePath);
+        await client.downloadTo(capped.sink, source);
+        return capped.bytes();
+    } catch (error) {
+        if (capped.overflowed() || isFileTooLarge(error)) throw new FileTooLargeError(limit);
+        // Quietly fail if file not found (expected for missing .meta.json)
+        return null;
+    } finally {
+        if (client) client.close();
+    }
+}
+
 export const FTPAdapter: StorageAdapter = {
     id: "ftp",
     type: "storage",
@@ -324,21 +403,21 @@ export const FTPAdapter: StorageAdapter = {
         const dirCache = new Set<string>();
 
         return {
-            upload: (localPath, remotePath, onProgress, uploadLog) =>
+            upload: (localPath, remotePath, onProgress, uploadLog, options) =>
                 pool.withConnection((client) =>
-                    performFtpUpload(client, config, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache)),
+                    performFtpUpload(client, config, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache, options)),
             download: (remotePath, localPath, onProgress) =>
                 pool.withConnection((client) => performFtpDownload(client, config, remotePath, localPath, onProgress)),
             close: () => pool.close(),
         };
     },
 
-    async upload(config: FTPConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
+    async upload(config: FTPConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, options?: UploadOptions): Promise<boolean> {
         let client: Client | null = null;
         try {
             client = await connectFTP(config);
             if (onLog) onLog(`Connected to FTP ${config.host}:${config.port}`, "info", "storage");
-            return await performFtpUpload(client, config, localPath, remotePath, onProgress, onLog, new Set());
+            return await performFtpUpload(client, config, localPath, remotePath, onProgress, onLog, new Set(), options);
         } catch (error: unknown) {
             log.error("FTP upload failed", { host: config.host, remotePath }, wrapError(error));
             if (onLog && error instanceof Error) onLog(`FTP upload failed: ${error.message}`, "error", "storage", error.stack);
@@ -412,25 +491,11 @@ export const FTPAdapter: StorageAdapter = {
         }
     },
 
-    async read(config: FTPConfig, remotePath: string): Promise<string | null> {
-        const tmpPath = path.join(os.tmpdir(), `ftp-read-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-        let client: Client | null = null;
-        try {
-            client = await connectFTP(config);
-
-            const source = resolvePath(config, remotePath);
-            await client.downloadTo(createWriteStream(tmpPath), source);
-
-            const content = await fs.readFile(tmpPath, "utf-8");
-            return content;
-        } catch {
-            // Quietly fail if file not found (expected for missing .meta.json)
-            return null;
-        } finally {
-            if (client) client.close();
-            await fs.unlink(tmpPath).catch(() => {});
-        }
+    async read(config: FTPConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null> {
+        return textOf(await readCappedBytes(config, remotePath, options));
     },
+
+    readBytes: readCappedBytes,
 
     async browseDirectories(config: FTPConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
         let client: Client | null = null;
@@ -487,6 +552,23 @@ export const FTPAdapter: StorageAdapter = {
         }
     },
 
+    async deleteEmptyFolder(config: FTPConfig, remotePath: string): Promise<boolean> {
+        // The folder the destination is set to stays, whatever is in it.
+        if (path.posix.normalize(`/${remotePath}`) === "/") return false;
+        let client: Client | null = null;
+        try {
+            client = await connectFTP(config);
+            // RMD, which the server refuses for a folder that holds anything.
+            await client.removeEmptyDir(resolvePath(config, remotePath));
+            return true;
+        } catch (error: unknown) {
+            log.debug("FTP folder not removed", { host: config.host, remotePath, reason: wrapError(error).message });
+            return false;
+        } finally {
+            if (client) client.close();
+        }
+    },
+
     async ping(config: FTPConfig): Promise<{ success: boolean; message: string }> {
         let client: Client | null = null;
         try {
@@ -504,7 +586,6 @@ export const FTPAdapter: StorageAdapter = {
     async test(config: FTPConfig): Promise<{ success: boolean; message: string }> {
         const ts = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
         const testFileName = `.dbackup/test/connection-test-ftp-${ts}`;
-        const tmpPath = path.join(os.tmpdir(), `connection-test-ftp-${ts}`);
         const destination = resolvePath(config, testFileName);
         let client: Client | null = null;
         let remoteFileCreated = false;
@@ -527,11 +608,8 @@ export const FTPAdapter: StorageAdapter = {
                 // FEAT not supported — assume no MLSD
             }
 
-            // Create a temp file to upload
-            await fs.writeFile(tmpPath, "Connection Test");
-
-            // 1. Write Test
-            await client.uploadFrom(createReadStream(tmpPath), destination);
+            // 1. Write Test, from memory, so no file of the temporary folder is written
+            await client.uploadFrom(Readable.from([Buffer.from("Connection Test")]), destination);
             remoteFileCreated = true;
 
             // 2. Delete Test
@@ -549,7 +627,6 @@ export const FTPAdapter: StorageAdapter = {
         } finally {
             if (remoteFileCreated) await client?.remove(destination).catch(() => {});
             if (client) client.close();
-            await fs.unlink(tmpPath).catch(() => {});
         }
     },
 };

@@ -3,6 +3,9 @@ import { DiscordSchema, DiscordConfig } from "@/lib/adapters/definitions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { reachOf } from "@/lib/network/reach-policy";
+import { redirectRefusal, webhookFetch } from "./http";
+import { escapeMarkdown } from "./escape";
 
 const log = logger.child({ adapter: "discord" });
 
@@ -16,7 +19,7 @@ export const DiscordAdapter: NotificationAdapter = {
     async test(config: DiscordConfig): Promise<{ success: boolean; message: string }> {
         try {
             validateOutboundUrl(config.webhookUrl);
-            const response = await fetch(config.webhookUrl, {
+            const response = await webhookFetch(config.webhookUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -24,8 +27,10 @@ export const DiscordAdapter: NotificationAdapter = {
                     username: config.username || "Backup Manager Test",
                     avatar_url: config.avatarUrl,
                 }),
-            });
+            }, reachOf(config));
 
+            const redirect = redirectRefusal("Discord", response);
+            if (redirect) return { success: false, message: redirect };
             if (response.ok) {
                 return { success: true, message: "Test notification sent successfully!" };
             } else {
@@ -41,9 +46,11 @@ export const DiscordAdapter: NotificationAdapter = {
         try {
             validateOutboundUrl(config.webhookUrl);
             const payload: any = {
-                content: message,
+                content: escapeMarkdown(message),
                 username: config.username,
                 avatar_url: config.avatarUrl,
+                // A name like `@everyone` or `<@&role>` in a message pings nobody.
+                allowed_mentions: { parse: [] },
             };
 
             if (context) {
@@ -54,13 +61,14 @@ export const DiscordAdapter: NotificationAdapter = {
                       : 0xff0000;
 
                 const embed: any = {
-                    title: context.title || "Notification",
-                    description: message,
+                    // Names stay text, never a masked link or markup, in the title as well.
+                    title: escapeMarkdown(context.title || "Notification"),
+                    description: escapeMarkdown(message),
                     color,
                     timestamp: new Date().toISOString(),
                     fields: (context.fields || []).map((f: any) => ({
-                        name: f.name,
-                        value: f.value,
+                        name: escapeMarkdown(f.name),
+                        value: escapeMarkdown(f.value || "-"),
                         inline: f.inline ?? true,
                     })),
                 };
@@ -70,13 +78,13 @@ export const DiscordAdapter: NotificationAdapter = {
                 payload.content = undefined;
             }
 
-            const response = await fetch(config.webhookUrl, {
+            const response = await webhookFetch(config.webhookUrl, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify(payload),
-            });
+            }, reachOf(config));
 
             if (!response.ok) {
                 log.warn("Discord notification failed", { status: response.status, statusText: response.statusText });

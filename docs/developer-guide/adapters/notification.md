@@ -567,7 +567,7 @@ Every new notification adapter touches these files:
 
 | # | File | What to do |
 | :--- | :--- | :--- |
-| 1 | `src/lib/adapters/definitions.ts` | Add Zod schema, inferred type, union type, `ADAPTER_DEFINITIONS` entry |
+| 1 | `src/lib/adapters/definitions/notification.ts`, `definitions/index.ts` | Add Zod schema, inferred type, `ADAPTER_DEFINITIONS` entry |
 | 2 | `src/lib/adapters/notification/<id>.ts` | Create the adapter implementation |
 | 3 | `src/lib/adapters/index.ts` | Import and register the adapter |
 | 4 | `src/components/adapter/utils.ts` | Import icon and add to `ADAPTER_ICON_MAP` |
@@ -600,10 +600,7 @@ export const MyServiceSchema = z.object({
 // 1b. Inferred type - in the "Notification Adapters" types section
 export type MyServiceConfig = z.infer<typeof MyServiceSchema>;
 
-// 1c. Union type - add to NotificationConfig
-export type NotificationConfig = DiscordConfig | SlackConfig | /* ... */ | MyServiceConfig | EmailConfig;
-
-// 1d. Definition entry - in the ADAPTER_DEFINITIONS array
+// 1c. Definition entry - in the ADAPTER_DEFINITIONS array
 { id: "my-service", type: "notification", name: "My Service", configSchema: MyServiceSchema },
 ```
 
@@ -942,7 +939,7 @@ Add the entry under the "Notification Channels" section:
 
 ```
 src/lib/adapters/
-├── definitions.ts          ← Schema + type + union + ADAPTER_DEFINITIONS
+├── definitions/            ← Schema and type in notification.ts, ADAPTER_DEFINITIONS in index.ts
 ├── index.ts                ← Import + registry.register()
 ├── connection-summary.ts   ← connectionAddress() case for the Sends to column
 └── notification/

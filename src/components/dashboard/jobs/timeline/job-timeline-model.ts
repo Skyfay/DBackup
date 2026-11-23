@@ -1,4 +1,4 @@
-import type { JobTimeline, TimelinePlannedRun, TimelineRun } from "@/services/jobs/job-timeline-types";
+import { OTHER_TENANT_JOB, OTHER_TENANT_JOB_NAME, type JobTimeline, type TimelinePlannedRun, type TimelineRun } from "@/services/jobs/job-timeline-types";
 
 /**
  * What the Timeline and Upcoming views of the Jobs page draw from the runs of the server: the
@@ -120,14 +120,28 @@ export interface DemandSegment {
     count: number;
 }
 
-/** How many runs run or wait at each moment of a range, as segments that keep one count. */
-export function demandOf(bars: TimelineBar[], range: TimeRange): DemandSegment[] {
+/** The runs of other tenants beside the runs of this one, which the server counts without naming them. */
+export function otherTenantsOf(data: JobTimeline): DemandSegment[] {
+    return (data.otherTenants ?? []).map((stretch) => ({ from: Date.parse(stretch.from), to: Date.parse(stretch.to), count: stretch.count }));
+}
+
+/**
+ * How many runs run or wait at each moment of a range, as segments that keep one count. The runs
+ * of other tenants take slots of the same queue, so their segments add to the count.
+ */
+export function demandOf(bars: TimelineBar[], range: TimeRange, others: DemandSegment[] = []): DemandSegment[] {
     const events: [number, number][] = [];
     for (const bar of bars) {
         const from = Math.max(bar.waitFrom ?? bar.start, range.from);
         const to = Math.min(Math.max(bar.end, bar.start + 1), range.to);
         if (to <= from) continue;
         events.push([from, 1], [to, -1]);
+    }
+    for (const other of others) {
+        const from = Math.max(other.from, range.from);
+        const to = Math.min(other.to, range.to);
+        if (to <= from || other.count <= 0) continue;
+        events.push([from, other.count], [to, -other.count]);
     }
     events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     const segments: DemandSegment[] = [];
@@ -143,6 +157,23 @@ export function demandOf(bars: TimelineBar[], range: TimeRange): DemandSegment[]
         since = time;
     }
     return segments;
+}
+
+/**
+ * The jobs a run waits for by name. The jobs of other tenants come from the server as one
+ * `OTHER_TENANT_JOB` at the end, which has no name to show.
+ */
+export function waitNames(waitsFor: string[], names: Map<string, string>): string[] {
+    return waitsFor.map((id) => (id === OTHER_TENANT_JOB ? OTHER_TENANT_JOB_NAME : names.get(id) ?? "another job"));
+}
+
+/** Who holds the queue while a run waits, in one sentence. */
+export function waitSentence(waitsFor: string[], names: Map<string, string>): string {
+    const jobs = waitNames(waitsFor, names);
+    if (jobs.length === 0) return "The queue is full";
+    const sentence = `${jobs.join(", ")} ${jobs.length === 1 ? "holds" : "hold"} the queue`;
+    // A job of another tenant starts the sentence only when it is all the run waits for.
+    return waitsFor[0] === OTHER_TENANT_JOB ? sentence.charAt(0).toUpperCase() + sentence.slice(1) : sentence;
 }
 
 export interface AgendaRow {

@@ -16,12 +16,12 @@ describe("rememberKeyFor", () => {
     it("adds the id a backup named to the key that opened it, once", async () => {
         prismaMock.encryptionProfile.findUnique.mockResolvedValue({ aliases: '["old-1"]' } as never);
 
-        await rememberKeyFor("key", "old-2");
+        expect(await rememberKeyFor("key", "old-2")).toBe(true);
         expect(prismaMock.encryptionProfile.update).toHaveBeenCalledWith({ where: { id: "key" }, data: { aliases: '["old-1","old-2"]' } });
 
         vi.clearAllMocks();
         prismaMock.encryptionProfile.findUnique.mockResolvedValue({ aliases: '["old-1"]' } as never);
-        await rememberKeyFor("key", "old-1");
+        expect(await rememberKeyFor("key", "old-1")).toBe(false);
         expect(prismaMock.encryptionProfile.update).not.toHaveBeenCalled();
     });
 
@@ -34,6 +34,6 @@ describe("rememberKeyFor", () => {
     it("never fails the restore that found the match", async () => {
         prismaMock.encryptionProfile.findUnique.mockRejectedValue(new Error("database is locked"));
 
-        await expect(rememberKeyFor("key", "old")).resolves.toBeUndefined();
+        await expect(rememberKeyFor("key", "old")).resolves.toBe(false);
     });
 });

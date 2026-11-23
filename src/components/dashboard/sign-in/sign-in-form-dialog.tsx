@@ -1,16 +1,12 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Pencil, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { checkSsoConnection, createSsoProvider, updateSsoProvider } from "@/app/actions/auth/oidc";
-import { SwitchList, SwitchRow } from "@/components/adapter/setting-switches";
-import { NO_GROUP } from "@/components/dashboard/users/user-columns";
-import { GroupPicker } from "@/components/dashboard/users/user-group-picker";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DIALOG_SURFACE, DialogBackButton, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
@@ -21,6 +17,7 @@ import { FoundMark, OptionalMark, ProviderField, SavedSecretField } from "./sign
 import { changedFrom, configOf, groupIdOf, initialValues, problemOf, type SignInFormMode, type SignInProblem, type SignInValues } from "./sign-in-form-values";
 import { SetupBox } from "./sign-in-parts";
 import { SignInStart } from "./sign-in-start";
+import { WhoFields } from "./sign-in-who-fields";
 
 const log = logger.child({ component: "sign-in-form-dialog" });
 
@@ -93,10 +90,9 @@ function Editor({ mode, adapterId, model, onBack, onClose, onSavingChange, onSav
     const [check, setCheck] = useState<UrlCheck>(null);
     const [saving, setSaving] = useState(false);
     const latest = useRef("");
-    const groupFieldId = useId();
 
-    const takenIds = useMemo(() => model.providers.filter((entry) => entry.id !== provider?.id).map((entry) => entry.providerId), [model, provider]);
-    const groups = model.manage?.groups ?? [];
+    const others = useMemo(() => model.providers.filter((entry) => entry.id !== provider?.id), [model, provider]);
+    const takenIds = useMemo(() => others.map((entry) => entry.providerId), [others]);
 
     const set = <K extends keyof SignInValues>(key: K, value: SignInValues[K]) => {
         setValues((current) => ({ ...current, [key]: value }));
@@ -134,7 +130,7 @@ function Editor({ mode, adapterId, model, onBack, onClose, onSavingChange, onSav
     const unchanged = provider !== null && !changedFrom(initial, values);
     const submit = async (event: React.FormEvent) => {
         event.preventDefault();
-        const found = problemOf(values, mode, inputs, takenIds);
+        const found = problemOf(values, mode, inputs, takenIds, others);
         if (found) return setProblem(found);
         if (unchanged) return onClose();
 
@@ -142,6 +138,7 @@ function Editor({ mode, adapterId, model, onBack, onClose, onSavingChange, onSav
         const fields = {
             name,
             domain: values.domain.trim(),
+            tenantId: values.tenantId,
             clientId: values.clientId.trim(),
             allowProvisioning: values.allowProvisioning,
             defaultGroupId: groupIdOf(values.groupId),
@@ -170,7 +167,6 @@ function Editor({ mode, adapterId, model, onBack, onClose, onSavingChange, onSav
 
     const tone = provider ? "edit" : "create";
     const firstUrl = inputs.find((input) => input.type === "url")?.name;
-    const noGroup = values.groupId === NO_GROUP;
 
     return (
         <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
@@ -231,39 +227,10 @@ function Editor({ mode, adapterId, model, onBack, onClose, onSavingChange, onSav
                         ) : (
                             <ProviderField label="Client secret" value={values.clientSecret} onChange={(value) => set("clientSecret", value)} error={errorOf("clientSecret")} secret />
                         )}
-                        <ProviderField
-                            label="Email domain"
-                            value={values.domain}
-                            onChange={(value) => set("domain", value)}
-                            placeholder="example.com"
-                            aside={<OptionalMark />}
-                            description="Someone who types an email of this domain on the login page goes straight to this provider."
-                        />
                     </div>
 
-                    <div className="min-w-0 space-y-4">
-                        <SwitchList>
-                            <SwitchRow
-                                title="Add new people on their first sign-in"
-                                description={`Without it only people with an account in DBackup of the same email sign in through ${copy.name}.`}
-                                checked={values.allowProvisioning}
-                                onCheckedChange={(checked) => set("allowProvisioning", checked)}
-                            />
-                        </SwitchList>
-                        {values.allowProvisioning && (
-                            <div className="space-y-2">
-                                <Label htmlFor={groupFieldId}>Group of new people</Label>
-                                {/* Only a SuperAdmin changes providers, so every group can be picked. */}
-                                <GroupPicker id={groupFieldId} groups={groups} viewerSuperAdmin value={values.groupId} onChange={(id) => set("groupId", id)} />
-                                {errorOf("group") ? (
-                                    <p className="text-xs text-destructive">{errorOf("group")}</p>
-                                ) : (
-                                    <p className={cn("text-xs", noGroup ? "text-warning" : "text-muted-foreground")}>
-                                        {noGroup ? "They sign in, but see and do nothing until someone picks a group." : "They sign in at once and do what the group allows."}
-                                    </p>
-                                )}
-                            </div>
-                        )}
+                    <div className="min-w-0 space-y-6">
+                        <WhoFields values={values} set={set} model={model} adapterName={copy.name} errorOf={errorOf} />
                         <SetupBox adapterId={adapterId} callbackUrl={callbackUrl(model.callbackBase, values.providerId.trim() || "...")} providerId={provider ? undefined : values.providerId.trim()} />
                     </div>
                 </div>

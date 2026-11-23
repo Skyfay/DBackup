@@ -39,7 +39,7 @@ interface Answer<T> {
 interface DatabaseCopyRestoreProps {
     file: FileInfo;
     destinationId: string;
-    /** Only a SuperAdmin restores a configuration, since it could make anyone a SuperAdmin. */
+    /** Only a platform admin restores a configuration, since it could make anyone a platform admin. */
     canRestore: boolean;
     canManageVault: boolean;
     onCancel: () => void;
@@ -73,8 +73,9 @@ export function DatabaseCopyRestore({ file, destinationId, canRestore, canManage
                 closeKeyDialog();
                 setChecked(answer.data);
             } else if (answer.code === "ENCRYPTION_KEY_REQUIRED") {
-                // A key that was tried and does not fit keeps the dialog open and says so.
-                setKeyDialog({ open: true, profileId: answer.profileId ?? "", error: key ? answer.error || WRONG_KEY : undefined });
+                // A key that was tried and does not fit keeps the dialog open and says so. The first
+                // answer says why the key of the configuration backup did not open it.
+                setKeyDialog({ open: true, profileId: answer.profileId ?? "", error: key ? answer.error || WRONG_KEY : answer.error });
             } else {
                 closeKeyDialog();
                 setProblem(answer.error ?? "The backup could not be read.");
@@ -125,7 +126,7 @@ export function DatabaseCopyRestore({ file, destinationId, canRestore, canManage
     }
 
     const blocker = !canRestore
-        ? "Only a SuperAdmin restores the configuration"
+        ? "Only a platform admin restores the configuration"
         : reading
             ? "Reading the backup"
             : !checked
@@ -139,7 +140,7 @@ export function DatabaseCopyRestore({ file, destinationId, canRestore, canManage
             </Notice>
             <Section title="What comes back" note="A copy of the whole database of DBackup">
                 {!canRestore ? (
-                    <p className="text-sm text-muted-foreground">Only a SuperAdmin restores the configuration, since it brings back users, groups and sign-in providers.</p>
+                    <p className="text-sm text-muted-foreground">Only a platform admin restores the configuration, since it brings back users, groups and sign-in providers.</p>
                 ) : reading ? (
                     <p className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -182,6 +183,7 @@ export function DatabaseCopyRestore({ file, destinationId, canRestore, canManage
                 profileIdHint={keyDialog.profileId}
                 backup={{ storageConfigId: destinationId, file: file.path }}
                 canManageVault={canManageVault}
+                platformKeys
                 onConfirm={withKey}
                 loading={reading}
                 error={keyDialog.error}

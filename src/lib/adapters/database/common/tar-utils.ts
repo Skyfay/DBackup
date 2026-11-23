@@ -17,6 +17,8 @@ import path from "path";
 import { pack, extract } from "tar-stream";
 import { pipeline } from "stream/promises";
 import { getTempDir } from "@/lib/temp-dir";
+import { assertPlainFileName } from "@/lib/archive/dump-names";
+import { DamagedBackupError } from "@/lib/archive/limits";
 import {
     TarManifest,
     TarFileEntry,
@@ -118,96 +120,6 @@ export async function createMultiDbTar(
 }
 
 /**
- * Extract a Multi-DB TAR archive
- *
- * @param sourcePath - Path to the TAR archive
- * @param extractDir - Directory to extract files into
- * @returns The manifest and list of extracted file paths
- */
-export async function extractMultiDbTar(
-    sourcePath: string,
-    extractDir: string
-): Promise<ExtractResult> {
-    // Ensure extract directory exists
-    await fs.mkdir(extractDir, { recursive: true });
-
-    let manifest: TarManifest | null = null;
-    const extractedFiles: string[] = [];
-
-    return new Promise((resolve, reject) => {
-        const extractor = extract();
-
-        extractor.on("entry", (header, stream, next) => {
-            const entryChunks: Buffer[] = [];
-
-            stream.on("data", (chunk: Buffer) => {
-                entryChunks.push(chunk);
-            });
-
-            stream.on("end", async () => {
-                const content = Buffer.concat(entryChunks);
-
-                if (header.name === MANIFEST_FILENAME) {
-                    // Parse manifest
-                    try {
-                        manifest = JSON.parse(content.toString("utf-8"));
-                    } catch (err) {
-                        reject(new Error(`Failed to parse manifest: ${err}`));
-                        return;
-                    }
-                } else {
-                    // Write database dump file (validate path to prevent Zip Slip)
-                    const outputPath = path.join(extractDir, path.basename(header.name));
-                    /* v8 ignore start */
-                    if (!outputPath.startsWith(extractDir)) {
-                        reject(new Error(`Zip Slip detected: ${header.name}`));
-                        return;
-                    }
-                    /* v8 ignore end */
-                    await fs.writeFile(outputPath, content);
-                    extractedFiles.push(outputPath);
-                }
-
-                next();
-            });
-
-            /* v8 ignore start */
-            stream.on("error", (err) => {
-                reject(err);
-            });
-            /* v8 ignore end */
-
-            stream.resume();
-        });
-
-        extractor.on("finish", () => {
-            if (!manifest) {
-                reject(new Error("TAR archive does not contain a manifest.json"));
-                return;
-            }
-
-            resolve({
-                manifest,
-                files: extractedFiles,
-            });
-        });
-        const readStream = createReadStream(sourcePath);
-        /* v8 ignore start */
-        extractor.on("error", (err) => {
-            readStream.destroy();
-            reject(err);
-        });
-        readStream.on("error", (err) => {
-            extractor.destroy(err);
-            reject(err);
-        });
-        /* v8 ignore end */
-
-        readStream.pipe(extractor);
-    });
-}
-
-/**
  * Extract only selected databases from a Multi-DB TAR archive
  *
  * Instead of extracting all entries, this function reads the manifest first
@@ -232,6 +144,9 @@ export async function extractSelectedDatabases(
     if (!manifest) {
         throw new Error("TAR archive does not contain a manifest.json");
     }
+    // The callers find the dump of a database by its `filename` among the files written here,
+    // so a name that is no plain file name is refused before anything is written.
+    assertManifestFileNames(manifest);
 
     // Build a Set of filenames that belong to selected databases
     const selectedFilenames = new Set<string>();
@@ -245,6 +160,12 @@ export async function extractSelectedDatabases(
 
     return new Promise((resolve, reject) => {
         const extractor = extract();
+        const readStream = createReadStream(sourcePath);
+        const fail = (err: unknown) => {
+            readStream.destroy();
+            extractor.destroy();
+            reject(err);
+        };
 
         extractor.on("entry", (header, stream, next) => {
             // Skip manifest (already parsed) and non-selected files
@@ -254,20 +175,25 @@ export async function extractSelectedDatabases(
                 return;
             }
 
-            // Write selected database dump file
-            const outputPath = path.join(extractDir, header.name);
-            const writeStream = createWriteStream(outputPath);
+            // Write selected database dump file. `wx` refuses a second member of the same
+            // name instead of following or overwriting what the first one left.
+            let outputPath: string;
+            try {
+                outputPath = memberTarget(extractDir, header);
+            } catch (err) {
+                fail(err);
+                return;
+            }
+            const writeStream = createWriteStream(outputPath, { flags: "wx" });
 
             writeStream.on("finish", () => {
                 extractedFiles.push(outputPath);
                 next();
             });
 
-            /* v8 ignore start */
             writeStream.on("error", (err) => {
-                reject(err);
+                fail(err);
             });
-            /* v8 ignore end */
 
             stream.pipe(writeStream);
         });
@@ -279,7 +205,6 @@ export async function extractSelectedDatabases(
             });
         });
 
-        const readStream = createReadStream(sourcePath);
         /* v8 ignore start */
         extractor.on("error", (err) => {
             readStream.destroy();
@@ -293,6 +218,55 @@ export async function extractSelectedDatabases(
 
         readStream.pipe(extractor);
     });
+}
+
+/**
+ * Where a member of an older TAR lands in its extraction folder.
+ *
+ * The name of a member comes from the backup file, which whoever can write to its destination
+ * chose. Only a regular file with a plain file name is extracted, never a link, a folder or a
+ * device, and only straight into the folder: the joined path is checked to stay inside it with
+ * the separator, so a sibling folder like `<dir>-evil` never passes for it.
+ */
+function memberTarget(extractDir: string, header: { name: string; type?: string | null }): string {
+    if (header.type !== "file") {
+        throw new Error(`Refusing TAR member '${header.name}': it is a ${header.type ?? "unknown"} entry, not a regular file`);
+    }
+    const name = assertPlainFileName(header.name, "TAR member");
+    const root = path.resolve(extractDir);
+    const target = path.join(root, path.basename(name));
+    if (!target.startsWith(root + path.sep)) {
+        throw new Error(`Zip Slip detected: ${header.name}`);
+    }
+    return target;
+}
+
+/**
+ * Refuses a manifest whose `filename` of a database is no plain file name.
+ *
+ * The restores look the dump of each database up by that name, so a name like `../../x` must
+ * never reach a path of the server.
+ */
+export function assertManifestFileNames(manifest: TarManifest): void {
+    if (!Array.isArray(manifest.databases)) {
+        throw new Error("TAR manifest lists no databases");
+    }
+    for (const db of manifest.databases) {
+        assertPlainFileName(db.filename, `the file of database '${db.name}' in the TAR manifest`);
+    }
+}
+
+/**
+ * The extracted dump of one database of the manifest, found among the files the extraction
+ * wrote by its plain file name, never joined from the name the manifest holds.
+ */
+export function extractedFileOf(files: readonly string[], entry: DatabaseEntry): string {
+    const filename = assertPlainFileName(entry.filename, `the file of database '${entry.name}' in the TAR manifest`);
+    const file = files.find((f) => path.basename(f) === filename);
+    if (!file) {
+        throw new Error(`Database file not found in archive: ${filename}`);
+    }
+    return file;
 }
 
 /**
@@ -328,29 +302,56 @@ export async function isMultiDbTar(filePath: string): Promise<boolean> {
         const manifest = await readTarManifest(filePath);
         return manifest !== null;
     /* v8 ignore start */
-    } catch {
+    } catch (error) {
+        // A manifest past what any writer stores is a damaged backup, not some other file.
+        if (error instanceof DamagedBackupError) throw error;
         return false;
     }
     /* v8 ignore end */
 }
 
 /**
+ * The largest `manifest.json` of a multi-database TAR a reader takes. The writer stored a name, a
+ * file name and a few fields per database, so even thousands of databases stay far below it.
+ */
+export const TAR_MANIFEST_MAX_BYTES = 16 * 1024 * 1024;
+
+/**
  * Read only the manifest from a TAR archive without extracting files
  *
  * @param filePath - Path to the TAR archive
  * @returns The manifest or null if not found/invalid
+ * @throws DamagedBackupError when the manifest is larger than `TAR_MANIFEST_MAX_BYTES`, refused by
+ * the size of its header before any of it is read into memory
  */
 export async function readTarManifest(filePath: string): Promise<TarManifest | null> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const extractor = extract();
         let manifestFound = false;
         const readStream = createReadStream(filePath);
 
         extractor.on("entry", (header, stream, next) => {
             if (header.name === MANIFEST_FILENAME) {
+                // The header comes from the backup, so its size decides nothing but this refusal.
+                if ((header.size ?? 0) > TAR_MANIFEST_MAX_BYTES) {
+                    manifestFound = true;
+                    reject(new DamagedBackupError(`its manifest.json is ${header.size} bytes, more than the ${TAR_MANIFEST_MAX_BYTES} any backup writes`));
+                    readStream.destroy();
+                    extractor.destroy();
+                    return;
+                }
                 const chunks: Buffer[] = [];
+                let length = 0;
 
                 stream.on("data", (chunk: Buffer) => {
+                    length += chunk.length;
+                    if (length > TAR_MANIFEST_MAX_BYTES) {
+                        manifestFound = true;
+                        reject(new DamagedBackupError(`its manifest.json holds more than the ${TAR_MANIFEST_MAX_BYTES} bytes any backup writes`));
+                        readStream.destroy();
+                        extractor.destroy();
+                        return;
+                    }
                     chunks.push(chunk);
                 });
 
@@ -404,10 +405,9 @@ export async function readTarManifest(filePath: string): Promise<TarManifest | n
  */
 export async function createTempDir(prefix: string = "multidb-"): Promise<string> {
     const tmpBase = getTempDir();
-    const dirName = `${prefix}${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dirPath = path.join(tmpBase, dirName);
-    await fs.mkdir(dirPath, { recursive: true });
-    return dirPath;
+    await fs.mkdir(tmpBase, { recursive: true });
+    // mkdtemp picks a random name and fails rather than reuse a folder someone else made.
+    return fs.mkdtemp(path.join(tmpBase, prefix));
 }
 
 /**

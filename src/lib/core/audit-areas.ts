@@ -21,7 +21,8 @@ export const AUDIT_AREAS: AuditArea[] = [
     { id: "vault", label: "Vault", resources: [R.VAULT, R.CREDENTIAL] },
     { id: "templates", label: "Templates", resources: [R.TEMPLATE] },
     { id: "users", label: "Users", resources: [R.USER] },
-    { id: "groups", label: "Groups", resources: [R.GROUP] },
+    { id: "groups", label: "Groups", resources: [R.GROUP, R.PLATFORM_GROUP] },
+    { id: "tenants", label: "Tenants", resources: [R.TENANT] },
     { id: "apikeys", label: "API keys", resources: [R.API_KEY] },
     { id: "settings", label: "Settings", resources: [R.SYSTEM] },
 ];

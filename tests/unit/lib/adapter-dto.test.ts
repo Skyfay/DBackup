@@ -137,10 +137,36 @@ describe("toAdapterListItem (adapter list DTO)", () => {
         expect(dto.secretStatus.webhookUrl).toBe(true);
     });
 
+    it("keeps the extra headers of a Generic Webhook, which carry API keys, encrypted and out of the DTO", async () => {
+        const { encryptConfig, mergeSecrets, toAdapterListItem } = await getModules();
+        const headers = "X-Api-Key: SECRET_KEY:with:colons";
+        const encrypted = encryptConfig({ webhookUrl: "https://hooks.example.com/in", method: "POST", customHeaders: headers });
+        expect(encrypted.customHeaders).not.toBe(headers);
+
+        const dto = toAdapterListItem({ ...baseRow(JSON.stringify(encrypted)), type: "notification", adapterId: "generic-webhook" });
+        expect(JSON.stringify(dto)).not.toContain("SECRET_KEY");
+        const cfg = JSON.parse(dto.config);
+        expect("customHeaders" in cfg).toBe(false);
+        expect(cfg.method).toBe("POST");
+        expect(dto.secretStatus.customHeaders).toBe(true);
+
+        // An edit that leaves the field blank keeps the saved headers.
+        expect(mergeSecrets({ ...cfg, customHeaders: "" }, { customHeaders: headers }).customHeaders).toBe(headers);
+    });
+
     it("returns an empty config for unparseable stored config (no raw leak)", async () => {
         const { toAdapterListItem } = await getModules();
         const dto = toAdapterListItem(baseRow("not-json"));
         expect(dto.config).toBe("{}");
         expect(dto.secretStatus).toEqual({});
+    });
+
+    it("says why a connection reaches the server DBackup runs on, so the form opens it read-only for anyone but a platform admin", async () => {
+        const { encryptConfig, toAdapterListItem } = await getModules();
+        const row = (adapterId: string, config: Record<string, unknown>) => ({ ...baseRow(JSON.stringify(encryptConfig(config))), adapterId });
+
+        expect(toAdapterListItem(row("local-filesystem", { basePath: "/srv" })).hostLocal).toBe("Local Filesystem reaches the server DBackup runs on, which only a platform admin adds.");
+        expect(toAdapterListItem({ ...row("sqlite", { mode: "local", path: "/srv/app.db" }), type: "database" }).hostLocal).toContain("SQLite in local mode");
+        expect(toAdapterListItem(row("google-drive", { folderId: "root" })).hostLocal).toBeNull();
     });
 });

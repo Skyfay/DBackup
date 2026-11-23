@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUserWithGroup } from "@/lib/auth/access-control";
+import { getViewer } from "@/lib/auth/access-control";
 import {
     PageIdSchema,
     TableDefaultsSchema,
@@ -25,7 +25,7 @@ const log = logger.child({ action: "table-preferences" });
  * @no-permission-required - Self-service: the layout belongs to the signed-in user, and nobody can change another user's.
  */
 export async function saveTableLayout(tableId: string, preferences: TablePreferences | null) {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return { success: false, error: "Unauthorized" };
 
     const id = TableIdSchema.safeParse(tableId);
@@ -50,7 +50,7 @@ export async function saveTableLayout(tableId: string, preferences: TablePrefere
  * @no-permission-required - Self-service: the view belongs to the signed-in user, and nobody can change another user's.
  */
 export async function saveViewLayout(pageId: string, view: ViewMode) {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return { success: false, error: "Unauthorized" };
 
     const page = PageIdSchema.safeParse(pageId);
@@ -75,7 +75,7 @@ export async function saveViewLayout(pageId: string, view: ViewMode) {
  * @no-permission-required - Self-service: the defaults belong to the signed-in user, and nobody can change another user's.
  */
 export async function saveTableDefaults(defaults: TableDefaults) {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return { success: false, error: "Unauthorized" };
 
     const parsed = TableDefaultsSchema.safeParse(defaults);

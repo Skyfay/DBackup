@@ -15,6 +15,22 @@ export interface DownloadSelection {
 }
 
 interface DownloadToken {
+    /**
+     * A link for a command on another host, from `generateLinkToken`. The public download serves
+     * these alone, the other tokens belong to the session that asked for them.
+     */
+    kind?: "link";
+    /**
+     * The tenant the token was made in. A link is fetched without a session, so it is served in
+     * this tenant, and no other one finds its destination. A token a session collects itself is
+     * served in it too, and only to a request of the same tenant.
+     */
+    tenantId?: string;
+    /**
+     * The API key that made the token, none for a session. A token made with a key is collected
+     * only with that key, and a link only while the key may still download.
+     */
+    apiKeyId?: string;
     storageId: string;
     file: string;
     decrypt: boolean;
@@ -74,6 +90,12 @@ interface DownloadToken {
         fileName: string;
         contentType: string;
     };
+    /**
+     * The dump of a database a customer holds on a shared server. Collected through
+     * `/api/shared/download` alone, whose address names no destination, and only in the tenant
+     * of `tenantId`. The download of a destination never serves it.
+     */
+    shared?: boolean;
 }
 
 // Token validity: 5 minutes
@@ -96,33 +118,16 @@ if (!globalForTokens.downloadTokenStore) {
 const tokenStore = globalForTokens.downloadTokenStore;
 
 /**
- * Generate a new download token
- */
-export function generateDownloadToken(storageId: string, file: string, decrypt: boolean = true, database?: string): string {
-    const token = crypto.randomBytes(32).toString("hex");
-    const now = Date.now();
-
-    tokenStore.set(token, {
-        storageId,
-        file,
-        decrypt,
-        ...(database ? { database } : {}),
-        createdAt: now,
-        expiresAt: now + TOKEN_TTL_MS,
-        used: false
-    });
-
-    return token;
-}
-
-/**
  * A link for a command on another host: public, single-use and five minutes long. It records
  * who made it, so that user can ask whether it was fetched yet.
  */
 export function generateLinkToken(params: {
+    tenantId: string;
     storageId: string;
     file: string;
     userId: string;
+    /** The API key of the request, none for a session. */
+    apiKeyId?: string;
     decrypt: boolean;
     database?: string;
     pick?: DownloadToken["pick"];
@@ -131,6 +136,9 @@ export function generateLinkToken(params: {
     const now = Date.now();
 
     tokenStore.set(token, {
+        kind: "link",
+        tenantId: params.tenantId,
+        ...(params.apiKeyId ? { apiKeyId: params.apiKeyId } : {}),
         storageId: params.storageId,
         file: params.file,
         decrypt: params.decrypt,
@@ -145,13 +153,37 @@ export function generateLinkToken(params: {
     return { token, expiresAt: now + TOKEN_TTL_MS };
 }
 
+/** Who asks for a token: the tenant of the request and its API key, none for a session. */
+export interface TokenMaker {
+    tenantId: string | null;
+    apiKeyId?: string;
+}
+
+/**
+ * Whether a token was made by a request like this one: in the same tenant and with the same API
+ * key, or with none for a session. A token is collected by the request that asked for it, so one
+ * made in another tenant or with another key reads like one that ran out.
+ */
+export function madeBy(data: Pick<DownloadToken, "tenantId" | "apiKeyId">, maker: TokenMaker): boolean {
+    return (data.tenantId ?? null) === (maker.tenantId ?? null) && (data.apiKeyId ?? null) === (maker.apiKeyId ?? null);
+}
+
+/** A link with the tenant it is served in and the user who made it, which every link carries. */
+export type LinkToken = DownloadToken & { kind: "link"; tenantId: string; createdBy: string };
+
+function isLinkToken(data: DownloadToken): data is LinkToken {
+    return data.kind === "link" && typeof data.tenantId === "string" && typeof data.createdBy === "string";
+}
+
 /**
  * Takes a link for one request. It stays taken until that request ends: fetched in full it is
  * spent with `markTokenUsed`, broken off it is released for another try with `releaseLinkToken`.
+ * Any other token, which a download hands to the session that asked for it, reads like one that
+ * ran out.
  */
-export function claimLinkToken(token: string): DownloadToken | null {
+export function claimLinkToken(token: string): LinkToken | null {
     const data = consumeDownloadToken(token);
-    if (!data || data.claimed) return null;
+    if (!data || data.claimed || !isLinkToken(data)) return null;
     data.claimed = true;
     return data;
 }
@@ -164,10 +196,19 @@ export function releaseLinkToken(token: string): void {
 
 export type LinkState = "open" | "fetched" | "expired";
 
-/** Whether a link was fetched, for the user who made it and nobody else. */
-export function linkStatus(token: string, userId: string): { state: LinkState; expiresAt: number; fetchedAt?: number; fetchedFrom?: string } | null {
+/** Who asks for the state of a link: the user, the tenant and API key of the request, and the destination of the address. */
+export interface LinkViewer extends TokenMaker {
+    userId: string;
+    storageId: string;
+}
+
+/**
+ * Whether a link was fetched, for the request that made it and nobody else: the same user in the
+ * same tenant with the same API key or none, see `madeBy`, and asked at the destination of the link.
+ */
+export function linkStatus(token: string, viewer: LinkViewer): { state: LinkState; expiresAt: number; fetchedAt?: number; fetchedFrom?: string } | null {
     const data = tokenStore.get(token);
-    if (!data || data.createdBy !== userId) return null;
+    if (!data || data.createdBy !== viewer.userId || !madeBy(data, viewer) || data.storageId !== viewer.storageId) return null;
     const state: LinkState = data.used ? "fetched" : Date.now() > data.expiresAt ? "expired" : "open";
     return { state, expiresAt: data.expiresAt, ...(data.fetchedAt ? { fetchedAt: data.fetchedAt } : {}), ...(data.fetchedFrom ? { fetchedFrom: data.fetchedFrom } : {}) };
 }
@@ -213,6 +254,10 @@ export function generateSelectionDownloadToken(params: {
     storageId: string;
     file: string;
     userId: string;
+    /** The tenant of the request, which serves the download. */
+    tenantId?: string;
+    /** The API key of the request, none for a session. */
+    apiKeyId?: string;
     fileName: string;
     contentType?: string;
     selections?: DownloadSelection[];
@@ -226,6 +271,8 @@ export function generateSelectionDownloadToken(params: {
     tokenStore.set(token, {
         storageId: params.storageId,
         file: params.file,
+        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        ...(params.apiKeyId ? { apiKeyId: params.apiKeyId } : {}),
         decrypt: false,
         createdAt: now,
         expiresAt: now + TOKEN_TTL_MS,
@@ -249,14 +296,17 @@ export function generateSelectionDownloadToken(params: {
  *
  * Deliberately not consumed on use - a browser that retries or resumes the download would
  * otherwise fail on the second attempt. The short TTL and the owner check bound it instead,
- * so a leaked token is worthless without that user's session.
+ * so a leaked token is worthless without that user's session. With `maker`, only a request in
+ * the tenant and with the API key that made it collects it, see `madeBy`.
  */
 export function consumeSelectionDownloadToken(
     token: string,
-    userId: string
+    userId: string,
+    maker?: TokenMaker
 ): (DownloadToken & { selection: NonNullable<DownloadToken["selection"]> }) | null {
     const data = consumeDownloadToken(token);
     if (!data?.selection || data.selection.userId !== userId) return null;
+    if (maker && !madeBy(data, maker)) return null;
     return data as DownloadToken & { selection: NonNullable<DownloadToken["selection"]> };
 }
 
@@ -273,6 +323,10 @@ export function generateFileDownloadToken(params: {
     storageId: string;
     file: string;
     userId: string;
+    /** The tenant of the request that prepared the file. */
+    tenantId?: string;
+    /** The API key of the request, none for a session. */
+    apiKeyId?: string;
     tempFile: string;
     fileName: string;
     contentType: string;
@@ -283,6 +337,8 @@ export function generateFileDownloadToken(params: {
     tokenStore.set(token, {
         storageId: params.storageId,
         file: params.file,
+        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        ...(params.apiKeyId ? { apiKeyId: params.apiKeyId } : {}),
         decrypt: true,
         createdAt: now,
         expiresAt: now + TOKEN_TTL_MS,
@@ -298,13 +354,56 @@ export function generateFileDownloadToken(params: {
     return token;
 }
 
-/** Resolves a prepared-file token for the session presenting it. */
+/**
+ * Resolves a prepared-file token for the session presenting it. With `maker`, only a request in
+ * the tenant and with the API key that prepared it collects it, see `madeBy`, so the permission
+ * check of that request holds for the tenant of the file.
+ */
 export function consumeFileDownloadToken(
     token: string,
-    userId: string
+    userId: string,
+    maker?: TokenMaker
 ): (DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> }) | null {
     const data = consumeDownloadToken(token);
-    if (!data?.localFile || data.localFile.userId !== userId) return null;
+    if (!data?.localFile || data.shared || data.localFile.userId !== userId) return null;
+    if (maker && !madeBy(data, maker)) return null;
+    return data as DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> };
+}
+
+/**
+ * Parks the dump of a shared database, already pulled out of the backup, for the customer to
+ * collect through `/api/shared/download?token=`. The destination stays in the token on the
+ * server, the address carries nothing but the token.
+ */
+export function generateSharedDownloadToken(params: {
+    storageId: string;
+    file: string;
+    tenantId: string;
+    /** The API key of the request, none for a session. */
+    apiKeyId?: string;
+    userId: string;
+    tempFile: string;
+    fileName: string;
+    contentType: string;
+}): string {
+    const { tenantId, ...file } = params;
+    const token = generateFileDownloadToken(file);
+    const data = tokenStore.get(token);
+    if (data) Object.assign(data, { tenantId, shared: true });
+    return token;
+}
+
+/**
+ * Resolves a shared dump's token for the user presenting it, in the tenant and with the API key,
+ * or none, that asked for it, see `madeBy`, never any other token.
+ */
+export function consumeSharedDownloadToken(
+    token: string,
+    userId: string,
+    maker: TokenMaker & { tenantId: string }
+): (DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> }) | null {
+    const data = consumeDownloadToken(token);
+    if (!data?.shared || !data.localFile || data.localFile.userId !== userId || !madeBy(data, maker)) return null;
     return data as DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> };
 }
 

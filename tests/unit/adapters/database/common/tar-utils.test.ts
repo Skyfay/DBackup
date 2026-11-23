@@ -3,7 +3,6 @@ import fs from "fs/promises";
 import path from "path";
 import {
     createMultiDbTar,
-    extractMultiDbTar,
     extractSelectedDatabases,
     isMultiDbTar,
     readTarManifest,
@@ -11,8 +10,11 @@ import {
     cleanupTempDir,
     shouldRestoreDatabase,
     getTargetDatabaseName,
+    TAR_MANIFEST_MAX_BYTES,
 } from "@/lib/adapters/database/common/tar-utils";
 import type { TarFileEntry } from "@/lib/adapters/database/common/types";
+import { buildUstarHeader } from "@/lib/archive/tar-blocks";
+import { DamagedBackupError } from "@/lib/archive/limits";
 
 describe("TAR Utils for Multi-DB Backups", () => {
     let tempDir: string;
@@ -104,78 +106,6 @@ describe("TAR Utils for Multi-DB Backups", () => {
         });
     });
 
-    describe("extractMultiDbTar", () => {
-        it("should extract TAR archive and return manifest + files", async () => {
-            // Create a TAR archive first
-            const file1Path = path.join(tempDir, "source_db1.sql");
-            await fs.writeFile(file1Path, "SELECT 1;");
-
-            const files: TarFileEntry[] = [
-                { name: "db1.sql", path: file1Path, dbName: "mydb", format: "sql" },
-            ];
-
-            const tarPath = path.join(tempDir, "test-extract.tar");
-            await createMultiDbTar(files, tarPath, { sourceType: "mysql" });
-
-            // Extract to a different directory
-            const extractDir = path.join(tempDir, "extracted");
-            const result = await extractMultiDbTar(tarPath, extractDir);
-
-            expect(result.manifest.version).toBe(1);
-            expect(result.manifest.databases).toHaveLength(1);
-            expect(result.files).toHaveLength(1);
-            expect(result.files[0]).toContain("db1.sql");
-
-            // Verify extracted file content
-            const extractedContent = await fs.readFile(result.files[0], "utf-8");
-            expect(extractedContent).toBe("SELECT 1;");
-        });
-
-        it("should throw error if manifest is missing", async () => {
-            // Create a TAR without manifest (raw tar)
-            const { pack } = await import("tar-stream");
-            const { createWriteStream } = await import("fs");
-            const { pipeline } = await import("stream/promises");
-
-            const tarPath = path.join(tempDir, "no-manifest.tar");
-            const tarPack = pack();
-            const outputStream = createWriteStream(tarPath);
-            const pipePromise = pipeline(tarPack, outputStream);
-
-            const entry = tarPack.entry({ name: "random.txt", size: 4 });
-            entry.end("test");
-            tarPack.finalize();
-            await pipePromise;
-
-            const extractDir = path.join(tempDir, "extract-fail");
-            await expect(extractMultiDbTar(tarPath, extractDir)).rejects.toThrow(
-                "TAR archive does not contain a manifest.json"
-            );
-        });
-
-        it("should reject with parse error when manifest contains invalid JSON", async () => {
-            const { pack } = await import("tar-stream");
-            const { createWriteStream } = await import("fs");
-            const { pipeline } = await import("stream/promises");
-
-            const tarPath = path.join(tempDir, "bad-manifest.tar");
-            const tarPack = pack();
-            const outputStream = createWriteStream(tarPath);
-            const pipePromise = pipeline(tarPack, outputStream);
-
-            const invalidJson = Buffer.from("{ not valid json !!!");
-            const entry = tarPack.entry({ name: "manifest.json", size: invalidJson.length });
-            entry.end(invalidJson);
-            tarPack.finalize();
-            await pipePromise;
-
-            const extractDir = path.join(tempDir, "bad-manifest-extract");
-            await expect(extractMultiDbTar(tarPath, extractDir)).rejects.toThrow(
-                "Failed to parse manifest"
-            );
-        });
-    });
-
     describe("isMultiDbTar", () => {
         it("should return true for valid Multi-DB TAR archive", async () => {
             const filePath = path.join(tempDir, "test.sql");
@@ -221,6 +151,15 @@ describe("TAR Utils for Multi-DB Backups", () => {
     });
 
     describe("readTarManifest", () => {
+        it("refuses a manifest.json larger than any backup writes by its header, before reading it", async () => {
+            // A header that claims 17 MB, followed by one block of it: the size alone decides.
+            const filePath = path.join(tempDir, "crafted.tar");
+            await fs.writeFile(filePath, Buffer.concat([buildUstarHeader("manifest.json", TAR_MANIFEST_MAX_BYTES + 1), Buffer.alloc(512, 0x20)]));
+
+            await expect(readTarManifest(filePath)).rejects.toBeInstanceOf(DamagedBackupError);
+            await expect(isMultiDbTar(filePath)).rejects.toThrow(/The backup is damaged: its manifest.json is/);
+        });
+
         it("should read manifest without extracting other files", async () => {
             const filePath = path.join(tempDir, "large.sql");
             // Create a "large" file

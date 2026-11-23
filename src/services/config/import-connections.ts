@@ -27,7 +27,7 @@ export async function importCredentialProfiles({ tx, data, ids }: ImportContext)
         // Encrypted again with the key of this DBackup.
         const profileData = { ...profile, data: encrypt(profile.data) };
 
-        const existingByName = await tx.credentialProfile.findUnique({ where: { name: profile.name } });
+        const existingByName = await tx.credentialProfile.findFirst({ where: { name: profile.name } });
         if (existingByName && existingByName.id !== profile.id) {
             const { id: _id, ...updateFields } = profileData;
             await tx.credentialProfile.update({ where: { id: existingByName.id }, data: updateFields });

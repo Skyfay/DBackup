@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DateDisplay } from "@/components/utils/date-display";
 import { cn } from "@/lib/utils";
 import type { UpcomingJob, UpcomingRun, UpcomingSchedule } from "@/services/dashboard/types";
+
+/** A job of the card, with its tenant, which All tenants names. */
 
 const RANGES = [12, 24, 48] as const;
 type Range = (typeof RANGES)[number];
@@ -34,8 +37,8 @@ function groupByMinute(runs: UpcomingRun[], jobsById: Map<string, UpcomingJob>):
     return Array.from(groups.values());
 }
 
-function namesList(jobs: UpcomingJob[]): string {
-    const names = [...new Set(jobs.map((job) => job.name))];
+function namesList(jobs: UpcomingJob[], label: (job: UpcomingJob) => string): string {
+    const names = [...new Set(jobs.map(label))];
     return names.length <= 4 ? names.join(", ") : `${names.slice(0, 4).join(", ")} and ${names.length - 4} more`;
 }
 
@@ -57,6 +60,13 @@ function When({ at, withDay }: { at: string; withDay: boolean }) {
  */
 export function UpcomingRuns({ schedule, className }: { schedule: UpcomingSchedule; className?: string }) {
     const [range, setRange] = useState<Range>(12);
+    // In All tenants the card holds the jobs of every tenant, so each names its tenant.
+    const { allTenants } = useTenantView();
+    const tenantName = useTenantName();
+    const label = (job: UpcomingJob) => {
+        const tenant = allTenants ? tenantName(job.tenantId) : null;
+        return tenant ? `${job.name} in ${tenant}` : job.name;
+    };
 
     const start = Date.parse(schedule.windowStart);
     const span = range * HOUR_MS;
@@ -156,7 +166,7 @@ export function UpcomingRuns({ schedule, className }: { schedule: UpcomingSchedu
                                     </TooltipTrigger>
                                     <TooltipContent side="top">
                                         <span className="block font-medium">
-                                            <When at={group.at} withDay={withDay} />: {namesList(group.jobs)}
+                                            <When at={group.at} withDay={withDay} />: {namesList(group.jobs, label)}
                                         </span>
                                         {failing && <span className="mt-0.5 block text-destructive">Its last run failed.</span>}
                                     </TooltipContent>
@@ -183,7 +193,7 @@ export function UpcomingRuns({ schedule, className }: { schedule: UpcomingSchedu
                             const job = jobsById.get(run.jobId);
                             return (
                                 <li key={`${run.jobId}-${run.at}`}>
-                                    {job?.name} at <When at={run.at} withDay={withDay} />
+                                    {job && label(job)} at <When at={run.at} withDay={withDay} />
                                     {job?.likelyToFail && ", its last run failed"}
                                 </li>
                             );

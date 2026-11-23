@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DropboxAdapter } from "@/lib/adapters/storage/dropbox";
+import { FileTooLargeError } from "@/lib/adapters/storage/common/read-limit";
 
 // --- Hoisted mocks (available in vi.mock factories) ---
 const { mockDbx, mockFs, mockCreateReadStream, capturedDropboxOpts } = vi.hoisted(() => ({
@@ -34,7 +35,12 @@ vi.mock("dropbox", () => {
             return mockDbx;
         }
     }
-    return { Dropbox: MockDropbox };
+    // The reads that bypass the SDK take a token of their own.
+    class MockDropboxAuth {
+        checkAndRefreshAccessToken() { return Promise.resolve(); }
+        getAccessToken() { return "test-token"; }
+    }
+    return { Dropbox: MockDropbox, DropboxAuth: MockDropboxAuth };
 });
 
 vi.mock("fs/promises", () => ({
@@ -432,33 +438,60 @@ describe("DropboxAdapter", () => {
     // read()
     // ====================================================================
     describe("read()", () => {
+        /** A response of the content endpoint, its body streamed in chunks. */
+        const contentResponse = (chunks: Buffer[], init: { status?: number; length?: number } = {}) => {
+            const body = new ReadableStream<Uint8Array>({
+                start(controller) {
+                    for (const chunk of chunks) controller.enqueue(new Uint8Array(chunk));
+                    controller.close();
+                },
+            });
+            const headers = new Headers();
+            if (init.length !== undefined) headers.set("content-length", String(init.length));
+            return new Response(body, { status: init.status ?? 200, headers });
+        };
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
         it("should return file content as string", async () => {
             const content = "meta json content";
-            mockDbx.filesDownload.mockResolvedValue({
-                result: { fileBinary: Buffer.from(content) },
-            });
+            const fetchMock = vi.fn().mockResolvedValue(contentResponse([Buffer.from(content)]));
+            vi.stubGlobal("fetch", fetchMock);
 
             const result = await DropboxAdapter.read!(validConfig, "backup.sql.meta.json");
 
             expect(result).toBe(content);
+            expect(JSON.parse(fetchMock.mock.calls[0][1].headers["Dropbox-API-Arg"]).path).toBe("/backups/backup.sql.meta.json");
         });
 
-        it("should return null on error", async () => {
-            mockDbx.filesDownload.mockRejectedValue(new Error("not found"));
+        it("should return null when the file is not there", async () => {
+            vi.stubGlobal("fetch", vi.fn().mockResolvedValue(contentResponse([Buffer.from("{}")], { status: 409 })));
 
             const result = await DropboxAdapter.read!(validConfig, "nonexistent.sql");
 
             expect(result).toBeNull();
         });
 
-        it("should return null when no file data received", async () => {
-            mockDbx.filesDownload.mockResolvedValue({
-                result: {},
-            });
+        it("should return null on error", async () => {
+            vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
 
-            const result = await DropboxAdapter.read!(validConfig, "backup.sql");
+            const result = await DropboxAdapter.read!(validConfig, "nonexistent.sql");
 
             expect(result).toBeNull();
+        });
+
+        it("refuses a file whose announced size passes the limit of the read", async () => {
+            vi.stubGlobal("fetch", vi.fn().mockResolvedValue(contentResponse([Buffer.alloc(10)], { length: 50 })));
+
+            await expect(DropboxAdapter.read!(validConfig, "big.meta.json", { maxBytes: 20 })).rejects.toBeInstanceOf(FileTooLargeError);
+        });
+
+        it("stops a body that sends more than the limit, whatever it announced", async () => {
+            vi.stubGlobal("fetch", vi.fn().mockResolvedValue(contentResponse([Buffer.alloc(16), Buffer.alloc(16)])));
+
+            await expect(DropboxAdapter.readBytes!(validConfig, "big.index", { maxBytes: 20 })).rejects.toBeInstanceOf(FileTooLargeError);
         });
     });
 
@@ -466,6 +499,29 @@ describe("DropboxAdapter", () => {
     // list()
     // ====================================================================
     describe("list()", () => {
+        it("strips the folder as Dropbox compares it, whatever its case and however it was typed", async () => {
+            for (const folderPath of ["Backups", "/BACKUPS/", "/backups//"]) {
+                mockDbx.filesListFolder.mockResolvedValue({
+                    result: {
+                        entries: [{
+                            ".tag": "file",
+                            name: "shop.tar",
+                            path_display: "/Backups/tenants/acme/shop.tar",
+                            path_lower: "/backups/tenants/acme/shop.tar",
+                            size: 10,
+                            server_modified: "2025-01-15T10:00:00Z",
+                        }],
+                        has_more: false,
+                        cursor: "cursor1",
+                    },
+                });
+
+                const files = await DropboxAdapter.list({ ...validConfig, folderPath }, "");
+
+                expect(files.map((file) => file.path), folderPath).toEqual(["tenants/acme/shop.tar"]);
+            }
+        });
+
         it("should list files recursively from configured folder", async () => {
             mockDbx.filesListFolder.mockResolvedValue({
                 result: {
@@ -580,6 +636,59 @@ describe("DropboxAdapter", () => {
             mockDbx.filesListFolder.mockRejectedValue(new Error("API error"));
 
             await expect(DropboxAdapter.list(validConfig, "")).rejects.toThrow("API error");
+        });
+    });
+
+    // ====================================================================
+    // list() of a subfolder that is not there yet
+    // ====================================================================
+    describe("list() of a subfolder nothing was written to yet", () => {
+        /** How the SDK rejects: a DropboxResponseError with the parsed body of the API. */
+        function dropboxFailure(status: number, summary: string, reason: Record<string, unknown>) {
+            return Object.assign(new Error(`Response failed with a ${status} code`), {
+                name: "DropboxResponseError",
+                status,
+                headers: {},
+                error: { error_summary: summary, error: reason },
+            });
+        }
+
+        const notFound = () => dropboxFailure(409, "path/not_found/..", { ".tag": "path", path: { ".tag": "not_found" } });
+
+        it("lists it as empty when Dropbox answers path/not_found", async () => {
+            mockDbx.filesListFolder.mockRejectedValue(notFound());
+
+            await expect(DropboxAdapter.list(validConfig, "tenants/t1")).resolves.toEqual([]);
+            expect(mockDbx.filesListFolder).toHaveBeenCalledWith(expect.objectContaining({ path: "/backups/tenants/t1" }));
+        });
+
+        it("still fails when the path names a file, not a folder", async () => {
+            mockDbx.filesListFolder.mockRejectedValue(
+                dropboxFailure(409, "path/not_folder/..", { ".tag": "path", path: { ".tag": "not_folder" } }));
+
+            await expect(DropboxAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("Response failed with a 409 code");
+        });
+
+        it("still fails on an expired authorization", async () => {
+            mockDbx.filesListFolder.mockRejectedValue(
+                dropboxFailure(401, "expired_access_token/", { ".tag": "expired_access_token" }));
+
+            await expect(DropboxAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("Response failed with a 401 code");
+        });
+
+        it("still fails a missing root, so the storage numbers keep their last values", async () => {
+            mockDbx.filesListFolder.mockRejectedValue(notFound());
+
+            await expect(DropboxAdapter.list(validConfig, "")).rejects.toThrow("Response failed with a 409 code");
+        });
+
+        it("still fails when the folder goes away while it is being read", async () => {
+            mockDbx.filesListFolder.mockResolvedValue({
+                result: { entries: [], has_more: true, cursor: "page-cursor" },
+            });
+            mockDbx.filesListFolderContinue.mockRejectedValue(notFound());
+
+            await expect(DropboxAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("Response failed with a 409 code");
         });
     });
 

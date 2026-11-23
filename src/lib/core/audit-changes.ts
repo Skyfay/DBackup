@@ -1,4 +1,4 @@
-import { areaOf, LEVEL_LABELS, permissionInfo, PERMISSION_AREAS, type AreaLevel } from "@/lib/auth/permission-areas";
+import { areaOf, LEVEL_LABELS, permissionInfo, PERMISSION_AREAS, PLATFORM_AREAS, type AreaLevel } from "@/lib/auth/permission-areas";
 import { AUDIT_ACTIONS } from "./audit-types";
 
 /**
@@ -39,7 +39,8 @@ export function changesOf(details: Record<string, unknown>): ChangeRow[] {
     for (const entry of areas) {
         if (!entry || typeof entry !== "object") continue;
         const { area, from, to } = entry as Record<string, unknown>;
-        const info = PERMISSION_AREAS.find((candidate) => candidate.id === area);
+        // The areas of a group of a tenant, and those on the platform of a platform group.
+        const info = PERMISSION_AREAS.find((candidate) => candidate.id === area) ?? PLATFORM_AREAS.find((candidate) => candidate.id === area);
         if (!info) continue;
         const inArea = (id: string) => areaOf(id)?.id === info.id;
         added.filter(inArea).forEach((id) => shown.add(id));
@@ -82,11 +83,19 @@ function rowLine(row: ChangeRow): string {
     return `${row.label} ${row.from ?? "none"} to ${row.to ?? "none"}`;
 }
 
+/** Why a sign-in failed, by the reason its entry keeps. */
+const FAILED_SIGN_IN_REASONS: Record<string, string> = {
+    unknown_email: "No account has this email",
+    wrong_password: "The password was wrong",
+    wrong_code: "The code of the second factor was wrong",
+    passkey_refused: "The passkey was not accepted",
+};
+
 /** What changed in one line under the sentence of an entry, or null when there is nothing to add. */
 export function changeSummary(action: string, details: Record<string, unknown>): string | null {
     if (action === AUDIT_ACTIONS.LOGIN_FAILED) {
         const reason = text(details.reason);
-        return reason === "unknown_email" ? "No account has this email" : reason === "wrong_password" ? "The password was wrong" : null;
+        return reason && Object.hasOwn(FAILED_SIGN_IN_REASONS, reason) ? FAILED_SIGN_IN_REASONS[reason] : null;
     }
     if (details.bulk === true && typeof details.requested === "number") {
         const failed = typeof details.failed === "number" ? details.failed : 0;

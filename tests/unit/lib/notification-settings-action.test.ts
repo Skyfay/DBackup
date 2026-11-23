@@ -81,6 +81,7 @@ describe("a test notification", () => {
 
         expect(await sendTestNotificationAction("restore_complete")).toEqual({ success: true, message: "Sent to 2 channels, 1 channel did not take it" });
         expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ eventType: "restore_complete" }), { test: true });
+        expect(mocks.audit).toHaveBeenCalledWith("manu", "EXECUTE", "SYSTEM", { name: "A restore finished", action: "notification_test", event: "restore_complete", sent: 2, failed: 1 }, undefined, { tenantId: "default" });
     });
 
     it("reports nothing sent as a failure, which it called a success before", async () => {

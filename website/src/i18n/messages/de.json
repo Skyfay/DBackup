@@ -85,14 +85,17 @@
     "q7": "Unter welcher Lizenz steht DBackup?",
     "a7": "GPL-3.0. Der Quellcode ist vollständig offen und auf GitHub verfügbar.",
     "q8": "Kann ich ein Backup an mehrere Speicherziele senden?",
-    "a8": "Ja. Jobs mit mehreren Zielen laden jedes Backup gleichzeitig zu mehreren Speicher-Adaptern hoch, für Redundanz oder Kopien außer Haus."
+    "a8": "Ja. Jobs mit mehreren Zielen laden jedes Backup gleichzeitig zu mehreren Speicher-Adaptern hoch, für Redundanz oder Kopien außer Haus.",
+    "q9": "Kann ein DBackup mehrere Kunden bedienen?",
+    "a9": "Ja. Mandanten halten die Verbindungen, Jobs, Backups, Schlüssel, Personen und das Audit-Log jedes Kunden getrennt, und Ihr Team arbeitet über Plattformgruppen in allen Mandanten oder in ausgewählten. Ein Mandant des MSP kann einzelne Datenbanken eines geteilten Servers an seine Kunden geben und seine Speicherziele und Kanäle mit ihnen teilen. Die Plattform legt fest, was jeder Mandant selbst anlegen darf und ob er das lokale Netzwerk erreicht. <tenants>Zur Anleitung für Mandanten</tenants>."
   },
   "home": {
     "featureDatabase": "Backups von {name}",
     "featureFiles": "Backups von Dateien und Ordnern",
     "featureEncryption": "AES-256-GCM-Verschlüsselung",
     "featureRetention": "Kompression und Aufbewahrungsregeln",
-    "featureRecovery": "Wiederherstellung ohne DBackup über das Recovery Kit"
+    "featureRecovery": "Wiederherstellung ohne DBackup über das Recovery Kit",
+    "featureTenants": "Mandanten für Managed Service Provider"
   },
   "blog": {
     "eyebrow": "Blog",
@@ -138,6 +141,10 @@
   },
   "roadmap": {
     "items": {
+      "tenants": {
+        "title": "Mandanten für MSPs",
+        "description": "Eine Instanz für viele Kunden, jeder mit eigenen Verbindungen, Jobs, Backups, Schlüsseln, Personen und Audit-Log. Plattformgruppen für das Team des MSP, Einladungslinks, Anmeldeanbieter pro Mandant, einzelne Datenbanken eines geteilten Servers für ihren Kunden, geteilte Speicherziele und Kanäle sowie eine Sperre des lokalen Netzwerks pro Mandant."
+      },
       "dbackup-agent": {
         "title": "DBackup Agent",
         "description": "Ein kleiner Container auf dem Zielhost, mit dem DBackup spricht, statt eine SSH-Sitzung zu öffnen, für Hosts, auf denen SSH-Zugang nicht infrage kommt. Dumps strömen weiterhin zu DBackup zurück und werden dort komprimiert und verschlüsselt. So verlassen der Schlüssel und die Zugangsdaten zum Speicher DBackup nie."
@@ -483,7 +490,23 @@
     "cmdExplorer": "Database Explorer öffnen",
     "cmdFailed": "Fehlgeschlagene Läufe zeigen",
     "cmdRecoveryKit": "Recovery Kit herunterladen",
-    "alertStorage": "E-Mail · Warnung zum Speicherlimit"
+    "alertStorage": "E-Mail · Warnung zum Speicherlimit",
+    "tenantsTitle": "Viele Kunden, eine Instanz",
+    "tenantsText": "Mandanten halten die Verbindungen, Jobs, Backups, Schlüssel, Personen und das Audit-Log jedes Kunden getrennt. Gebaut für MSPs, Agenturen und Hoster.",
+    "tenantsPlatformGroups": "Plattformgruppen für alle oder ausgewählte Mandanten",
+    "tenantsInvitations": "Einladungslinks und SSO pro Mandant",
+    "tenantsSharing": "Geteilte Datenbanken, Speicherziele und Kanäle",
+    "tenantsNetwork": "Lokales Netzwerk pro Mandant gesperrt",
+    "tenantsGuide": "Zur Anleitung für Mandanten",
+    "tenantsSwitcher": "Mandant wechseln",
+    "allTenants": "Alle Mandanten",
+    "tenantCount": "{count} Mandanten",
+    "tenantOf": "Mandant {index} von {total}",
+    "findTenant": "Mandant suchen",
+    "tenantStats": "{jobs} Jobs · {databases} Datenbanken",
+    "tenantShared": "{count} geteilt",
+    "sharesWithCustomers": "Teilt mit Kunden",
+    "tenantFailed": "Das neueste Backup ist fehlgeschlagen"
   },
   "liveRun": {
     "stepDump": "Datenbank nextcloud sichern",
@@ -589,7 +612,7 @@
     },
     "cards": {
       "postgres": {
-        "versions": "Versionen 12 bis 18",
+        "versions": "Versionen 12 bis 19",
         "text": "Dumps im Custom-Format mit pg_dump, komprimiert mit Gzip, LZ4 oder Zstd."
       },
       "mysql": {
@@ -748,7 +771,7 @@
         "description": "Selbst gehostete PostgreSQL-Backups mit pg_dump. Nach Zeitplan, komprimiert mit Gzip, LZ4 oder Zstd, mit AES-256-GCM-Verschlüsselung und abgelegt auf S3, SFTP, einem NAS oder in der Cloud. Open Source.",
         "heroTitle": "PostgreSQL-Backups, <shine>selbst gehostet und verschlüsselt.</shine>",
         "lead": "DBackup führt <code>pg_dump</code> nach Zeitplan aus, verschlüsselt die Dumps mit AES-256-GCM, wenn der Job einen Schlüssel hat, und legt sie auf dem Speicher Ihrer Wahl ab. Direkt oder über SSH, mit der Wiederherstellung in derselben App.",
-        "fact1Value": "PostgreSQL 12 bis 18",
+        "fact1Value": "PostgreSQL 12 bis 19",
         "fact1Label": "pg_dump 18 ist im Image enthalten",
         "fact2Value": "Custom-Format",
         "fact2Label": "Wiederhergestellt mit pg_restore",
@@ -770,7 +793,7 @@
         "userTitle": "Backup-Benutzer anlegen",
         "userText": "Für das Backup reicht Lesen. Braucht eine Wiederherstellung mehr, fragt die App einmalig nach einem Admin-Login.",
         "q1": "Welche PostgreSQL-Versionen unterstützt DBackup?",
-        "a1": "PostgreSQL 12 bis 18. Das Image bringt pg_dump aus PostgreSQL 18 mit, das jeden älteren Server in diesem Bereich liest. Über SSH arbeitet das pg_dump auf Ihrem Server.",
+        "a1": "PostgreSQL 12 bis 19. Das Image bringt pg_dump aus PostgreSQL 19 mit, das jeden älteren Server in diesem Bereich liest. Über SSH arbeitet das pg_dump auf Ihrem Server.",
         "q2": "Enthält das Backup Rollen und Tablespaces?",
         "a2": "Nein. DBackup führt pg_dump für jede Datenbank aus und nie pg_dumpall, also sind Rollen und Tablespaces nicht im Backup. Eine Wiederherstellung lässt Besitzer und Rechte weg, die wiederhergestellten Objekte gehören also dem Login, der sie wiederherstellt.",
         "q3": "Kann DBackup einen Server sichern, den es nicht direkt erreicht?",

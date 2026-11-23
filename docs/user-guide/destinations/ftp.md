@@ -15,6 +15,7 @@ FTP requires a [Credential Profile](/user-guide/security/credential-profiles) of
 | **Port** | FTP port | `21` | ❌ |
 | **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
 | **TLS** | Enable explicit FTPS (FTP over TLS) | `false` | ❌ |
+| **Trust the server certificate** | Accept the certificate of the FTPS server without checking it, for a self-signed one | `false` | ❌ |
 | **Folder** | Remote directory for backups. The folder button beside it browses the server from its top once the connection and its login are filled in | - | ❌ |
 
 ## Setup Guide
@@ -35,6 +36,11 @@ Plain FTP transfers credentials and data unencrypted. **Always enable TLS** when
 ## How It Works
 
 - When TLS is enabled, DBackup uses explicit FTPS (AUTH TLS) - the connection upgrades from plain to encrypted
+- With TLS, DBackup checks the certificate of the server against the trusted authorities and its name, unless **Trust the server certificate** is on
+
+::: info FTPS connections saved before the switch existed
+Earlier versions accepted every certificate of an FTPS server. A connection saved then keeps doing so, and its form shows **Trust the server certificate** on, so no backup stops. Turn it off once the server has a certificate DBackup can check. A new connection checks the certificate unless you turn it on.
+:::
 - DBackup creates subdirectories per job within the folder automatically
 - All credentials are stored AES-256-GCM encrypted in the database
 
@@ -63,6 +69,14 @@ SSL routines / handshake failure
 ```
 
 **Solution:** Ensure the server supports explicit FTPS (AUTH TLS). Implicit FTPS (port 990) is not supported - use explicit mode on port 21.
+
+### Certificate Not Trusted
+
+```
+self-signed certificate / unable to verify the first certificate / Hostname/IP does not match certificate's altnames
+```
+
+**Solution:** The server's certificate is self-signed, misses its intermediate certificate or names another host. Give the server a certificate for the name in **Host**, or turn on **Trust the server certificate** if you accept an unchecked one.
 
 ### Passive Mode Issues
 

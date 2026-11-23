@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { DatabaseExplorer } from "@/components/dashboard/explorer/database-explorer";
 import { DATABASES_PAGE_ID } from "@/components/dashboard/explorer/explorer-ids";
-import { checkPermission, getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
+import { TenantKeyed } from "@/components/tenant/tenant-keyed";
+import { redirectWithoutTenant } from "@/app/dashboard/no-tenant-redirect";
+import { redirectWithoutRight } from "@/app/dashboard/right-redirect";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getViewMode } from "@/services/user/preference-service";
 
@@ -12,25 +14,28 @@ export const metadata: Metadata = { title: "Database Explorer" };
 export const dynamic = "force-dynamic";
 
 export default async function ExplorerPage() {
-    await checkPermission(PERMISSIONS.SOURCES.VIEW);
-    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
-    const view = user ? await getViewMode(user.id, DATABASES_PAGE_ID) : null;
+    await redirectWithoutTenant();
+    const { id, permissions } = await redirectWithoutRight(PERMISSIONS.SOURCES.VIEW);
+    const view = await getViewMode(id, DATABASES_PAGE_ID);
 
     return (
         <>
             {/* The header bar already names the page in its breadcrumb. */}
             <h1 className="sr-only">Database Explorer</h1>
             <Suspense>
-                <DatabaseExplorer
-                    canOpenBackups={permissions.includes(PERMISSIONS.STORAGE.READ)}
-                    canRestore={permissions.includes(PERMISSIONS.STORAGE.RESTORE)}
-                    canDownload={permissions.includes(PERMISSIONS.STORAGE.DOWNLOAD)}
-                    canDelete={permissions.includes(PERMISSIONS.STORAGE.DELETE)}
-                    canManageVault={permissions.includes(PERMISSIONS.VAULT.WRITE)}
-                    canViewHistory={permissions.includes(PERMISSIONS.HISTORY.READ)}
-                    canExecute={permissions.includes(PERMISSIONS.JOBS.EXECUTE)}
-                    initialView={view ?? "table"}
-                />
+                {/* A switch into a tenant on this page loads the databases of that tenant at once. */}
+                <TenantKeyed>
+                    <DatabaseExplorer
+                        canOpenBackups={permissions.includes(PERMISSIONS.STORAGE.READ)}
+                        canRestore={permissions.includes(PERMISSIONS.STORAGE.RESTORE)}
+                        canDownload={permissions.includes(PERMISSIONS.STORAGE.DOWNLOAD)}
+                        canDelete={permissions.includes(PERMISSIONS.STORAGE.DELETE)}
+                        canManageVault={permissions.includes(PERMISSIONS.VAULT.WRITE)}
+                        canViewHistory={permissions.includes(PERMISSIONS.HISTORY.READ)}
+                        canExecute={permissions.includes(PERMISSIONS.JOBS.EXECUTE)}
+                        initialView={view ?? "table"}
+                    />
+                </TenantKeyed>
             </Suspense>
         </>
     );

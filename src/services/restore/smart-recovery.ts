@@ -1,8 +1,10 @@
-import { createReadStream } from "fs";
+import { createNoFollowReadStream } from "@/lib/server/no-follow";
 import crypto from "crypto";
 import { CompressionType } from "@/lib/crypto/compression";
+import { GCM_TAG_LENGTH, assertAuthTagLength } from "@/lib/crypto/gcm-tag";
 import {
     KeyOverride,
+    KeyRefusal,
     KeyResolutionLog,
     KeyVerifier,
     resolveBackupKey,
@@ -40,12 +42,15 @@ export async function resolveDecryptionKey(
     compressionMeta: CompressionType | undefined,
     log: LogFn,
     override?: KeyOverride,
+    /** The profiles that may not open this file for its caller, see `wholeFileKeyRefusal`. */
+    refuse?: KeyRefusal,
 ): Promise<Buffer> {
     return resolveBackupKey({
         profileId: encryptionMeta.profileId,
         override,
         verify: legacyStreamVerifier(encryptionMeta, tempFile, compressionMeta),
         log,
+        refuse,
     });
 }
 
@@ -85,7 +90,8 @@ function checkKeyCandidate(
     return new Promise((resolve) => {
         try {
             const chunks: Buffer[] = [];
-            const input = createReadStream(tempFile, { start: 0, end: HEAD_PROBE_SIZE - 1 });
+            // The download, never a file a link of it points at, see `downloaded-file.ts`.
+            const input = createNoFollowReadStream(tempFile, { start: 0, end: HEAD_PROBE_SIZE - 1 });
 
             input.on('error', () => resolve(false));
             input.on('data', (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
@@ -111,12 +117,16 @@ function checkDecryptedHead(
         // Use crypto.Decipher.update() directly.
         // We intentionally skip final() so that auth-tag verification is never
         // triggered on this partial 1 KB slice (the tag covers the full file).
+        // A tag of another length than DBackup writes is refused, the file is no backup of it.
+        const authTag = Buffer.from(encryptionMeta.authTag, 'hex');
+        assertAuthTagLength(authTag);
         const decipher = crypto.createDecipheriv(
             'aes-256-gcm',
             candidateKey,
-            Buffer.from(encryptionMeta.iv, 'hex')
+            Buffer.from(encryptionMeta.iv, 'hex'),
+            { authTagLength: GCM_TAG_LENGTH }
         );
-        decipher.setAuthTag(Buffer.from(encryptionMeta.authTag, 'hex'));
+        decipher.setAuthTag(authTag);
 
         return isValidDecryptedContent(decipher.update(head), compressionMeta);
     } catch (_e) {

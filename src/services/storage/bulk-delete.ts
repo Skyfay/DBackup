@@ -8,16 +8,16 @@
  * fifty cache writes to reach one outcome.
  */
 
-import prisma from "@/lib/prisma";
-import { registry } from "@/lib/core/registry";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { StorageAdapter } from "@/lib/core/interfaces";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { ConflictError, ServiceError, wrapError } from "@/lib/logging/errors";
+import { userMessage } from "@/lib/logging/user-message";
 import { sidecarPathsFor, chainFolderOf } from "@/lib/core/backup-files";
-import { emptyBulkResult, type BulkResult } from "@/lib/core/bulk";
+import { BULK_ROW_FAILED, emptyBulkResult, type BulkResult } from "@/lib/core/bulk";
 import { storageService, type RichFileInfo } from "./storage-service";
 import { orderPathsForDelete, dependentsOf, fileNameOf } from "./bulk-delete-order";
+import { openDestination } from "@/services/sharing/destination-access";
+import { assertBackupPath, assertFilePath } from "@/lib/tenant/storage-view";
 
 const log = logger.child({ service: "StorageBulkDelete" });
 
@@ -28,14 +28,8 @@ interface ResolvedDestination {
 
 /** Resolves the adapter and its decrypted config once for the whole batch. */
 async function resolveDestination(adapterConfigId: string): Promise<ResolvedDestination> {
-    const adapterConfig = await prisma.adapterConfig.findUnique({ where: { id: adapterConfigId } });
-    if (!adapterConfig) throw new Error(`Storage configuration with ID ${adapterConfigId} not found.`);
-    if (adapterConfig.type !== "storage") throw new Error(`Adapter configuration ${adapterConfigId} is not a storage adapter.`);
-
-    const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-    if (!adapter) throw new Error(`Storage adapter implementation '${adapterConfig.adapterId}' not found in registry.`);
-
-    return { adapter, config: await resolveAdapterConfig(adapterConfig) };
+    const { adapter, config } = await openDestination(adapterConfigId);
+    return { adapter, config };
 }
 
 /** Indexes the destination's listing by path, for the lock check. */
@@ -75,8 +69,12 @@ export async function deleteBackupsBulk(adapterConfigId: string, filePaths: stri
         const name = () => listing.get(filePath)?.name ?? fileNameOf(filePath);
 
         try {
+            // A storage like WebDAV deletes a folder with everything in it, so the root never goes.
+            assertFilePath(filePath);
+            // Nor a path that leaves the destination, which a destination nobody shares hands on as it is.
+            assertBackupPath(filePath);
             if (listing.get(filePath)?.locked) {
-                throw new Error("This backup is locked. Unlock it before deleting.");
+                throw new ConflictError("This backup is locked. Unlock it before deleting.");
             }
 
             const folder = chainFolderOf(filePath);
@@ -88,7 +86,7 @@ export async function deleteBackupsBulk(adapterConfigId: string, filePaths: stri
                 const removed = removedByFolder.get(folder) ?? new Set<string>();
                 const blockers = dependentsOf(siblingsByFolder.get(folder) ?? [], fileNameOf(filePath), removed);
                 if (blockers.length > 0) {
-                    throw new Error(
+                    throw new ConflictError(
                         `This backup is part of an incremental chain that ${blockers.length} later backup(s) still build on: ` +
                         `${blockers.slice(0, 3).join(", ")}${blockers.length > 3 ? ", ..." : ""}. ` +
                         `Select the whole chain, or let retention remove it as a unit.`
@@ -97,7 +95,7 @@ export async function deleteBackupsBulk(adapterConfigId: string, filePaths: stri
             }
 
             const removedMain = await adapter.delete(config as never, filePath);
-            if (!removedMain) throw new Error("The storage provider did not delete this file.");
+            if (!removedMain) throw new ServiceError("StorageBulkDelete", "delete", "The storage provider did not delete this file.");
 
             for (const sidecar of sidecarPathsFor(filePath)) {
                 try {
@@ -116,7 +114,8 @@ export async function deleteBackupsBulk(adapterConfigId: string, filePaths: stri
             deleted.push(filePath);
             result.succeeded.push(filePath);
         } catch (e: unknown) {
-            result.failed.push({ id: filePath, name: name(), error: getErrorMessage(e) });
+            // The words of the provider may name its hosts and paths, so they stay in the log.
+            result.failed.push({ id: filePath, name: name(), error: userMessage(e, BULK_ROW_FAILED, log, "A backup of a bulk delete failed", { adapterConfigId, filePath }) });
         }
     }
 
@@ -150,7 +149,7 @@ export async function setBackupsLocked(
             });
             result.succeeded.push(filePath);
         } catch (e: unknown) {
-            result.failed.push({ id: filePath, name: fileNameOf(filePath), error: getErrorMessage(e) });
+            result.failed.push({ id: filePath, name: fileNameOf(filePath), error: userMessage(e, BULK_ROW_FAILED, log, "A backup of a bulk lock failed", { adapterConfigId, filePath }) });
         }
     }
 

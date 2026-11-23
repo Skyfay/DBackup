@@ -1,16 +1,19 @@
 import type { ExecutionHost } from "@/lib/transport";
 import { PostgresConfig } from "@/lib/adapters/definitions";
 import { TableInfo, ColumnInfo, TableDataOptions, TableDataResult } from "@/lib/core/interfaces";
-import { PSQL, buildConnectionArgs, pgEnv } from "./args";
+import { PSQL, buildConnectionArgs, catalogEnv, pgEnv, dbArg, sqlLiteral } from "./args";
 
 /** Sanitize a PostgreSQL identifier for double-quote quoting. */
 function escapePgIdentifier(name: string): string {
     return name.replace(/"/g, '""').replace(/\0/g, "");
 }
 
-/** Sanitize a string value for use in a single-quoted SQL literal. */
-function escapePgLiteral(value: string): string {
-    return value.replace(/'/g, "''").replace(/\0/g, "");
+/**
+ * A string value as a whole SQL literal, in the `E''` form of `sqlLiteral`, so a backslash stays
+ * inside it whatever `standard_conforming_strings` says. A NUL is dropped, no text holds one.
+ */
+function pgLiteral(value: string): string {
+    return sqlLiteral(value.replace(/\0/g, ""));
 }
 
 const tablesQuery = (db: string) => `
@@ -19,7 +22,7 @@ const tablesQuery = (db: string) => `
         COALESCE(pg_total_relation_size(quote_ident(t.table_schema) || '.' || quote_ident(t.table_name)), 0) AS total_bytes
     FROM information_schema.tables t
     LEFT JOIN pg_stat_user_tables s ON s.schemaname = t.table_schema AND s.relname = t.table_name
-    WHERE t.table_catalog = '${escapePgLiteral(db)}'
+    WHERE t.table_catalog = ${pgLiteral(db)}
       AND t.table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
     ORDER BY t.table_schema, t.table_name
 `.trim();
@@ -28,11 +31,11 @@ const columnsQuery = (db: string, table: string) => `
     SELECT column_name, data_type, is_nullable, CASE WHEN column_name IN (
         SELECT kcu.column_name FROM information_schema.table_constraints tc
         JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-        WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_catalog = '${escapePgLiteral(db)}' AND tc.table_name = '${escapePgLiteral(table)}'
+        WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_catalog = ${pgLiteral(db)} AND tc.table_name = ${pgLiteral(table)}
     ) THEN 'PRI' ELSE '' END AS column_key, column_default
     FROM information_schema.columns
-    WHERE table_catalog = '${escapePgLiteral(db)}'
-      AND table_name = '${escapePgLiteral(table)}'
+    WHERE table_catalog = ${pgLiteral(db)}
+      AND table_name = ${pgLiteral(table)}
       AND table_schema NOT IN ('pg_catalog', 'information_schema')
     ORDER BY ordinal_position
 `.trim();
@@ -95,8 +98,9 @@ function parseDataRows(
 export async function getTables(config: PostgresConfig, database: string, host: ExecutionHost): Promise<TableInfo[]> {
     const psql = await host.which(...PSQL);
     const result = await host.exec(
-        [psql, ...buildConnectionArgs(config), "-d", database, "-t", "-A", "-F", "\t", "-c", tablesQuery(database)],
-        { env: pgEnv(config.password) },
+        [psql, ...buildConnectionArgs(config), "-d", dbArg(database), "-t", "-A", "-F", "\t", "-c", tablesQuery(database)],
+        // Names only the catalog, so no object of the owner of the database runs in the session of the login.
+        { env: catalogEnv(config.password) },
     );
     if (result.code !== 0) {
         throw new Error(`Failed to list tables: ${result.stderr.trim()}`);
@@ -112,31 +116,37 @@ export async function getTableData(
     const { database, table, page, pageSize, sortBy, sortDir, search, searchColumn, matchMode } = options;
     const offset = (page - 1) * pageSize;
     const tblId = `"${escapePgIdentifier(table)}"`;
+    // The table is found by the search path of the database, like the user expects. Every function,
+    // type and operator is named in pg_catalog, so one of the owner of the database by the same name
+    // earlier in that path never runs in the session of the login.
+    const column = (name: string) => `"${escapePgIdentifier(name)}"::pg_catalog.text`;
     const whereClause = (search && searchColumn)
         ? matchMode === "equals"
-            ? ` WHERE "${escapePgIdentifier(searchColumn)}"::text = '${escapePgLiteral(search)}'`
+            ? ` WHERE ${column(searchColumn)} OPERATOR(pg_catalog.=) ${pgLiteral(search)}`
             : matchMode === "starts"
-            ? ` WHERE "${escapePgIdentifier(searchColumn)}"::text ILIKE '${escapePgLiteral(search)}%'`
+            ? ` WHERE ${column(searchColumn)} OPERATOR(pg_catalog.~~*) ${pgLiteral(`${search}%`)}`
             : matchMode === "ends"
-            ? ` WHERE "${escapePgIdentifier(searchColumn)}"::text ILIKE '%${escapePgLiteral(search)}'`
-            : ` WHERE "${escapePgIdentifier(searchColumn)}"::text ILIKE '%${escapePgLiteral(search)}%'`
+            ? ` WHERE ${column(searchColumn)} OPERATOR(pg_catalog.~~*) ${pgLiteral(`%${search}`)}`
+            : ` WHERE ${column(searchColumn)} OPERATOR(pg_catalog.~~*) ${pgLiteral(`%${search}%`)}`
         : "";
     const sortClause = sortBy
         ? ` ORDER BY "${escapePgIdentifier(sortBy)}" ${sortDir === "desc" ? "DESC" : "ASC"} NULLS LAST`
         : "";
 
     const colQuery = columnsQuery(database, table);
-    const countQuery = `SELECT COUNT(*) FROM ${tblId}${whereClause}`;
+    const countQuery = `SELECT pg_catalog.COUNT(*) FROM ${tblId}${whereClause}`;
     const dataQuery = `SELECT * FROM ${tblId}${whereClause}${sortClause} LIMIT ${pageSize} OFFSET ${offset}`;
 
     const psql = await host.which(...PSQL);
-    const base = [psql, ...buildConnectionArgs(config), "-d", database, "-t", "-A", "-F", "\t"];
+    const base = [psql, ...buildConnectionArgs(config), "-d", dbArg(database), "-t", "-A", "-F", "\t"];
     const env = pgEnv(config.password);
+    // The columns query names only the catalog, see `getTables`.
+    const catalog = catalogEnv(config.password);
 
     // Three concurrent queries. Over SSH each one is a separate channel, which
     // the transport caps so a wide fan-out cannot exhaust the server session limit.
     const [colResult, countResult, dataResult] = await Promise.all([
-        host.exec([...base, "-c", colQuery], { env }),
+        host.exec([...base, "-c", colQuery], { env: catalog }),
         host.exec([...base, "-c", countQuery], { env }),
         host.exec([...base, "-c", dataQuery], { env }),
     ]);

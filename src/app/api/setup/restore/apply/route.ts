@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { applyCheckedRestore, hasNoAccountYet } from "@/services/config/restore-flow";
 
@@ -32,6 +32,6 @@ export async function POST(req: NextRequest) {
     } catch (error: unknown) {
         if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
         log.error("A configuration restore on the sign-up page failed", {}, wrapError(error));
-        return NextResponse.json({ success: false, error: getErrorMessage(error) || "The restore failed." }, { status: 500 });
+        return NextResponse.json({ success: false, error: "The restore failed. The log of DBackup has the details." }, { status: 500 });
     }
 }

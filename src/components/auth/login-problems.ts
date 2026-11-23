@@ -1,3 +1,5 @@
+import { domainOfEmail } from "@/lib/auth/sso-domain";
+
 /**
  * What went wrong at a sign-in, in the words of the login page. The page says it at the field or
  * on top of the step, where it stays until the next try, instead of in a message that disappears.
@@ -27,9 +29,29 @@ const SSO_PROBLEMS: Record<string, LoginProblem> = {
         title: "Account not linked",
         text: "An account with this email exists, but it is not linked to this provider yet. An admin links it under Users & Groups.",
     },
+    sso_email_unconfirmed: {
+        title: "Email not confirmed",
+        text: "An account here has this email, but the provider does not confirm it, so DBackup does not link the two. The admin of the provider has it mark emails as verified, like Emails verified by default in Pocket ID.",
+    },
     sso_link_mismatch: {
         title: "Account not connected",
         text: "This identity belongs to another account. Sign in to the provider with the email of your DBackup account, then try again.",
+    },
+    sso_tenant_not_member: {
+        title: "Not a member here yet",
+        text: "This provider signs in only the people of its tenant. An admin of the tenant adds you under Users & Groups first.",
+    },
+    sso_tenant_refused: {
+        title: "Not through this provider",
+        text: "This provider signs in only emails of its own domain. Sign in another way.",
+    },
+    sso_tenant_shared_account: {
+        title: "Not through this provider",
+        text: "This provider signs in only accounts that work in its tenant alone. Your account works in other tenants or on the platform too, so sign in with your password, a passkey or the provider of the platform.",
+    },
+    sso_tenant_domain: {
+        title: "Your organization has its own sign-in",
+        text: "Your email belongs to an organization that signs in through its own provider. Enter your email above to sign in through it.",
     },
     sso_error: { title: "Sign-in failed", text: "The provider answered with an error. Try again." },
 };
@@ -62,7 +84,7 @@ export function codeError(error: AuthError, backup: boolean): string {
 
 /** The provider an email belongs to by its domain, if one claims it. */
 export function providerOfEmail<T extends { domain: string | null }>(providers: T[], email: string): T | undefined {
-    const domain = email.trim().split("@")[1]?.toLowerCase();
+    const domain = domainOfEmail(email);
     if (!domain) return undefined;
     return providers.find((provider) => provider.domain?.toLowerCase() === domain);
 }

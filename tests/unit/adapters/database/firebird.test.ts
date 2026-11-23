@@ -32,7 +32,7 @@ import {
     ping,
 } from "@/lib/adapters/database/firebird/connection";
 import { dump } from "@/lib/adapters/database/firebird/dump";
-import { restore } from "@/lib/adapters/database/firebird/restore";
+import { restore, restoreOne } from "@/lib/adapters/database/firebird/restore";
 import { analyzeDump } from "@/lib/adapters/database/firebird/analyze";
 import type { HostKind } from "@/lib/transport/types";
 
@@ -103,6 +103,28 @@ describe.each<HostKind>(["direct", "ssh"])("Firebird over a %s host", (kind) => 
             expect(await getDatabasesWithStats(baseConfig as never, host)).toEqual([
                 { name: "shop", path: "/var/lib/firebird/shop.fdb", tableCount: 12 },
             ]);
+        });
+
+        it("reads without the triggers of the database, and with them for a login that may not skip them", async () => {
+            const host = firebirdHost(kind, {
+                onExec: (argv) => (argv.includes("-nodbtriggers") ? { code: 1, stderr: "System privilege IGNORE_DB_TRIGGERS is missing" } : { stdout: "  12  \n" }),
+            });
+
+            expect(await getDatabasesWithStats(baseConfig as never, host)).toEqual([
+                { name: "shop", path: "/var/lib/firebird/shop.fdb", tableCount: 12 },
+            ]);
+            expect(host.calls.exec.map((argv) => argv.includes("-nodbtriggers"))).toEqual([true, false]);
+        });
+
+        it("reads with the triggers for a login of Firebird 3, which only says who may skip them", async () => {
+            const host = firebirdHost(kind, {
+                onExec: (argv) => (argv.includes("-nodbtriggers") ? { code: 1, stderr: "Statement failed, SQLSTATE = 28000\nUnable to perform operation.  You must be either SYSDBA or owner of the database" } : { stdout: "  12  \n" }),
+            });
+
+            expect(await getDatabasesWithStats(baseConfig as never, host)).toEqual([
+                { name: "shop", path: "/var/lib/firebird/shop.fdb", tableCount: 12 },
+            ]);
+            expect(host.calls.exec.map((argv) => argv.includes("-nodbtriggers"))).toEqual([true, false]);
         });
 
         it("falls back to a path-only entry when the query fails", async () => {
@@ -205,6 +227,35 @@ describe.each<HostKind>(["direct", "ssh"])("Firebird over a %s host", (kind) => 
             expect(seenEnv?.ISC_PASSWORD).toBe("masterkey");
         });
 
+        it("attaches without the triggers of the database, which whoever holds it writes", async () => {
+            const host = createFakeHost({ kind, onSpawn: (argv) => (argv.includes("-z") ? { stdout: "gbak: Firebird 5.0" } : { code: 0 }) });
+
+            await dump({ ...baseConfig, database: "shop" } as never, "/tmp/out.fbk", host);
+
+            const backups = host.calls.spawn.filter((argv) => argv.includes("-b"));
+            expect(backups).toHaveLength(1);
+            expect(backups[0]).toContain("-nodbtriggers");
+        });
+
+        it("attaches with the triggers once more when the login may not skip them", async () => {
+            const host = createFakeHost({
+                kind,
+                onSpawn: (argv) => {
+                    if (argv.includes("-z")) return { stdout: "gbak: Firebird 5.0" };
+                    return argv.includes("-nodbtriggers") ? { code: 1, stderr: "System privilege IGNORE_DB_TRIGGERS is missing" } : { code: 0 };
+                },
+            });
+            const logs: string[] = [];
+
+            const result = await dump({ ...baseConfig, database: "shop" } as never, "/tmp/out.fbk", host, (message) => logs.push(message));
+
+            expect(result.error).toBeUndefined();
+            expect(result.success).toBe(true);
+            const backups = host.calls.spawn.filter((argv) => argv.includes("-b"));
+            expect(backups.map((argv) => argv.includes("-nodbtriggers"))).toEqual([true, false]);
+            expect(logs.some((line) => line.includes("IGNORE_DB_TRIGGERS"))).toBe(true);
+        });
+
         it("fails with a clear error for an unknown alias", async () => {
             const result = await dump({ ...baseConfig, database: "nope" } as never, "/tmp/out.fbk", firebirdHost(kind));
 
@@ -271,6 +322,46 @@ describe.each<HostKind>(["direct", "ssh"])("Firebird over a %s host", (kind) => 
 
             const result = await restore({ ...baseConfig, database: "shop" } as never, "/tmp/in.fbk", host);
             expect(result.success).toBe(false);
+        });
+    });
+
+    describe("restoreOne()", () => {
+        // The restore of a shared database names the database, which on Firebird is an alias.
+        it("restores into the configured path of an alias the target names", async () => {
+            const host = firebirdHost(kind, { onSpawn: () => ({ code: 0 }) });
+
+            await restoreOne(baseConfig as never, "/tmp/in.fbk", "shop", host);
+
+            const gbakCall = host.calls.spawn.find(a => a.includes("-rep"))!;
+            expect(gbakCall[gbakCall.length - 1]).toBe("fb.internal:/var/lib/firebird/shop.fdb");
+        });
+
+        it("keeps a target that is a path, like a restore under a new name", async () => {
+            const host = firebirdHost(kind, { onSpawn: () => ({ code: 0 }) });
+
+            await restoreOne(baseConfig as never, "/tmp/in.fbk", "/srv/restored.fdb", host);
+
+            const gbakCall = host.calls.spawn.find(a => a.includes("-rep"))!;
+            expect(gbakCall[gbakCall.length - 1]).toBe("fb.internal:/srv/restored.fdb");
+        });
+
+        // The name comes from the backup, which whoever writes its destination chose.
+        it("never takes the name the backup gives its database as the file gbak replaces", async () => {
+            const host = firebirdHost(kind, { onSpawn: () => ({ code: 0 }) });
+
+            await expect(restoreOne(baseConfig as never, "/tmp/in.fbk", "/opt/firebird/security5.fdb", host, undefined, undefined, "/opt/firebird/security5.fdb"))
+                .rejects.toThrow(/no alias of this connection/);
+            expect(host.calls.spawn.some(a => a.includes("-rep"))).toBe(false);
+        });
+
+        it("still restores into the alias the backup names, and into a path the person picked for it", async () => {
+            const host = firebirdHost(kind, { onSpawn: () => ({ code: 0 }) });
+
+            await restoreOne(baseConfig as never, "/tmp/in.fbk", "shop", host, undefined, undefined, "shop");
+            await restoreOne(baseConfig as never, "/tmp/in.fbk", "/srv/copy.fdb", host, undefined, undefined, "/opt/firebird/security5.fdb");
+
+            const targets = host.calls.spawn.filter(a => a.includes("-rep")).map(a => a[a.length - 1]);
+            expect(targets).toEqual(["fb.internal:/var/lib/firebird/shop.fdb", "fb.internal:/srv/copy.fdb"]);
         });
     });
 });

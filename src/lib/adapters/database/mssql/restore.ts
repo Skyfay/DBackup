@@ -7,11 +7,14 @@ import { assertValidDatabaseName } from "./identifiers";
 import { joinServerPath } from "./server-paths";
 import { restoreBakFromServer } from "./restore-bak";
 import { isCompositeHost } from "@/lib/transport";
+import crypto from "crypto";
 import fs from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
 import path from "path";
+import { assertSharedFolderOffOwnData } from "./shared-folder";
 import { extract } from "tar-stream";
 import { MSSQLConfig } from "@/lib/adapters/definitions";
+import { getTempDir } from "@/lib/temp-dir";
 
 /**
  * Extended MSSQL config for restore operations with runtime fields
@@ -107,6 +110,8 @@ export async function restore(
             log(`File transfer mode: SSH (remote server)`);
         } else {
             log(`File transfer mode: Local (shared filesystem)`);
+            // No restore stages a backup in the own data of DBackup, see `shared-folder.ts`.
+            await assertSharedFolderOffOwnData(localBackupPath);
         }
 
         // Determine target database(s) from config
@@ -135,59 +140,56 @@ export async function restore(
         // Check if the source is a TAR archive (multi-DB backup)
         const isTarArchive = await checkIfTarArchive(sourcePath);
 
-        // List of .bak files to restore
-        const bakFiles: { serverPath: string; localPath: string; dbName: string }[] = [];
-
-        // Extract temp directory for staging
-        const stagingDir = "/tmp";
-
-        if (isTarArchive) {
-            log(`Detected TAR archive - extracting backup files...`);
-
-            // Build list of selected database names for selective extraction
-            const selectedDbNames = targetDatabases.map(t => t.original);
-            const extractedFiles = await extractTarArchive(sourcePath, stagingDir, log, selectedDbNames);
-
-            for (const extracted of extractedFiles) {
-                const serverPath = joinServerPath(serverBackupPath, path.basename(extracted));
-                bakFiles.push({
-                    serverPath,
-                    localPath: extracted,
-                    dbName: path.basename(extracted).replace(/_\d{4}-\d{2}-\d{2}.*\.bak$/, "")
-                });
-            }
-            log(`Extracted ${bakFiles.length} backup file(s)`);
-        } else {
-            // Single .bak file
-            const fileName = path.basename(sourcePath);
-            const serverBakPath = joinServerPath(serverBackupPath, fileName);
-            const localBakPath = path.join(stagingDir, fileName);
-
-            // Stage the file locally first (copy to staging dir)
-            if (sourcePath !== localBakPath) {
-                await copyFile(sourcePath, localBakPath);
-            }
-
-            const dbName = Array.isArray(config.database) ? config.database[0] : (config.database || "database");
-            bakFiles.push({ serverPath: serverBakPath, localPath: localBakPath, dbName });
-        }
+        // The .bak files to restore. Each one travels under a name made up here, never the name the
+        // archive gives it, so an archive cannot pick which file of the shared folder or the server
+        // it writes, and every copy is deleted again whatever happens.
+        const bakFiles: { localPath: string; ownsLocal: boolean; stagedName: string; serverPath: string; dbName: string }[] = [];
+        const stagedName = () => `dbackup-restore-${crypto.randomUUID()}.bak`;
+        // Copies laid into the shared folder, deleted in the end.
+        const sharedCopies: string[] = [];
+        let extractDir: string | undefined;
 
         try {
+            if (isTarArchive) {
+                log(`Detected TAR archive - extracting backup files...`);
+
+                // Build list of selected database names for selective extraction
+                const selectedDbNames = targetDatabases.map(t => t.original);
+                extractDir = await fs.mkdtemp(path.join(getTempDir(), "mssql-restore-"));
+                const extractedFiles = await extractTarArchive(sourcePath, extractDir, log, selectedDbNames);
+
+                for (const extracted of extractedFiles) {
+                    const name = stagedName();
+                    bakFiles.push({
+                        localPath: extracted.localPath,
+                        ownsLocal: true,
+                        stagedName: name,
+                        serverPath: joinServerPath(serverBackupPath, name),
+                        dbName: path.basename(extracted.entryName).replace(/_\d{4}-\d{2}-\d{2}.*\.bak$/, ""),
+                    });
+                }
+                log(`Extracted ${bakFiles.length} backup file(s)`);
+            } else {
+                // Single .bak file, read where it is.
+                const name = stagedName();
+                const dbName = Array.isArray(config.database) ? config.database[0] : (config.database || "database");
+                bakFiles.push({ localPath: sourcePath, ownsLocal: false, stagedName: name, serverPath: joinServerPath(serverBackupPath, name), dbName });
+            }
+
             if (useSSH) {
                 for (const bakFile of bakFiles) {
-                    log(`Uploading: ${path.basename(bakFile.localPath)} → ${bakFile.serverPath}`);
+                    log(`Uploading backup file → ${bakFile.serverPath}`);
                     await host.putFile(bakFile.localPath, bakFile.serverPath);
-                    log(`Uploaded: ${path.basename(bakFile.localPath)}`);
+                    log(`Uploaded: ${bakFile.stagedName}`);
                 }
             } else {
                 // Local mode: copy .bak files to the shared filesystem path
                 for (const bakFile of bakFiles) {
-                    const localTarget = path.join(localBackupPath, path.basename(bakFile.localPath));
-                    if (bakFile.localPath !== localTarget) {
-                        log(`Copying backup file to server...`);
-                        await copyFile(bakFile.localPath, localTarget);
-                        log(`Backup file staged at: ${bakFile.serverPath} (local: ${localTarget})`);
-                    }
+                    const localTarget = path.join(localBackupPath, bakFile.stagedName);
+                    log(`Copying backup file to server...`);
+                    sharedCopies.push(localTarget);
+                    await copyFile(bakFile.localPath, localTarget);
+                    log(`Backup file staged at: ${bakFile.serverPath} (local: ${localTarget})`);
                 }
             }
 
@@ -204,12 +206,16 @@ export async function restore(
                 if (idx > -1) targetDatabases.splice(idx, 1);
             }
         } finally {
-            // Clean up staged backup files (local temp)
-            for (const bakFile of bakFiles) {
-                await fs.unlink(bakFile.localPath).catch(() => {});
+            // The copies in the shared folder. With a shared mount that is the server's file too.
+            for (const copy of sharedCopies) {
+                await fs.unlink(copy).catch(() => {});
             }
-            // Remove the server-side copies too. With a shared mount the unlink
-            // above already did that, since both paths are one file.
+            // The extracted files, never the file the caller handed in.
+            for (const bakFile of bakFiles) {
+                if (bakFile.ownsLocal) await fs.unlink(bakFile.localPath).catch(() => {});
+            }
+            if (extractDir) await fs.rm(extractDir, { recursive: true, force: true }).catch(() => {});
+            // Remove the server-side copies over SSH.
             if (useSSH) {
                 for (const bakFile of bakFiles) {
                     await host.removeFile(bakFile.serverPath).catch(() => {});
@@ -296,8 +302,8 @@ async function extractTarArchive(
     outputDir: string,
     log: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
     selectedDbNames?: string[]
-): Promise<string[]> {
-    const extractedFiles: string[] = [];
+): Promise<{ localPath: string; entryName: string }[]> {
+    const extractedFiles: { localPath: string; entryName: string }[] = [];
 
     // Build a Set for fast lookup (empty means extract all)
     const selectedSet = selectedDbNames && selectedDbNames.length > 0
@@ -321,13 +327,8 @@ async function extractTarArchive(
                 }
 
                 const safeName = path.basename(header.name);
-                const outputPath = path.join(outputDir, safeName);
-                if (!outputPath.startsWith(outputDir)) {
-                    /* istanbul ignore next -- path.basename already prevents traversal; defensive guard */
-                    reject(new Error(`Zip Slip detected: ${header.name}`));
-                    /* istanbul ignore next */
-                    return;
-                }
+                // Numbered in a fresh folder of its own, so the name in the archive picks no file.
+                const outputPath = path.join(outputDir, `entry-${extractedFiles.length + 1}.bak`);
                 log(`Extracting: ${safeName}`);
 
                 const writeStream = createWriteStream(outputPath);
@@ -335,7 +336,7 @@ async function extractTarArchive(
                 stream.pipe(writeStream);
 
                 writeStream.on("finish", () => {
-                    extractedFiles.push(outputPath);
+                    extractedFiles.push({ localPath: outputPath, entryName: header.name });
                     next();
                 });
 

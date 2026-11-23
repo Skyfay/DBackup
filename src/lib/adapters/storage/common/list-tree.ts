@@ -1,3 +1,4 @@
+import { assertListingWithinLimits } from "./listing-limits";
 import {
     AdapterConfig,
     ListTreeOptions,
@@ -47,14 +48,19 @@ export async function listTreeForCollection(
     options?.signal?.throwIfAborted();
 
     if (adapter.listTree) {
-        return adapter.listTree(config, remotePath, {
+        const result = await adapter.listTree(config, remotePath, {
             ...options,
             onProgress: throttleProgress(options?.onProgress),
         });
+        // The walkers of a server a customer may own check as they go. This holds every adapter
+        // to the same limits, a walk that could not check as it ran included.
+        assertListingWithinLimits(result.files);
+        return result;
     }
 
     const files = await adapter.list(config, remotePath);
     options?.signal?.throwIfAborted();
+    assertListingWithinLimits(files);
     // One report, after the fact. Honest about what happened: this path had nothing to say
     // until it was finished, which is exactly why listTree() exists.
     options?.onProgress?.({

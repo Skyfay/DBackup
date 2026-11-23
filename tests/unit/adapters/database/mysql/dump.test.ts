@@ -2,13 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // --- Hoisted mocks: only the filesystem and TAR packing, never the transport ---
 
-const { mockGetDatabases, mockCreateMultiDbTar, mockCreateTempDir, mockCleanupTempDir, mockFsStat } =
+const { mockGetDatabases, mockCreateMultiDbTar, mockCreateTempDir, mockCleanupTempDir, mockFsStat, mockAppendFile } =
     vi.hoisted(() => ({
         mockGetDatabases: vi.fn(),
         mockCreateMultiDbTar: vi.fn(),
         mockCreateTempDir: vi.fn(),
         mockCleanupTempDir: vi.fn(),
         mockFsStat: vi.fn(),
+        mockAppendFile: vi.fn(),
     }));
 
 vi.mock("@/lib/adapters/database/mysql/connection", () => ({
@@ -23,8 +24,9 @@ vi.mock("@/lib/adapters/database/common/tar-utils", () => ({
 }));
 
 vi.mock("fs/promises", () => ({
-    default: { stat: (...args: unknown[]) => mockFsStat(...args) },
+    default: { stat: (...args: unknown[]) => mockFsStat(...args), appendFile: (...args: unknown[]) => mockAppendFile(...args) },
     stat: (...args: unknown[]) => mockFsStat(...args),
+    appendFile: (...args: unknown[]) => mockAppendFile(...args),
 }));
 
 vi.mock("fs", async (importOriginal) => {
@@ -43,6 +45,7 @@ import { createFakeHost, type FakeHost } from "@/lib/testing/fake-host";
 import { dump, dumpOne } from "@/lib/adapters/database/mysql/dump";
 import type { HostKind } from "@/lib/transport/types";
 import type { MySQLConfig } from "@/lib/adapters/definitions";
+import { clientHost, statements } from "./client-help";
 
 const baseConfig = {
     host: "db.internal",
@@ -180,6 +183,35 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL dump over a %s host", (kind) =
 
         expect(mysql.calls.spawn[0]).toContain("--set-gtid-purged=OFF");
         expect(mariadb.calls.spawn[0]).not.toContain("--set-gtid-purged=OFF");
+    });
+
+    it("writes the routines of MySQL 26 itself, since MariaDB's dump tool asks that server for packages (#203)", async () => {
+        const host = clientHost({
+            kind,
+            onExec: (argv) => {
+                const sql = argv.at(-1) ?? "";
+                if (sql.includes("ROUTINE_DEFINITION IS NULL")) return { stdout: "" };
+                if (sql.includes("information_schema.ROUTINES")) return { stdout: "PROCEDURE\tmark_paid\n" };
+                if (sql.startsWith("SHOW CREATE")) return { stdout: "mark_paid\t\tCREATE PROCEDURE `mark_paid`() SELECT 1\tutf8mb4\tutf8mb4_0900_ai_ci\tutf8mb4_unicode_ci\n" };
+                return undefined;
+            },
+        });
+        const onLog = vi.fn();
+        await dump({ ...baseConfig, detectedVersion: "26.10.0" } as never, "/tmp/out.sql", host, onLog);
+
+        expect(host.calls.spawn[0]).not.toContain("--routines");
+        expect(host.calls.spawn[0]).toContain("--events");
+        expect(mockAppendFile).toHaveBeenCalledWith("/tmp/out.sql", expect.stringContaining("DELIMITER ;;\nCREATE PROCEDURE `mark_paid`() SELECT 1 ;;"));
+        expect(onLog.mock.calls.some(([message]) => String(message).includes("Stored procedures and functions of shop written by DBackup (1)"))).toBe(true);
+    });
+
+    it("leaves the routines of MySQL 26 out when the source turned them off", async () => {
+        const host = clientHost({ kind });
+        await dump({ ...baseConfig, detectedVersion: "26.10.0", routines: false } as never, "/tmp/out.sql", host);
+
+        expect(host.calls.spawn[0]).not.toContain("--routines");
+        expect(statements(host).some((argv) => String(argv.at(-1)).startsWith("SHOW CREATE"))).toBe(false);
+        expect(mockAppendFile).not.toHaveBeenCalled();
     });
 
     it("fails when the dump file ends up empty", async () => {

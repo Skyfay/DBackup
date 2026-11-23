@@ -1,6 +1,8 @@
 
 import { randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 import { EncryptionError } from '@/lib/logging/errors';
+import { GCM_TAG_LENGTH } from './gcm-tag';
+import { SENSITIVE_KEYS } from '@/lib/core/sensitive-keys';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -45,6 +47,25 @@ export function decrypt(text: string): string {
   return decryptWithKey(text, getEncryptionKey());
 }
 
+/** The one form `encrypt` writes: a 16-byte IV, a 16-byte tag and the data, in hex. */
+const SEALED = /^[0-9a-f]{32}:[0-9a-f]{32}:[0-9a-f]*$/;
+
+/** Whether a value has the form `encrypt` writes, unlike plain text with three `:` parts. */
+export function isSealed(text: string): boolean {
+  return SEALED.test(text);
+}
+
+/**
+ * `decrypt` for a value that must have come from `encrypt`, like a token in a URL. Anything else
+ * throws, also plain text, which `decrypt` hands back as it is for values stored before encryption.
+ */
+export function decryptSealed(text: string): string {
+  if (typeof text !== 'string' || !isSealed(text)) {
+    throw new EncryptionError('decrypt', 'The value is not encrypted');
+  }
+  return decryptWithKey(text, getEncryptionKey());
+}
+
 /**
  * `encrypt` with a key other than ENCRYPTION_KEY, like the key of the DBackup a configuration
  * backup came from while its values are encrypted again for this one.
@@ -83,7 +104,12 @@ export function decryptWithKey(text: string, key: Buffer): string {
     const authTag = Buffer.from(parts[1], 'hex');
     const encryptedText = parts[2];
 
-    const decipher = createDecipheriv(ALGORITHM, key, iv);
+    // A shorter tag would be checked on fewer bytes, see `GCM_TAG_LENGTH`.
+    if (authTag.length !== GCM_TAG_LENGTH) {
+      throw new EncryptionError('decrypt', `Invalid auth tag length: ${authTag.length}, expected ${GCM_TAG_LENGTH} bytes`);
+    }
+
+    const decipher = createDecipheriv(ALGORITHM, key, iv, { authTagLength: GCM_TAG_LENGTH });
     decipher.setAuthTag(authTag);
 
     let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
@@ -103,31 +129,8 @@ export function decryptWithKey(text: string, key: Buffer): string {
   }
 }
 
-export const SENSITIVE_KEYS = [
-  'password',
-  'token',
-  'secret',
-  'secretKey',
-  'secretAccessKey', // AWS/S3
-  'accessKey',
-  'accessKeyId', // AWS/S3
-  'apiKey',
-  'webhookUrl',
-  'uri', // MongoDB Connection String
-  'passphrase', // SSH Key Passphrase
-  'privateKey', // SSH Private Key
-  'sshPassword', // SSH tunnel password (legacy inline SSH field)
-  'sshPrivateKey', // SSH tunnel private key (legacy inline SSH field)
-  'sshPassphrase', // SSH tunnel key passphrase (legacy inline SSH field)
-  'clientSecret', // OAuth Client Secret (Google Drive, etc.)
-  'refreshToken', // OAuth Refresh Token
-  'authHeader', // Generic Webhook Authorization header
-  'accountSid', // Twilio Account SID
-  'authToken', // Twilio Auth Token
-  'appToken', // Gotify application token
-  'botToken', // Telegram bot token
-  'accessToken', // ntfy access token
-];
+// The list lives in a module without Node imports, so the logger reads it in the browser too.
+export { SENSITIVE_KEYS };
 
 
 /**

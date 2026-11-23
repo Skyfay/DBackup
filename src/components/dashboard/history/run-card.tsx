@@ -2,14 +2,24 @@
 
 import Link from "next/link";
 import { ExecutionStatusBadge } from "@/components/dashboard/widgets/execution-status";
+import { TenantLine } from "@/components/tenant/tenant-column";
 import { DateDisplay } from "@/components/utils/date-display";
 import { cn, formatBytes } from "@/lib/utils";
 import type { RunRow } from "@/services/history/run-types";
 import { LiveBar, RunTile, StarterCell } from "./run-cells";
 import { tookOf } from "./run-format";
 
+interface RunCardProps {
+    row: RunRow;
+    href: string;
+    now: number;
+    actions: React.ReactNode;
+    /** The tenant of the run, a small line under what it did in All tenants. */
+    tenantName?: string | null;
+}
+
 /** A run on a phone, which has no room for the table. The whole card opens its page. */
-export function RunCard({ row, href, now, actions }: { row: RunRow; href: string; now: number; actions: React.ReactNode }) {
+export function RunCard({ row, href, now, actions, tenantName = null }: RunCardProps) {
     const tone = row.status === "Failed" ? "text-destructive" : row.status === "Partial" ? "text-warning" : "text-muted-foreground";
     const facts = [tookOf(row, now), row.size ? formatBytes(row.size) : null].filter((part) => part && part !== "-").join(" · ");
     return (
@@ -19,6 +29,7 @@ export function RunCard({ row, href, now, actions }: { row: RunRow; href: string
                 <Link href={href} className="min-w-0 flex-1 outline-none after:absolute after:inset-0">
                     <span className="block truncate font-medium">{row.name}</span>
                     <span className="block truncate text-xs text-muted-foreground">{row.sub}</span>
+                    <TenantLine name={tenantName} className="mt-0.5" />
                 </Link>
                 <div className="relative z-10">{actions}</div>
             </div>

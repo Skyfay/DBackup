@@ -34,7 +34,7 @@ Then add the two lines the script prints to `~/.zshrc`. They are easy to skip pa
 
 ```bash
 eval "$(fnm env --use-on-cd)"
-export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@18/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:/opt/homebrew/firebird-client/bin:$PATH"
+export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@19/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:/opt/homebrew/firebird-client/bin:$PATH"
 ```
 
 SqlPackage needs no entry of its own. The script installs it into `$(brew --prefix)/bin`, which is already on `PATH`, and wraps it so it finds the .NET runtime without a `DOTNET_ROOT` variable.
@@ -175,12 +175,15 @@ pnpm dev
 # Build for production
 pnpm run build
 
-# Start production server
+# Start the production build with the custom server, as the Docker image does
+# (needs a writable CERTS_DIR, or DISABLE_HTTPS=true)
 pnpm start
 
 # Lint code
 pnpm lint
 ```
+
+A plain `next start` is not supported. Only `custom-server.ts` works out the address of a client, without it every request shares one rate limit bucket, see [Rate Limiting](/developer-guide/core/rate-limiting).
 
 ## IDE Setup
 

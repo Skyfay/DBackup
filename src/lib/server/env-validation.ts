@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { logger } from "@/lib/logging/logger";
+import { authUrlWarning } from "@/lib/auth/secure-cookies";
 
 const log = logger.child({ module: "EnvValidation" });
 
@@ -13,9 +14,11 @@ const envSchema = z.object({
         .string({ error: "BETTER_AUTH_SECRET is required. Generate with: openssl rand -base64 32" })
         .min(16, "BETTER_AUTH_SECRET must be at least 16 characters"),
 
+    // Hex only, since a key with any other character opens no cipher and fails at the first secret.
     ENCRYPTION_KEY: z
         .string({ error: "ENCRYPTION_KEY is required. Generate with: openssl rand -hex 32" })
-        .length(64, "ENCRYPTION_KEY must be a 64-character hex string (32 bytes)"),
+        .length(64, "ENCRYPTION_KEY must be a 64-character hex string (32 bytes)")
+        .regex(/^[0-9a-fA-F]*$/, "ENCRYPTION_KEY must hold hex characters only (0-9, a-f). Generate with: openssl rand -hex 32"),
 
     // Optional with defaults
     DATABASE_URL: z
@@ -129,6 +132,10 @@ export function validateEnvironment(): ValidatedEnv {
             throw new Error(`Startup aborted: ${critical.join("; ")}`);
         }
     }
+
+    // An address the browser does not use breaks the redirects, and plain HTTP the Secure cookies.
+    const authUrl = authUrlWarning(process.env);
+    if (authUrl) log.warn(`ENV warning: ${authUrl}`);
 
     log.info("Environment validation passed");
 

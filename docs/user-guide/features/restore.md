@@ -190,6 +190,7 @@ gbak -rep -user sysdba -password *** backup.fbk database.fdb
 
 - Restore target is limited to the source's pre-configured database aliases
 - Always replaces the target file's contents (no separate create-only step)
+- On a server that gives databases to customers, a target that is no saved alias asks for the same confirmation as a database a customer holds, since a path can still reach a customer's file under another name
 - See [Firebird source](/user-guide/sources/firebird) for alias configuration
 
 ### Redis and Valkey
@@ -215,6 +216,16 @@ Before anything is overwritten:
 1. Each row says **Overwrites** with the size of the database there now
 2. The confirmation lists what is overwritten and asks in amber
 3. Consider a backup of the target first
+
+### Encrypted Backups Stay Encrypted
+
+The run of a job records in History whether its backup was encrypted. A backup whose run encrypted it is only restored, downloaded or browsed while the file at the destination is still encrypted. A plain file in its place, with or without a `.meta.json` that calls it plain, is refused with:
+
+```
+This backup was written encrypted, but the file at the destination is not encrypted. It may have been replaced there, so DBackup does not read it.
+```
+
+Whoever can write to the destination could otherwise swap an encrypted backup for a plain one of their making and have DBackup restore it. A backup that no run in History wrote, like one imported from another instance or one whose run was removed by the data retention, is read as before.
 
 ### Rollback Considerations
 
@@ -334,6 +345,14 @@ If Smart Recovery cannot automatically identify a matching key (e.g. after a key
 A key that does not open the backup keeps the dialog open and says so.
 
 If you no longer have the key, use the [Recovery Kit](/user-guide/security/recovery-kit) for offline decryption.
+
+### Backup Written Encrypted
+
+```
+This backup was written encrypted, but the file at the destination is not encrypted.
+```
+
+The file at the destination is no longer the encrypted backup its run wrote, see [Encrypted Backups Stay Encrypted](#encrypted-backups-stay-encrypted). Check who can write to the destination and restore another backup or another copy of it.
 
 ### Character Set Issues
 

@@ -91,7 +91,7 @@ describe("RetentionPolicyService", () => {
 
   describe("createRetentionPolicy", () => {
     it("creates a new policy successfully", async () => {
-      prismaMock.retentionPolicy.findUnique.mockResolvedValue(null);
+      prismaMock.retentionPolicy.findFirst.mockResolvedValue(null);
       const created = makePolicy({ name: "New" });
       prismaMock.retentionPolicy.create.mockResolvedValue(created as any);
 
@@ -105,17 +105,20 @@ describe("RetentionPolicyService", () => {
     });
 
     it("throws ServiceError when a policy with the same name already exists", async () => {
-      prismaMock.retentionPolicy.findUnique.mockResolvedValue(
+      // A name is unique per tenant, so the lookup by name is a findFirst the tenant filter narrows.
+      prismaMock.retentionPolicy.findFirst.mockResolvedValue(
         makePolicy() as any
       );
 
       await expect(
         createRetentionPolicy({ name: "Keep 7", config: simpleConfig })
       ).rejects.toBeInstanceOf(ServiceError);
+      expect(prismaMock.retentionPolicy.findFirst).toHaveBeenCalledWith({ where: { name: "Keep 7" } });
+      expect(prismaMock.retentionPolicy.create).not.toHaveBeenCalled();
     });
 
     it("stores an hourly tier", async () => {
-      prismaMock.retentionPolicy.findUnique.mockResolvedValue(null);
+      prismaMock.retentionPolicy.findFirst.mockResolvedValue(null);
       prismaMock.retentionPolicy.create.mockResolvedValue(makePolicy() as any);
 
       await createRetentionPolicy({
@@ -130,7 +133,7 @@ describe("RetentionPolicyService", () => {
     });
 
     it("rejects a config with a negative tier instead of storing it", async () => {
-      prismaMock.retentionPolicy.findUnique.mockResolvedValue(null);
+      prismaMock.retentionPolicy.findFirst.mockResolvedValue(null);
 
       await expect(
         createRetentionPolicy({
@@ -143,7 +146,7 @@ describe("RetentionPolicyService", () => {
     });
 
     it("clears previous default when isDefault is true", async () => {
-      prismaMock.retentionPolicy.findUnique.mockResolvedValue(null);
+      prismaMock.retentionPolicy.findFirst.mockResolvedValue(null);
       prismaMock.retentionPolicy.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.retentionPolicy.create.mockResolvedValue(
         makePolicy({ isDefault: true }) as any
@@ -166,9 +169,8 @@ describe("RetentionPolicyService", () => {
 
   describe("updateRetentionPolicy", () => {
     it("updates an existing policy successfully", async () => {
-      prismaMock.retentionPolicy.findUnique
-        .mockResolvedValueOnce(makePolicy() as any) // existence check
-        .mockResolvedValueOnce(null); // name-collision check - no conflict
+      prismaMock.retentionPolicy.findUnique.mockResolvedValueOnce(makePolicy() as any); // existence check
+      prismaMock.retentionPolicy.findFirst.mockResolvedValueOnce(null); // name-collision check - no conflict
       const updated = makePolicy({ name: "Updated" });
       prismaMock.retentionPolicy.update.mockResolvedValue(updated as any);
 
@@ -190,13 +192,14 @@ describe("RetentionPolicyService", () => {
 
     it("throws ServiceError when renaming to an already used name", async () => {
       const policy = makePolicy({ name: "OldName" });
-      prismaMock.retentionPolicy.findUnique
-        .mockResolvedValueOnce(policy as any)
-        .mockResolvedValueOnce(makePolicy({ name: "Taken" }) as any);
+      prismaMock.retentionPolicy.findUnique.mockResolvedValueOnce(policy as any); // existence check
+      prismaMock.retentionPolicy.findFirst.mockResolvedValueOnce(makePolicy({ name: "Taken" }) as any); // name-collision check
 
       await expect(
         updateRetentionPolicy("pol-1", { name: "Taken" })
       ).rejects.toBeInstanceOf(ServiceError);
+      expect(prismaMock.retentionPolicy.findFirst).toHaveBeenCalledWith({ where: { name: "Taken" } });
+      expect(prismaMock.retentionPolicy.update).not.toHaveBeenCalled();
     });
 
     it("clears previous default when isDefault is set to true", async () => {

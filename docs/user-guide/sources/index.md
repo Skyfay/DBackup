@@ -8,7 +8,7 @@ DBackup supports a wide variety of database engines.
 | :--- | :--- | :--- | :--- |
 | [MySQL](/user-guide/sources/mysql) | 5.7, 8.0, 8.4, 9.0 | `mariadb-dump` or `mysqldump` | ✅ |
 | [MariaDB](/user-guide/sources/mysql) | 10.x, 11.x | `mariadb-dump` or `mysqldump` | ✅ |
-| [PostgreSQL](/user-guide/sources/postgresql) | 12 to 18 | `pg_dump` | ✅ |
+| [PostgreSQL](/user-guide/sources/postgresql) | 12 to 19 | `pg_dump` | ✅ |
 | [MongoDB](/user-guide/sources/mongodb) | 4.x to 8.x | `mongodump` | ✅ |
 | [Redis](/user-guide/sources/redis) | 2.8+ | `redis-cli --rdb` | Manual |
 | [Valkey](/user-guide/sources/valkey) | 7.2+ | `redis-cli --rdb` | Manual |
@@ -46,6 +46,19 @@ Beyond configuring sources for backups, DBackup includes a **Database Explorer**
 
 Which databases to back up is picked in the job that uses the source.
 
+DBackup checks every connection against the fields of its type before it saves it, also one sent through the API, and names each field that does not fit without repeating its value. Every port is a whole number from 1 to 65535, and no host or user holds a line break or another control character. A copy or a connection restored from Recently deleted is checked for these two as well.
+
+## Editing a Connection
+
+The password, key or token of a connection usually sits in a [credential profile](/user-guide/security/credential-profiles), its saved login, which is picked in the form and signs in wherever the connection points. A few secrets live in the connection itself, like the connection string of MongoDB, or a password sent through the API or kept from an older version. DBackup never shows them again. Their field reads **saved, leave blank to keep**, and left blank they are kept for **Test connection**, the list of databases and saving.
+
+That holds only while the connection still reaches the same place. Once the host, the port, the SSH server or its port changes, or a URL the connection sends to points at another server, such a secret is not sent there:
+
+- A secret the form shows, like the MongoDB connection string, has to be typed again. The form says **Enter it again for the new address**.
+- A password or key the form does not show is dropped once a saved login signs in to the new address. Without one the form asks you to **Pick a saved login for the new address**.
+
+Changing the name, the user, the databases or the options keeps every secret. Cloud drives like Google Drive, OneDrive and Dropbox, Amazon S3, Telegram and Twilio always talk to their provider, so their tokens are kept whatever else changes, and S3 storage keeps its keys when only the bucket changes.
+
 ## Connection Modes
 
 DBackup supports two connection modes for most database types:
@@ -74,6 +87,9 @@ When using SSH mode, the required database client tools **must be installed on t
 | **SSH host** | SSH server hostname or IP | - | ✅ |
 | **Port** | SSH server port | `22` | ❌ |
 | **SSH login** | An `SSH_KEY` [credential profile](/user-guide/security/credential-profiles) with the username and a password, a private key or the SSH agent | - | ✅ |
+| **Check the host key** | Refuses an SSH server that presents another host key than the one pinned on the first connect | On | ❌ |
+
+DBackup pins the host key of the SSH server on the first successful connect or test and refuses a server that presents another one, before it sends the login or a database password. After a reinstall of the server, open the source, run **Test connection** and choose **Trust the new key**. How it works and what the switch does is described under [Host Key Check](/user-guide/destinations/sftp#host-key-check) of SFTP, it is the same for every SSH login.
 
 ::: tip SSH Agent
 To use SSH agent forwarding in Docker, mount the agent socket:

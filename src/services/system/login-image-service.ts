@@ -44,10 +44,6 @@ function infoOf(row: { fileName: string; mimeType: string; size: number; updated
     return { fileName: row.fileName, mimeType: row.mimeType as LoginImageType, size: row.size, updatedAt: row.updatedAt.toISOString() };
 }
 
-export function isLoginLook(value: unknown): value is LoginLook {
-    return value === "logos" || value === "image";
-}
-
 /** The stored picture without its bytes, for the settings. */
 export async function getLoginImageInfo(): Promise<LoginImageInfo | null> {
     const row = await prisma.loginImage.findUnique({ where: { id: ROW_ID }, select: { fileName: true, mimeType: true, size: true, updatedAt: true } });

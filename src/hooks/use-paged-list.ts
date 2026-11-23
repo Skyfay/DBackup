@@ -27,6 +27,12 @@ interface UsePagedListOptions<T> {
     pollMs: number;
     /** Runs whenever a page arrives, for state the caller keeps outside the rows. */
     onLoaded?: (result: PagedResult<T>) => void;
+    /** Runs when a page could not be loaded. `quiet` for a poll, which the next tick tries again. */
+    onError?: (error: unknown, quiet: boolean) => void;
+    /** The rows per page to start with, like the ones a table layout keeps. The profile's otherwise. */
+    initialPageSize?: number;
+    /** The filters to start with, like a server a link names. */
+    initialFilters?: ColumnFiltersState;
 }
 
 /**
@@ -41,6 +47,9 @@ export function usePagedList<T>({
     enabled,
     pollMs,
     onLoaded,
+    onError,
+    initialPageSize,
+    initialFilters,
 }: UsePagedListOptions<T>) {
     const defaults = useTableDefaults();
     const [rows, setRows] = useState<T[]>([]);
@@ -50,8 +59,8 @@ export function usePagedList<T>({
     const [loaded, setLoaded] = useState(false);
     const firstLoad = useRef(true);
     // Starts with the rows per page of the profile.
-    const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: defaults.pageSize });
-    const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+    const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: initialPageSize ?? defaults.pageSize });
+    const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(initialFilters ?? []);
 
     const inFlight = useRef(false);
     // Each request takes a ticket. A response only lands when it is still the newest one, so
@@ -59,6 +68,8 @@ export function usePagedList<T>({
     const ticket = useRef(0);
     const onLoadedRef = useRef(onLoaded);
     onLoadedRef.current = onLoaded;
+    const onErrorRef = useRef(onError);
+    onErrorRef.current = onError;
 
     /**
      * Poll ticks (`force` false) skip while a request is in flight so they never stack. User
@@ -77,6 +88,7 @@ export function usePagedList<T>({
             onLoadedRef.current?.(result);
         } catch (e) {
             log.error("Failed to load page", {}, wrapError(e));
+            if (mine === ticket.current) onErrorRef.current?.(e, !force);
         } finally {
             if (mine === ticket.current) {
                 inFlight.current = false;

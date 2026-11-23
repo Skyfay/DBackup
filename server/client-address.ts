@@ -8,6 +8,11 @@
  * client can put anything at the left end, so the first entry is never taken on trust. This is what
  * `trust proxy` does in Express.
  *
+ * Which header the proxy writes is a setting, TRUSTED_PROXY_HEADER, never a guess from the request.
+ * A proxy passes on whatever the client sent in the header it does not write, so X-Forwarded-For
+ * behind a proxy that sets only X-Real-IP is the client's own, and so is X-Real-IP behind one that
+ * appends to X-Forwarded-For. Only the header of the setting is read, the other one never.
+ *
  * Compiled with custom-server.ts by tsconfig.server.json, so it imports nothing of the app.
  */
 
@@ -17,10 +22,39 @@ import { BlockList, isIP } from "node:net";
 export const CLIENT_ADDRESS_HEADER = "x-dbackup-client-address";
 
 /**
- * The networks a reverse proxy in front of DBackup usually sits in: loopback, the private ranges of
- * a Docker network or a LAN, and link-local. The default of TRUSTED_PROXIES, and its keyword `private`.
+ * The variable the custom server sets to "1" before Next.js loads, so the app trusts the header
+ * above, see `addressHeaderSet` in src/lib/core/client-address.ts, which keeps the same name.
  */
-export const DEFAULT_TRUSTED_PROXIES = ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10"];
+export const CUSTOM_SERVER_MARK = "DBACKUP_CUSTOM_SERVER";
+
+/** The headers a trusted proxy writes the address of the client into, the values of TRUSTED_PROXY_HEADER. */
+export const PROXY_HEADERS = ["x-forwarded-for", "x-real-ip"] as const;
+export type ProxyHeader = (typeof PROXY_HEADERS)[number];
+
+/**
+ * The header the proxies write, from the value of TRUSTED_PROXY_HEADER: unset for X-Forwarded-For.
+ * Throws on any other value, so a typo does not silently read the wrong header.
+ */
+export function proxyHeaderFrom(value: string | undefined): ProxyHeader {
+    const setting = value?.trim().toLowerCase() || "x-forwarded-for";
+    const header = PROXY_HEADERS.find((name) => name === setting);
+    if (!header) throw new Error(`TRUSTED_PROXY_HEADER: "${value}" is none of ${PROXY_HEADERS.join(", ")}`);
+    return header;
+}
+
+/**
+ * The networks a reverse proxy in front of DBackup usually sits in: loopback, the private ranges of
+ * a Docker network or a LAN, and link-local. The keyword `private` of TRUSTED_PROXIES.
+ */
+export const PRIVATE_NETWORKS = ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10"];
+
+/**
+ * The default of TRUSTED_PROXIES, and its keyword `loopback`: a reverse proxy on the same machine
+ * alone. Every device of a private network could otherwise connect directly and name its own
+ * address in the header, for the rate limits and the audit log. A proxy in a Docker network or the
+ * LAN is named, by its address or with `private`.
+ */
+export const DEFAULT_TRUSTED_PROXIES = ["127.0.0.0/8", "::1/128"];
 
 /**
  * The ranges the edge servers of Cloudflare connect from, the keyword `cloudflare` of
@@ -37,7 +71,8 @@ export const CLOUDFLARE_RANGES = [
 
 /** The names TRUSTED_PROXIES takes in place of addresses, each for a list of ranges. */
 export const PROXY_KEYWORDS = new Map<string, readonly string[]>([
-    ["private", DEFAULT_TRUSTED_PROXIES],
+    ["loopback", DEFAULT_TRUSTED_PROXIES],
+    ["private", PRIVATE_NETWORKS],
     ["cloudflare", CLOUDFLARE_RANGES],
 ]);
 
@@ -49,7 +84,7 @@ export function normalizeAddress(address: string): string {
 }
 
 /**
- * The proxies to trust, from the value of TRUSTED_PROXIES: unset for the private ranges, `none` to
+ * The proxies to trust, from the value of TRUSTED_PROXIES: unset for the loopback, `none` to
  * never read a forwarded header, or a comma list of addresses, CIDR ranges and the keywords of
  * PROXY_KEYWORDS. A list replaces the default, so a proxy in a private network behind Cloudflare
  * needs `private,cloudflare`. Throws on an entry that is none of them, so a typo does not silently
@@ -59,7 +94,7 @@ export function trustedProxiesFrom(value: string | undefined): BlockList {
     const list = new BlockList();
     const setting = value?.trim();
     if (setting?.toLowerCase() === "none") return list;
-    const entries = setting ? setting.split(",").map((entry) => entry.trim()).filter(Boolean) : ["private"];
+    const entries = setting ? setting.split(",").map((entry) => entry.trim()).filter(Boolean) : ["loopback"];
     for (const entry of entries.flatMap((entry) => PROXY_KEYWORDS.get(entry.toLowerCase()) ?? [entry])) {
         const [address, prefix, ...rest] = entry.split("/");
         const family = isIP(address);
@@ -86,18 +121,20 @@ const joined = (value: HeaderValue) => (Array.isArray(value) ? value.join(",") :
  *
  * @param peer       The remote address of the socket.
  * @param forwarded  X-Forwarded-For as it arrived.
- * @param realIp     X-Real-IP as it arrived, for a proxy that sets only that one.
+ * @param realIp     X-Real-IP as it arrived.
+ * @param header     The header the trusted proxies write, from `proxyHeaderFrom`. The other one is ignored.
  */
-export function clientAddressOf(peer: string | undefined, forwarded: HeaderValue, realIp: HeaderValue, trusted: BlockList): string {
+export function clientAddressOf(peer: string | undefined, forwarded: HeaderValue, realIp: HeaderValue, trusted: BlockList, header: ProxyHeader = "x-forwarded-for"): string {
     const remote = peer ? normalizeAddress(peer) : "unknown";
     if (!isTrusted(remote, trusted)) return remote;
 
-    const chain = joined(forwarded).split(",").map(normalizeAddress).filter(Boolean);
-    if (chain.length === 0) {
+    if (header === "x-real-ip") {
         const real = joined(realIp).split(",").map(normalizeAddress).filter(Boolean);
         // A trusted proxy that sets X-Real-IP sets one address, anything else is not its doing.
         return real.length === 1 && isIP(real[0]) ? real[0] : remote;
     }
+    const chain = joined(forwarded).split(",").map(normalizeAddress).filter(Boolean);
+    if (chain.length === 0) return remote;
     for (let index = chain.length - 1; index >= 0; index--) {
         const hop = chain[index];
         // An entry that is no address was not written by a proxy, so nothing left of it counts.
@@ -106,4 +143,30 @@ export function clientAddressOf(peer: string | undefined, forwarded: HeaderValue
     }
     // Every hop is a trusted network, like a client in the LAN behind a proxy in Docker.
     return chain[0];
+}
+
+/**
+ * What the server logs the first time it ignores a forwarded header by the default alone, null any
+ * other time. With TRUSTED_PROXIES unset only the loopback counts as a reverse proxy, so a proxy in a
+ * Docker network or the LAN makes every request read as its own address, and every client shares
+ * the rate limits of that address. The first header from a private network names the peer and the
+ * setting that trusts it. A value someone set is a decision and gets no line.
+ *
+ * @param setting  TRUSTED_PROXIES as it is set.
+ * @returns A function for every request, which answers the line once and null from then on.
+ */
+export function defaultTrustNotice(setting: string | undefined, trusted: BlockList, header: ProxyHeader = "x-forwarded-for"): (peer: string | undefined, forwarded: HeaderValue, realIp: HeaderValue) => string | null {
+    let pending = !setting?.trim();
+    const privateNetworks = trustedProxiesFrom("private");
+    return (peer, forwarded, realIp) => {
+        if (!pending || !peer) return null;
+        if (!joined(header === "x-real-ip" ? realIp : forwarded).trim()) return null;
+        const remote = normalizeAddress(peer);
+        if (isTrusted(remote, trusted) || !isTrusted(remote, privateNetworks)) return null;
+        pending = false;
+        const name = header === "x-real-ip" ? "X-Real-IP" : "X-Forwarded-For";
+        return `${name} of ${remote} is ignored, because TRUSTED_PROXIES is unset and only a reverse proxy on this machine is trusted. `
+            + `If ${remote} is your reverse proxy, set TRUSTED_PROXIES=${remote}, or private for every private network, so the rate limits and the audit log see the address of each client. `
+            + "Until then every request through it counts as one from its address.";
+    };
 }

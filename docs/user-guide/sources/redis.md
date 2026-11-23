@@ -105,7 +105,7 @@ Redis numbers its databases instead of naming them, 16 unless the server's `data
 
 ## Required CLI Tools
 
-The Redis adapter requires `redis-cli` to be installed.
+The Redis adapter requires `redis-cli` 5 or newer to be installed. DBackup hands it the password as `REDISCLI_AUTH` in its environment, never with `-a`, so the password shows in no process list and in no command an SSH server logs. An older `redis-cli` ignores that variable and fails with `NOAUTH`.
 
 ### Direct Mode
 

@@ -9,13 +9,16 @@ export const STORAGE_CONNECTION_KEYS = [
     'password', 'accessKeyId', 'secretAccessKey',
     'authType',
     'privateKey', 'passphrase',
+    // The host key check of an SSH login, beside the login it guards. SFTP and rsync show it with
+    // their server, an adapter with an SSH mode in its SSH part, see `HostKeySwitch`.
+    'verifyHostKey',
     'clientId', 'clientSecret',
     // Where the connection terminates, not a tuning knob - a Docker daemon is reached
     // through its socket the way an FTP server is reached through host and port.
     'socketPath',
 ];
 
-export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'tls', 'options', 'folderId', 'folderPath'];
+export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'tls', 'trustServerCertificate', 'options', 'folderId', 'folderPath'];
 
 /**
  * The config keys that say where inside the storage the files go, shown in the Location part

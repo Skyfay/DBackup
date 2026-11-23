@@ -1,5 +1,6 @@
 import type { ExecutionHost } from "@/lib/transport";
 import { TableInfo, ColumnInfo, TableDataOptions, TableDataResult } from "@/lib/core/interfaces";
+import { ValidationError } from "@/lib/logging/errors";
 
 /** Sanitize a SQLite identifier for double-quote quoting. */
 function escapeIdentifier(name: string): string {
@@ -100,6 +101,47 @@ async function enrichWithRowCounts(
     return tables.map(t => (t.type === "table" && rowCounts.has(t.name) ? { ...t, rowCount: rowCounts.get(t.name) } : t));
 }
 
+/** The tables and views a read takes, the ones `getTables` lists. */
+const LISTED = "type IN ('table','view') AND name NOT LIKE 'sqlite_%'";
+
+/**
+ * Refuses a table the database file does not list and a column that table does not have, before any
+ * statement names them. Quoting keeps a name an identifier, but the sqlite3 program knows relations
+ * that are no table of the file: `fsdir` reads the files and folders of the machine it runs on,
+ * `sqlite_dbpage` and the `pragma_` functions read around the tables, and `-safe` leaves `fsdir` on.
+ * So a name counts only when `sqlite_master` lists it as a table or view. A view cannot reach such
+ * a relation itself, sqlite3 refuses that as an unsafe use.
+ *
+ * The names are compared inside the database, as values, without regard to case like SQLite itself
+ * resolves them, so a name with a line break or a separator needs no parsing here.
+ *
+ * @throws ValidationError for a table or a column the file does not list.
+ */
+async function assertListed(
+    host: ExecutionHost,
+    binary: string,
+    dbPath: string,
+    table: string,
+    columns: Array<string | undefined>,
+): Promise<void> {
+    const asked = columns.filter((column): column is string => !!column);
+    const tbl = escapeSqliteLiteral(table);
+    const counts = [
+        `(SELECT count(*) FROM sqlite_master WHERE ${LISTED} AND name = '${tbl}' COLLATE NOCASE)`,
+        ...asked.map((column) => `(SELECT count(*) FROM pragma_table_info('${tbl}') WHERE name = '${escapeSqliteLiteral(column)}' COLLATE NOCASE)`),
+    ];
+    const result = await host.exec([binary, dbPath, `SELECT ${counts.join(", ")};`]);
+    if (result.code !== 0) throw new Error(`Schema query failed: ${result.stderr.trim()}`);
+
+    const found = result.stdout.trim().split("|").map((count) => parseInt(count, 10) > 0);
+    if (found.length !== counts.length || !found[0]) {
+        throw new ValidationError("This table does not exist in the database.", { field: "table" });
+    }
+    if (found.includes(false)) {
+        throw new ValidationError("This column does not exist in the table.");
+    }
+}
+
 export async function getTableData(
     config: Record<string, unknown>,
     options: TableDataOptions,
@@ -126,6 +168,7 @@ export async function getTableData(
     const dataQuery = `SELECT * FROM ${tblId}${whereClause}${sortClause} LIMIT ${pageSize} OFFSET ${offset};`;
 
     const binary = await host.which((config.sqliteBinaryPath as string) || "sqlite3");
+    await assertListed(host, binary, dbPath, table, [searchColumn, sortBy]);
 
     // Three concurrent queries. Over SSH each one is a separate channel, which
     // the transport caps so a wide fan-out cannot exhaust the server session limit.

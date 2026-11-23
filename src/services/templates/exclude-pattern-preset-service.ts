@@ -1,7 +1,8 @@
 import prisma from "@/lib/prisma";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
-import { NotFoundError, ServiceError } from "@/lib/logging/errors";
+import { NotFoundError, ServiceError, ValidationError } from "@/lib/logging/errors";
+import { excludePatternsProblem } from "@/lib/exclude-pattern-rules";
 
 const log = logger.child({ service: "ExcludePatternPresetService" });
 
@@ -9,10 +10,13 @@ export async function getExcludePatternPresets() {
   return prisma.excludePatternPreset.findMany({ orderBy: { name: "asc" } });
 }
 
-export async function getExcludePatternPreset(id: string) {
-  const preset = await prisma.excludePatternPreset.findUnique({ where: { id } });
-  if (!preset) throw new NotFoundError("ExcludePatternPreset", id);
-  return preset;
+/**
+ * Refuses patterns that would be slow to match. They are matched in the one server process, against
+ * names a source server lists, so a preset holds only patterns of a cheap shape.
+ */
+function assertPatterns(patterns: string[] | undefined) {
+  const problem = patterns ? excludePatternsProblem(patterns) : null;
+  if (problem) throw new ValidationError(problem);
 }
 
 export async function createExcludePatternPreset(input: {
@@ -22,7 +26,8 @@ export async function createExcludePatternPreset(input: {
   groups?: string[];
   excludedGroupPatterns?: string[];
 }) {
-  const existing = await prisma.excludePatternPreset.findUnique({
+  assertPatterns(input.patterns);
+  const existing = await prisma.excludePatternPreset.findFirst({
     where: { name: input.name },
   });
   if (existing) {
@@ -56,9 +61,10 @@ export async function updateExcludePatternPreset(
 ) {
   const preset = await prisma.excludePatternPreset.findUnique({ where: { id } });
   if (!preset) throw new NotFoundError("ExcludePatternPreset", id);
+  assertPatterns(input.patterns);
 
   if (input.name && input.name !== preset.name) {
-    const existing = await prisma.excludePatternPreset.findUnique({
+    const existing = await prisma.excludePatternPreset.findFirst({
       where: { name: input.name },
     });
     if (existing) {
@@ -113,15 +119,6 @@ export async function deleteExcludePatternPreset(id: string): Promise<{ name: st
   await prisma.excludePatternPreset.delete({ where: { id } });
   log.info("Exclude pattern preset deleted", { id });
   return { name: preset.name };
-}
-
-export function parseExcludePatternPresetPatterns(patterns: string): string[] {
-  try {
-    const parsed = JSON.parse(patterns);
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
-  } catch {
-    return [];
-  }
 }
 
 /**

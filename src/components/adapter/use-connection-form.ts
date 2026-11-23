@@ -10,12 +10,27 @@ import type { CredentialProfileSummary } from "@/components/settings/credential-
 import type { AdapterConfig } from "./types";
 import { buildConnectionFormSchema, type ConnectionFormValues } from "./connection-form-schema";
 import { defaultConfig, fillMissingSwitches, fillRequiredText, initialRole, parseObject } from "./connection-form-defaults";
+import { serverFreeDefaults, useMayReachServer } from "./host-local-access";
+import { sshEndpointOf } from "@/lib/transport/ssh-endpoint";
 
 export type ConnectionTestState =
     | { status: "idle" }
     | { status: "running" }
-    | { status: "passed"; version?: string }
-    | { status: "failed"; message: string };
+    | { status: "passed"; version?: string; hostKey?: TestedHostKey; endpoint?: string }
+    | { status: "failed"; message: string; hostKeyMismatch?: HostKeyMismatchSeen };
+
+/** The host key of the SSH server a passing test saw, which a save pins, see `ssh-host-key.tsx`. */
+export interface TestedHostKey {
+    type: string;
+    key: string;
+    fingerprint: string;
+}
+
+/** The fingerprints of a test that met another host key than the pinned one. */
+export interface HostKeyMismatchSeen {
+    expected: string;
+    presented: string | null;
+}
 
 /** Switches a connection keeps in its metadata instead of its config, stored the way the API expects them. */
 export interface ConnectionMetadata {
@@ -55,6 +70,8 @@ interface TestResponse {
     success: boolean;
     message?: string;
     version?: string;
+    hostKey?: TestedHostKey;
+    hostKeyMismatch?: HostKeyMismatchSeen;
 }
 
 /** The connection as saved, for a page that goes on with it, like the setup. */
@@ -82,12 +99,15 @@ interface Options {
  */
 export function useConnectionForm({ adapter, initialData, defaultRole, lockRole = false, onSaved }: Options) {
     const schema = useMemo(() => buildConnectionFormSchema(adapter), [adapter]);
+    // A new connection opens on a mode the viewer may save, see `host-local.ts`.
+    const mayReachServer = useMayReachServer();
+    const fresh = () => (mayReachServer ? defaultConfig(adapter) : serverFreeDefaults(adapter.id, defaultConfig(adapter)));
     const form = useForm<ConnectionFormValues>({
         resolver: zodResolver(schema) as unknown as Resolver<ConnectionFormValues>,
         defaultValues: {
             name: initialData?.name ?? "",
             adapterId: adapter.id,
-            config: fillRequiredText(adapter, initialData ? fillMissingSwitches(adapter, parseObject(initialData.config)) : defaultConfig(adapter)),
+            config: fillRequiredText(adapter, initialData ? fillMissingSwitches(adapter, parseObject(initialData.config)) : fresh()),
         },
         // The form moves to the part with the error itself. Focusing a field in a hidden part fails.
         shouldFocusError: false,
@@ -139,16 +159,23 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         return (await res.json()) as TestResponse;
     };
 
+    /** The SSH server a config logs in to, as text, so a result only counts for the server it tried. */
+    const endpointOf = (config: unknown): string =>
+        JSON.stringify(sshEndpointOf(adapter.id, config && typeof config === "object" ? (config as Record<string, unknown>) : {}));
+
     /** The test button. A failure also goes to a toast, where the whole message fits. */
     const runTest = async () => {
         setTest({ status: "running" });
         try {
-            const result = await requestTest(form.getValues());
+            const values = form.getValues();
+            // Before the test runs: the form hands out its values themselves, which a change meanwhile changes too.
+            const endpoint = endpointOf(values.config);
+            const result = await requestTest(values);
             if (result.success) {
-                setTest({ status: "passed", version: result.version });
+                setTest({ status: "passed", version: result.version, hostKey: result.hostKey, endpoint });
             } else {
                 const message = result.message || "Connection failed";
-                setTest({ status: "failed", message });
+                setTest({ status: "failed", message, hostKeyMismatch: result.hostKeyMismatch });
                 toast.error(message);
             }
         } catch {
@@ -168,7 +195,13 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         return storedMetadata;
     };
 
-    const save = async (values: ConnectionFormValues) => {
+    /**
+     * `hostKey` is the key the test of these values saw, which the save pins. A test that ran while
+     * the host or port was changed tried another server, so its key is left out.
+     */
+    const testedKey = (values: ConnectionFormValues): TestedHostKey | undefined =>
+        test.status === "passed" && test.endpoint === endpointOf(values.config) ? test.hostKey : undefined;
+    const save = async (values: ConnectionFormValues, hostKey: TestedHostKey | undefined = testedKey(values)) => {
         setSaving(true);
         try {
             const res = await fetch(initialData ? `/api/adapters/${initialData.id}` : "/api/adapters", {
@@ -183,6 +216,7 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
                     primaryCredentialId,
                     sshCredentialId,
                     ...(adapter.type === "storage" ? { storageRole } : {}),
+                    ...(hostKey ? { sshHostKey: { type: hostKey.type, key: hostKey.key } } : {}),
                 }),
             });
             if (res.ok) {
@@ -208,14 +242,15 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
 
         setTest({ status: "running" });
         try {
+            const endpoint = endpointOf(values.config);
             const result = await requestTest(values);
             if (result.success) {
-                setTest({ status: "passed", version: result.version });
-                await save(values);
+                setTest({ status: "passed", version: result.version, hostKey: result.hostKey, endpoint });
+                await save(values, result.hostKey);
                 return;
             }
             const message = result.message || "Connection failed";
-            setTest({ status: "failed", message });
+            setTest({ status: "failed", message, hostKeyMismatch: result.hostKeyMismatch });
             setFailure({ message, values });
         } catch {
             setTest({ status: "failed", message: "The connection could not be tested." });
@@ -225,7 +260,8 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
 
     const saveAnyway = async () => {
         if (!failure) return;
-        await save(failure.values);
+        // The test failed, so there is no key of it to pin.
+        await save(failure.values, undefined);
         setFailure(null);
     };
 
@@ -256,6 +292,7 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         sshCredentialId,
         test,
         runTest,
+        resetTest: () => setTest({ status: "idle" }),
         onValid,
         failure,
         dismissFailure: () => setFailure(null),

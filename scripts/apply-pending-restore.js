@@ -74,4 +74,7 @@ function main() {
     }
 }
 
-main();
+// The backup before the migrations finds the database the same way.
+module.exports = { databaseFile, SUFFIXES };
+
+if (require.main === module) main();

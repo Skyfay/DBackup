@@ -113,19 +113,19 @@ try {
 
 ---
 
-## Middleware Logging
+## Proxy Logging
 
-The Next.js middleware automatically logs API requests and security events.
+The Next.js proxy automatically logs API requests and security events.
 
-**Location**: `src/middleware.ts`
+**Location**: `src/proxy.ts`
 
 ### API Request Logging
 
 All API requests (except silent paths) are logged with timing information:
 
 ```
-INFO  API request {"module":"Middleware","method":"GET","path":"/api/jobs","duration":"12ms","ip":"127.0.0.1"}
-INFO  API request {"module":"Middleware","method":"POST","path":"/api/backup/run","duration":"45ms","ip":"192.168.x.x"}
+INFO  API request {"module":"Proxy","method":"GET","path":"/api/jobs","duration":"12ms","ip":"127.0.0.1"}
+INFO  API request {"module":"Proxy","method":"POST","path":"/api/backup/run","duration":"45ms","ip":"192.168.x.x"}
 ```
 
 **Silent Paths** (not logged to reduce noise):
@@ -137,7 +137,7 @@ INFO  API request {"module":"Middleware","method":"POST","path":"/api/backup/run
 When a client exceeds the rate limit, a warning is logged:
 
 ```
-WARN  Rate limit exceeded {"module":"Middleware","ip":"192.168.x.x","path":"/api/jobs","method":"POST","limiter":"mutation"}
+WARN  Rate limit exceeded {"module":"Proxy","ip":"192.168.x.x","path":"/api/jobs","method":"POST","limiter":"mutation"}
 ```
 
 **Limiter Types:**

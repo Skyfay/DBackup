@@ -17,8 +17,9 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { callbackUrl, type SsoEndpoints, type SsoProviderRow, type SsoProvidersModel } from "@/services/sso/sso-providers-types";
 import { adapterCopy, SSO_SCOPES } from "./sign-in-adapters";
-import { NewPeopleCell, placeLine, ProviderStateBadge } from "./sign-in-cells";
+import { placeLine, ProviderStateBadge } from "./sign-in-cells";
 import { CopyFrame, CopyLine, LinkedPersonRow } from "./sign-in-parts";
+import { WhoSignsIn } from "./sign-in-who";
 
 const log = logger.child({ component: "sign-in-details" });
 
@@ -115,6 +116,8 @@ function Content({ provider, model, onEdit, menu, canManage }: SignInDetailsProp
 
             <ScrollArea className="min-h-0 flex-1">
                 <div className="space-y-6 p-5">
+                    <WhoSignsIn provider={provider} multiTenant={model.tenants.length > 1} redirected={redirected} editable={Boolean(onEdit)} />
+
                     <Section title={`In ${place}`} aside="what the provider needs">
                         <CopyFrame>
                             <CopyLine label="Redirect URI" value={callbackUrl(model.callbackBase, provider.providerId)} />
@@ -124,29 +127,6 @@ function Content({ provider, model, onEdit, menu, canManage }: SignInDetailsProp
                         </CopyFrame>
                     </Section>
 
-                    <Section title="New people" aside={onEdit ? "Edit to change" : undefined}>
-                        {provider.allowProvisioning ? (
-                            provider.group ? (
-                                <div className="flex flex-wrap items-center gap-2 text-sm">
-                                    <span>{provider.name} adds someone on their first sign-in.</span>
-                                    <NewPeopleCell provider={provider} />
-                                </div>
-                            ) : (
-                                <Notice tone="warning" title="Added without a group">
-                                    {provider.name} adds someone on their first sign-in. They sign in, but see and do nothing until someone picks a group for them.
-                                </Notice>
-                            )
-                        ) : (
-                            <p className="text-sm">Only people with an account in DBackup of the same email sign in through it. Someone new is turned away.</p>
-                        )}
-                        {(provider.domain || redirected) && (
-                            <p className="text-xs text-muted-foreground">
-                                {provider.domain && `An email of ${provider.domain} goes straight to it from the login page.`}
-                                {provider.domain && redirected && " "}
-                                {redirected && "The login page sends everyone straight to it, since OIDC_AUTO_REDIRECT names it."}
-                            </p>
-                        )}
-                    </Section>
 
                     <Section title="Linked people" aside={provider.linked.length > 0 ? provider.linked.length.toLocaleString() : undefined}>
                         {provider.linked.length === 0 ? (

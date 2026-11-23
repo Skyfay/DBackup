@@ -11,6 +11,7 @@ import { prismaMock } from '@/lib/testing/prisma-mock';
 import { StorageService } from '@/services/storage/storage-service';
 import { registry } from '@/lib/core/registry';
 import { StorageAdapter } from '@/lib/core/interfaces';
+import { HOME_TENANT_ID } from '@/lib/tenant/home';
 
 // ── Module Mocks ───────────────────────────────────────────────
 
@@ -122,6 +123,7 @@ function makeDbConfig(overrides?: Record<string, any>) {
         sshCredentialId: null,
         defaultRetentionPolicyId: null,
         storageRole: 'DESTINATION',
+        tenantId: HOME_TENANT_ID,
         ...overrides,
     };
 }

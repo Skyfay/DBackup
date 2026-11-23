@@ -1,6 +1,5 @@
 import prisma from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
-import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { storageService, type RichFileInfo } from "@/services/storage/storage-service";
@@ -9,6 +8,7 @@ import { aliasesOf } from "./key-aliases";
 import { keyIdOf } from "./key-id";
 import { keyAudit, type KeyAudit, type KitEntry } from "./vault-audit";
 import { isKeyInUse, type VaultKey, type VaultKeyBackup, type VaultKeyDestination, type VaultKeyJob, type VaultKeysModel, type VaultKit } from "./vault-types";
+import { placesOfScope } from "@/services/storage/explorer-service";
 
 const log = logger.child({ service: "VaultKeys" });
 
@@ -170,20 +170,19 @@ function readKeyId(id: string, secretKey: string): string | null {
     }
 }
 
-/** Every backup destination with the backups its cached listing holds. A page never waits for a storage. */
+/**
+ * Every backup destination with the backups its cached listing holds, those other tenants share
+ * with this one included, where its own backups are. A page never waits for a storage.
+ */
 async function listedDestinations(): Promise<ListedDestination[]> {
-    const configs = await prisma.adapterConfig.findMany({
-        where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
-        select: { id: true, name: true, adapterId: true },
-        orderBy: { name: "asc" },
-    });
+    const places = await placesOfScope();
     return Promise.all(
-        configs.map(async (config) => {
-            const cached = await storageService.readCachedListing(config.id).catch((error: unknown) => {
+        places.map(async ({ config, tenantId }) => {
+            const cached = await storageService.readCachedListing(config.id, tenantId).catch((error: unknown) => {
                 log.warn("Could not read the cached listing", { destinationId: config.id }, wrapError(error));
                 return null;
             });
-            return { ...config, files: cached?.files ?? [] };
+            return { id: config.id, name: config.name, adapterId: config.adapterId, files: cached?.files ?? [] };
         })
     );
 }

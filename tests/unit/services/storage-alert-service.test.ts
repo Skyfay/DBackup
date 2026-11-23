@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
 
@@ -59,6 +59,17 @@ function makeEntry(overrides?: Partial<{
   };
 }
 
+/**
+ * What the destination held at its latest refreshes, newest first, as the sum of the snapshots of
+ * every tenant written at one time. The first is the refresh just saved.
+ */
+function mockRefreshTotals(...totals: number[]) {
+  // Prisma's groupBy overloads are too deep for the mock types, so it is driven as a plain mock.
+  (prismaMock.storageSnapshot.groupBy as unknown as Mock).mockResolvedValue(
+    totals.map((size, index) => ({ createdAt: new Date(Date.UTC(2026, 1, 22, 12 - index)), _sum: { size: BigInt(size) } })),
+  );
+}
+
 function makeAlertConfig(overrides?: Partial<StorageAlertConfig>): StorageAlertConfig {
   return { ...defaultAlertConfig(), ...overrides };
 }
@@ -106,6 +117,8 @@ describe("StorageAlertService", () => {
     vi.setSystemTime(new Date("2026-02-22T12:00:00Z"));
     // Default: getNotificationConfig returns empty events (no custom reminder intervals)
     mockGetNotificationConfig.mockResolvedValue({ globalChannels: [], events: {} });
+    // Default: the destination was never measured before
+    mockRefreshTotals();
   });
 
   afterEach(() => {
@@ -326,12 +339,13 @@ describe("StorageAlertService", () => {
         missingBackupEnabled: true,
       });
 
-      // Mock snapshot queries for spike check (no spike)
+      // Mock snapshot queries for missing backup check, no refresh before for the spike check
       prismaMock.storageSnapshot.findMany.mockResolvedValue([]);
 
       await checkStorageAlerts([makeEntry()]);
 
-      // Should have queried snapshots for usage spike and missing backup
+      // Should have queried the refreshes for usage spike and the snapshots for missing backup
+      expect(prismaMock.storageSnapshot.groupBy).toHaveBeenCalled();
       expect(prismaMock.storageSnapshot.findMany).toHaveBeenCalled();
     });
 
@@ -411,12 +425,10 @@ describe("StorageAlertService", () => {
   // ── Usage Spike Detection ──────────────────────────────────
 
   describe("checkUsageSpike (via checkStorageAlerts)", () => {
-    it("should not alert when only 1 snapshot exists", async () => {
+    it("should not alert when only 1 refresh exists", async () => {
       mockAlertSetting("cfg-1", { usageSpikeEnabled: true });
 
-      prismaMock.storageSnapshot.findMany.mockResolvedValue([
-        { size: BigInt(1073741824) } as any,
-      ]);
+      mockRefreshTotals(1073741824);
 
       await checkStorageAlerts([makeEntry()]);
 
@@ -430,10 +442,7 @@ describe("StorageAlertService", () => {
       });
 
       // 1 GB → 1.2 GB = 20% increase (below 50% threshold)
-      prismaMock.storageSnapshot.findMany.mockResolvedValue([
-        { size: BigInt(1288490188) } as any, // current (most recent)
-        { size: BigInt(1073741824) } as any, // previous
-      ]);
+      mockRefreshTotals(1288490188, 1073741824);
 
       await checkStorageAlerts([makeEntry({ size: 1288490188 })]);
 
@@ -447,10 +456,7 @@ describe("StorageAlertService", () => {
       });
 
       // 1 GB → 2 GB = 100% increase (above 50% threshold)
-      prismaMock.storageSnapshot.findMany.mockResolvedValue([
-        { size: BigInt(2147483648) } as any, // current
-        { size: BigInt(1073741824) } as any, // previous
-      ]);
+      mockRefreshTotals(2147483648, 1073741824);
 
       await checkStorageAlerts([makeEntry({ size: 2147483648 })]);
 
@@ -474,10 +480,7 @@ describe("StorageAlertService", () => {
       });
 
       // 2 GB → 1 GB = -50% decrease (|50%| > 40% threshold)
-      prismaMock.storageSnapshot.findMany.mockResolvedValue([
-        { size: BigInt(1073741824) } as any, // current
-        { size: BigInt(2147483648) } as any, // previous
-      ]);
+      mockRefreshTotals(1073741824, 2147483648);
 
       await checkStorageAlerts([makeEntry({ size: 1073741824 })]);
 
@@ -494,10 +497,7 @@ describe("StorageAlertService", () => {
       });
 
       // 1 GB → 1.5 GB = exactly 50%
-      prismaMock.storageSnapshot.findMany.mockResolvedValue([
-        { size: BigInt(1610612736) } as any,
-        { size: BigInt(1073741824) } as any,
-      ]);
+      mockRefreshTotals(1610612736, 1073741824);
 
       await checkStorageAlerts([makeEntry({ size: 1610612736 })]);
 
@@ -511,10 +511,7 @@ describe("StorageAlertService", () => {
         usageSpikeThresholdPercent: 1,
       });
 
-      prismaMock.storageSnapshot.findMany.mockResolvedValue([
-        { size: BigInt(1073741824) } as any,
-        { size: BigInt(0) } as any, // previous was 0
-      ]);
+      mockRefreshTotals(1073741824, 0);
 
       await checkStorageAlerts([makeEntry({ size: 1073741824 })]);
 
@@ -530,6 +527,7 @@ describe("StorageAlertService", () => {
 
       await checkStorageAlerts([makeEntry()]);
 
+      expect(prismaMock.storageSnapshot.groupBy).not.toHaveBeenCalled();
       expect(prismaMock.storageSnapshot.findMany).not.toHaveBeenCalled();
     });
   });
@@ -772,10 +770,7 @@ describe("StorageAlertService", () => {
       });
 
       // Spike: 500 → 950 = 90% increase (above 10%)
-      prismaMock.storageSnapshot.findMany.mockResolvedValue([
-        { size: BigInt(950) } as any,
-        { size: BigInt(500) } as any,
-      ]);
+      mockRefreshTotals(950, 500);
 
       // Limit: 950 / 1000 = 95% (above 90%)
       await checkStorageAlerts([makeEntry({ size: 950 })]);
@@ -801,17 +796,13 @@ describe("StorageAlertService", () => {
       // Spike: 1 GB → 1.1 GB = 10% (below 50%)
       // Limit: 1.1 GB / 100 GB = 1.1% (well below 90%)
       // Missing: count changed 1h ago
-      prismaMock.storageSnapshot.findMany
-        .mockResolvedValueOnce([
-          // For spike check
-          { size: BigInt(1181116006) } as any,
-          { size: BigInt(1073741824) } as any,
-        ])
-        .mockResolvedValueOnce([
-          // For missing backup check
-          { count: 11, createdAt: new Date("2026-02-22T12:00:00Z") } as any,
-          { count: 10, createdAt: new Date("2026-02-22T11:00:00Z") } as any,
-        ]);
+      // For spike check
+      mockRefreshTotals(1181116006, 1073741824);
+      // For missing backup check
+      prismaMock.storageSnapshot.findMany.mockResolvedValueOnce([
+        { count: 11, createdAt: new Date("2026-02-22T12:00:00Z") } as any,
+        { count: 10, createdAt: new Date("2026-02-22T11:00:00Z") } as any,
+      ]);
 
       await checkStorageAlerts([makeEntry({ size: 1181116006 })]);
 
@@ -977,10 +968,7 @@ describe("StorageAlertService", () => {
         );
 
         // Still a spike in the latest snapshots
-        prismaMock.storageSnapshot.findMany.mockResolvedValue([
-          { size: BigInt(2147483648) } as any,
-          { size: BigInt(1073741824) } as any,
-        ]);
+        mockRefreshTotals(2147483648, 1073741824);
 
         await checkStorageAlerts([makeEntry({ size: 2147483648 })]);
 
@@ -995,10 +983,7 @@ describe("StorageAlertService", () => {
         );
 
         // No spike (only 5% change)
-        prismaMock.storageSnapshot.findMany.mockResolvedValue([
-          { size: BigInt(1127428915) } as any, // ~5% increase
-          { size: BigInt(1073741824) } as any,
-        ]);
+        mockRefreshTotals(1127428915, 1073741824);
 
         await checkStorageAlerts([makeEntry({ size: 1127428915 })]);
 
@@ -1020,10 +1005,7 @@ describe("StorageAlertService", () => {
         });
 
         // New spike: 100% increase
-        prismaMock.storageSnapshot.findMany.mockResolvedValue([
-          { size: BigInt(2147483648) } as any,
-          { size: BigInt(1073741824) } as any,
-        ]);
+        mockRefreshTotals(2147483648, 1073741824);
 
         await checkStorageAlerts([makeEntry({ size: 2147483648 })]);
 
@@ -1049,10 +1031,7 @@ describe("StorageAlertService", () => {
         );
 
         // Need snapshots for spike check (no spike)
-        prismaMock.storageSnapshot.findMany.mockResolvedValue([
-          { size: BigInt(1073741824) } as any,
-          { size: BigInt(1073741824) } as any, // no change = no spike
-        ]);
+        mockRefreshTotals(1073741824, 1073741824);
 
         await checkStorageAlerts([makeEntry()]);
 
@@ -1227,6 +1206,63 @@ describe("StorageAlertService", () => {
       // reminderIntervalHours=0 is excluded from the cooldown map → uses default 24h
       // 1h < 24h → no resend
       expect(mockNotify).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── A destination shared with customers ────────────────────
+
+  describe("a destination its tenant shares with customers", () => {
+    // What the refresh measured of the whole destination: 300 of the MSP, 900 of its customers.
+    const shared = () => makeEntry({ configId: "msp-s3", name: "MSP S3", size: 1200, count: 12 });
+
+    it("warns about the storage limit once the customers fill the destination", async () => {
+      mockAlertSetting("msp-s3", { storageLimitEnabled: true, storageLimitBytes: 1000 });
+
+      await checkStorageAlerts([{ ...shared(), tenantId: "msp" }]);
+
+      expect(mockNotify).toHaveBeenCalledWith(expect.objectContaining({
+        eventType: NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING,
+        data: expect.objectContaining({ currentSize: 1200, limitSize: 1000 }),
+      }));
+    });
+
+    it("compares what the whole destination held at the refresh before, the backups of every tenant summed", async () => {
+      mockAlertSetting("msp-s3", { usageSpikeEnabled: true, usageSpikeThresholdPercent: 50 });
+      // The refresh before held 600 in all, the MSP alone grew by nothing.
+      mockRefreshTotals(1200, 600);
+
+      await checkStorageAlerts([{ ...shared(), tenantId: "msp" }]);
+
+      expect(prismaMock.storageSnapshot.groupBy).toHaveBeenCalledWith(expect.objectContaining({
+        by: ["createdAt"],
+        where: { adapterConfigId: "msp-s3" },
+        orderBy: { createdAt: "desc" },
+        take: 2,
+      }));
+      expect(mockNotify).toHaveBeenCalledWith(expect.objectContaining({
+        eventType: NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE,
+        data: expect.objectContaining({ previousSize: 600, currentSize: 1200, changePercent: 100 }),
+      }));
+    });
+
+    it("looks for a missing backup among the runs and snapshots of its own tenant only", async () => {
+      mockAlertSetting("msp-s3", { missingBackupEnabled: true, missingBackupHours: 24 });
+      prismaMock.execution.findFirst.mockResolvedValue(null);
+      // The MSP's own count has not changed for 30 hours, whatever its customers stored meanwhile.
+      prismaMock.storageSnapshot.findMany.mockResolvedValue([
+        { count: 3, createdAt: new Date("2026-02-22T12:00:00Z") } as any,
+        { count: 3, createdAt: new Date("2026-02-21T06:00:00Z") } as any,
+      ]);
+
+      await checkStorageAlerts([{ ...shared(), tenantId: "msp" }]);
+
+      expect(prismaMock.execution.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ tenantId: "msp" }),
+      }));
+      expect(prismaMock.storageSnapshot.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { adapterConfigId: "msp-s3", tenantId: "msp" },
+      }));
+      expect(mockNotify).toHaveBeenCalledWith(expect.objectContaining({ eventType: NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP }));
     });
   });
 });

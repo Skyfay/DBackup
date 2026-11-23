@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, Layers, RotateCcw, Search } from "lucide-react";
+import { Download, Layers, RotateCcw, Search, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { QuickFilter, type QuickFilterOption } from "@/components/ui/quick-filter";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, formatBytes } from "@/lib/utils";
-import { filterCounts, matchesFilter, type DbFilter, type DbRow } from "./restore-model";
+import { customerNote, filterCounts, matchesFilter, type DbFilter, type DbRow } from "./restore-model";
 import { FlowArrow, OutcomeTag } from "./restore-parts";
 
 // A phone gets the name, the tag and the new name below. From md on every part has its column.
@@ -30,6 +30,16 @@ function Outcome({ row }: { row: DbRow }) {
         );
     }
     return <span className="text-xs text-muted-foreground">{row.outcome === "out" ? "stays out" : "stays as it is"}</span>;
+}
+
+/** A database a customer holds now on the shared server, which the restore asks about before it overwrites it. */
+export function CustomerNote({ text }: { text: string }) {
+    return (
+        <p className="mt-1 flex items-center gap-1 truncate text-xs text-warning">
+            <Users className="size-3 shrink-0" aria-hidden="true" />
+            {text}
+        </p>
+    );
 }
 
 interface RowProps {
@@ -59,6 +69,7 @@ function Row({ row, canDownload, onPick, onRename, onDownload }: RowProps) {
                 ) : (
                     <p className="truncate text-sm">{row.target}</p>
                 )}
+                {row.customer !== undefined && <CustomerNote text={customerNote([row]) ?? ""} />}
             </div>
             <div className="col-start-3 row-start-1 md:col-start-auto md:row-start-auto">
                 <Outcome row={row} />

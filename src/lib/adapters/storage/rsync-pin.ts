@@ -1,0 +1,62 @@
+import type { StorageAdapter } from "@/lib/core/interfaces";
+import { reachableAddress } from "@/lib/network/checked-socket";
+import { reachOf } from "@/lib/network/reach-policy";
+
+/**
+ * The address rsync and ssh dial for a connection of a tenant that blocks the local network: the
+ * one the check resolved right before the call, see `reach-check.ts`, so a name that answers
+ * otherwise for ssh reaches no address of the local network either. ssh looks the host key up
+ * under a fixed alias, see `HOST_KEY_ALIAS` in `host-key-openssh.ts`, so dialing the address
+ * instead of the name changes nothing about the pin. A connection of any other tenant dials its
+ * host as before.
+ */
+
+/**
+ * The key of the checked address, without brackets, read by `sshTarget` in `rsync.ts`, which puts
+ * an IPv6 address in brackets only inside rsync's `user@[address]:path`. A symbol, so a config of a
+ * request or a stored row, which is JSON, cannot bring an address of its own that dialing would use
+ * in place of the host every check read.
+ */
+export const DIAL_ADDRESS: unique symbol = Symbol("dbackup.rsync.dialAddress");
+
+/** The field that carries the checked address. */
+export interface DialAddress {
+    [DIAL_ADDRESS]?: string;
+}
+
+/**
+ * The config with the checked address of its host, the first that answers on the SSH port where it
+ * has several, see `checked-socket.ts`. The config itself where its tenant blocks nothing.
+ */
+export async function pinRsyncHost<T extends { host: string; port?: unknown }>(config: T): Promise<T & DialAddress> {
+    const reach = reachOf(config);
+    if (!reach) return config;
+    const host = String(config.host ?? "").trim().replace(/^\[|\]$/g, "");
+    return { ...config, [DIAL_ADDRESS]: await reachableAddress(host, Number(config.port) || 22, reach.allowed) };
+}
+
+/** The methods that answer a refusal with a result instead of throwing it. */
+const ANSWERS = new Set(["test", "ping"]);
+
+/**
+ * The adapter with every method that takes a config first handed the config of `pinRsyncHost`.
+ * A refused host fails `test` and `ping` with its message, like any other failed connection.
+ */
+export function withPinnedRsyncHost(adapter: StorageAdapter): StorageAdapter {
+    const pinned: Record<string, unknown> = { ...adapter };
+    for (const [name, value] of Object.entries(adapter)) {
+        if (typeof value !== "function") continue;
+        const method = value as (config: { host: string }, ...rest: unknown[]) => Promise<unknown>;
+        pinned[name] = async (config: { host: string }, ...rest: unknown[]) => {
+            let ready: { host: string };
+            try {
+                ready = await pinRsyncHost(config);
+            } catch (error: unknown) {
+                if (ANSWERS.has(name)) return { success: false, message: error instanceof Error ? error.message : String(error) };
+                throw error;
+            }
+            return method.call(pinned, ready, ...rest);
+        };
+    }
+    return pinned as unknown as StorageAdapter;
+}

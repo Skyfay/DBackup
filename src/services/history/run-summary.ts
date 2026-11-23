@@ -41,7 +41,7 @@ export function listOf(names: string[]): string {
     return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
-function plural(count: number, one: string, many = `${one}s`): string {
+export function plural(count: number, one: string, many = `${one}s`): string {
     return `${count} ${count === 1 ? one : many}`;
 }
 
@@ -53,7 +53,7 @@ function match(entries: LogEntry[], pattern: RegExp): RegExpMatchArray | null {
     return null;
 }
 
-function between(start: string | null, end: string | null): number | null {
+export function between(start: string | null, end: string | null): number | null {
     const from = start ? Date.parse(start) : NaN;
     const to = end ? Date.parse(end) : NaN;
     return Number.isFinite(from) && Number.isFinite(to) ? to - from : null;
@@ -217,7 +217,7 @@ function notifying(notifications: RunNotification[]): { text: string | null; ite
 }
 
 /** The last thing a step said, for a step without a summary of its own. */
-function lastLine(entries: LogEntry[]): string | null {
+export function lastLine(entries: LogEntry[]): string | null {
     const line = [...entries].reverse().find((entry) => entry.level !== "error" && entry.level !== "warning" && entry.type !== "command"
         && !SUMMARY_LINES.some((pattern) => pattern.test(entry.message)));
     return line ? sourceOf(line.message).text : null;
@@ -236,7 +236,7 @@ export function buildSummary(input: SummaryInput): RunStepSummary[] {
 
 function tell(step: RunStep, entries: LogEntry[], input: SummaryInput, dumps: RunDump[]): RunStepSummary {
     const live = input.live && step.state === "running";
-    const base: RunStepSummary = { step: step.name, text: null, tool: null, dumps: [], items: [], checksum: null, now: null };
+    const base: RunStepSummary = { step: step.name, text: null, tool: null, file: null, dumps: [], items: [], checksum: null, now: null };
     switch (step.name) {
         case "Queued":
             return { ...base, text: step.durationMs ? `Waited ${formatDuration(step.durationMs)} for a free slot.` : null };

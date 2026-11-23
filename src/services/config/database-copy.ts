@@ -9,7 +9,7 @@
 
 import { promises as fs } from "fs";
 import { PrismaClient } from "@prisma/client";
-import { createDatabaseSnapshot } from "@/services/system/database-service";
+import { createDatabaseSnapshot, type DatabaseSnapshot } from "@/services/system/database-service";
 import packageJson from "../../../package.json";
 
 /** The row of a copy that holds the keys of the DBackup it came from. */
@@ -17,6 +17,9 @@ export const COPY_KEYS_SETTING = "configBackup.copyKeys";
 
 /** What a restore never takes over: every sign-in ends with it, and the caches fill again. */
 export const DROPPED_TABLES = ["Session", "Verification", "StorageListCache", "DatabaseListCache"];
+
+/** What a download of the database leaves empty: the tokens of the live sign-ins and the codes of a sign-in or a reset. */
+export const SIGN_IN_TABLES = ["Session", "Verification"];
 
 /** The history, which a copy holds only with Include the history. */
 export const HISTORY_TABLES = ["NotificationLog", "Execution", "AuditLog", "StorageSnapshot", "HealthCheckLog"];
@@ -39,9 +42,13 @@ export function openCopy(file: string): PrismaClient {
     return new PrismaClient({ datasources: { db: { url: `file:${file}` } } });
 }
 
-/** The keys a copy carries, or null for a copy without them, like a download of the database. */
+/**
+ * The keys a copy carries, or null for a copy without them, like a download of the database. Read
+ * raw, since the client of this version names every column it knows, and a copy of an older
+ * version may lack one.
+ */
 export async function readCopyKeys(copy: PrismaClient): Promise<CopyKeys | null> {
-    const row = await copy.systemSetting.findUnique({ where: { key: COPY_KEYS_SETTING } }).catch(() => null);
+    const [row] = await copy.$queryRawUnsafe<{ value: string }[]>(`SELECT "value" FROM "SystemSetting" WHERE "key" = ?`, COPY_KEYS_SETTING).catch(() => []);
     if (!row) return null;
     try {
         const keys = JSON.parse(row.value) as Partial<CopyKeys>;
@@ -82,4 +89,26 @@ export async function createConfigCopy({ includeHistory }: { includeHistory: boo
     await copy.$disconnect();
     const { size } = await fs.stat(snapshot.tempFile);
     return { file: snapshot.tempFile, sizeBytes: size };
+}
+
+/**
+ * A copy of the database for Download the database, in a temp file the caller removes. It holds
+ * everything but the live sign-ins and the codes of a sign-in or a password reset, so the file
+ * opens no session of anyone who is signed in right now. The VACUUM writes the file again, so no
+ * deleted row stays in a free page of it.
+ */
+export async function createDownloadCopy(): Promise<DatabaseSnapshot> {
+    const snapshot = await createDatabaseSnapshot();
+    const copy = openCopy(snapshot.tempFile);
+    try {
+        for (const table of SIGN_IN_TABLES) await copy.$executeRawUnsafe(`DELETE FROM "${table}"`);
+        await copy.$executeRawUnsafe("VACUUM");
+    } catch (error: unknown) {
+        await copy.$disconnect();
+        await fs.unlink(snapshot.tempFile).catch(() => undefined);
+        throw error;
+    }
+    await copy.$disconnect();
+    const { size } = await fs.stat(snapshot.tempFile);
+    return { ...snapshot, sizeBytes: size };
 }

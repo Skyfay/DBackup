@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Bell, Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
-import { saveDefaultChannelsAction, saveNotificationEventsAction } from "@/app/actions/settings/notification-settings";
 import { ChoiceCards } from "@/components/adapter/connection-mode-choice";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, DialogItemList, dialogNoteClass } from "@/components/ui/confirm-dialog";
@@ -15,6 +14,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { NotificationEventRow } from "@/services/notifications/notification-settings-service";
+import { useNotificationsApi } from "./notification-api";
 import { ChannelChecklist } from "./notification-channels";
 import { AREAS } from "./notification-words";
 
@@ -27,6 +27,7 @@ interface SendToDialogProps extends BulkDialogProps<NotificationEventRow> {
 
 /** Send to of several ticked events at once: the default channels, or the same own channels for all of them. */
 export function SendToDialog({ rows, onClose, onDone, channels, defaultChannels }: SendToDialogProps) {
+    const api = useNotificationsApi();
     const [own, setOwn] = useState(false);
     const [picked, setPicked] = useState<string[]>(defaultChannels);
     const [saving, setSaving] = useState(false);
@@ -38,7 +39,7 @@ export function SendToDialog({ rows, onClose, onDone, channels, defaultChannels 
         if (own && picked.length === 0) return setProblem("Pick at least one channel, or send them to the default channels.");
         setSaving(true);
         try {
-            const result = await saveNotificationEventsAction(ids, { channels: own ? picked : null });
+            const result = await api.saveEvents(ids, { channels: own ? picked : null });
             onDone(result.success ? { succeeded: ids, failed: [] } : { succeeded: [], failed: rows.map((row) => ({ id: row.id, name: row.name, error: result.error })) });
         } catch (error: unknown) {
             log.warn("Saving where several events go failed", { count: ids.length }, wrapError(error));
@@ -98,13 +99,14 @@ interface DefaultChannelsDialogProps {
 
 /** The channels every event goes to unless it has its own. */
 export function DefaultChannelsDialog({ open, channels, value, onOpenChange, onSaved }: DefaultChannelsDialogProps) {
+    const api = useNotificationsApi();
     const [picked, setPicked] = useState(value);
     const [saving, setSaving] = useState(false);
 
     const save = async () => {
         setSaving(true);
         try {
-            const result = await saveDefaultChannelsAction(picked);
+            const result = await api.saveDefaults(picked);
             if (!result.success) {
                 toast.error(result.error);
                 return;

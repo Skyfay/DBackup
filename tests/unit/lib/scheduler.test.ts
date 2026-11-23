@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import cron from 'node-cron';
 import { runJob } from '@/lib/runner';
 import { systemTaskService, SYSTEM_TASKS } from '@/services/system/system-task-service';
+import { queueJobsChanged } from '@/services/jobs/queue-snapshot';
 
 // Mock dependencies
 vi.mock('@/lib/prisma', () => ({
@@ -34,6 +35,8 @@ vi.mock('@/services/system/system-task-service', () => ({
     }
 }));
 
+vi.mock('@/services/jobs/queue-snapshot', () => ({ queueJobsChanged: vi.fn() }));
+
 // Mock node-cron
 vi.mock('node-cron', () => ({
     default: {
@@ -53,7 +56,7 @@ describe('BackupScheduler', () => {
         // @ts-expect-error -- Mock setup
         cron.validate.mockReturnValue(true);
         // @ts-expect-error -- Mock setup
-        cron.schedule.mockReturnValue({ stop: vi.fn() });
+        cron.schedule.mockReturnValue({ stop: vi.fn(), destroy: vi.fn() });
         // @ts-expect-error -- Mock setup
         prisma.job.findMany.mockResolvedValue([]);
         // @ts-expect-error -- Mock setup
@@ -112,16 +115,16 @@ describe('BackupScheduler', () => {
         expect(cron.schedule).not.toHaveBeenCalled();
     });
 
-    it('should stop existing tasks before refreshing', async () => {
+    it('removes the tasks of the last refresh from node-cron before scheduling again', async () => {
         const jobs = [
             { id: 'job1', name: 'Job 1', schedule: '0 0 * * *', enabled: true },
         ];
         // @ts-expect-error -- Mock setup
         prisma.job.findMany.mockResolvedValue(jobs);
 
-        const stopMock = vi.fn();
+        const destroyMock = vi.fn();
         // @ts-expect-error -- Mock setup
-        cron.schedule.mockReturnValue({ stop: stopMock });
+        cron.schedule.mockReturnValue({ stop: vi.fn(), destroy: destroyMock });
 
         // First load
         await scheduler.refresh();
@@ -130,10 +133,16 @@ describe('BackupScheduler', () => {
         // Second load
         await scheduler.refresh();
 
-        // Should have stopped the previous task
-        expect(stopMock).toHaveBeenCalled();
+        // A stopped task stays in the registry of node-cron, a destroyed one leaves it.
+        expect(destroyMock).toHaveBeenCalledTimes(1);
         // Should have scheduled again
         expect(cron.schedule).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops the plan of the queue the pages share on every refresh', async () => {
+        await scheduler.refresh();
+
+        expect(queueJobsChanged).toHaveBeenCalled();
     });
 
     it('should schedule system tasks if configured', async () => {

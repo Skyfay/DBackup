@@ -9,6 +9,9 @@ import { ConnectionForm } from "@/components/adapter/connection-form";
 vi.mock("sonner", () => ({
     toast: { success: vi.fn(), error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }));
+// The real session store of better-auth cleans up on a timer, which can fire after the test
+// environment and its window are gone.
+vi.mock("@/lib/auth/client", () => ({ useSession: () => ({ data: null }) }));
 
 function adapter(id: string): AdapterDefinition {
     const definition = getAdapterDefinition(id);

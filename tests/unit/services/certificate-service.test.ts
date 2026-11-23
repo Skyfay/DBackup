@@ -41,9 +41,14 @@ vi.mock("@/lib/logging/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), error: vi.fn(), warn: vi.fn() }) },
 }));
 
-vi.mock("@/lib/logging/errors", () => ({
+vi.mock("@/lib/logging/errors", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/logging/errors")>()),
   wrapError: (e: unknown) => e,
 }));
+
+// The check of the real PEM content has its own test, certificate-upload-check.test.ts. The texts
+// here are placeholders, so it is switched off.
+vi.mock("@/services/system/certificate-check", () => ({ assertServableCertificate: vi.fn() }));
 
 import {
   isHttpsEnabled,
@@ -242,6 +247,8 @@ describe("CertificateService", () => {
       expect(() => uploadCertificate("not a cert", validKey)).toThrow(
         "Invalid certificate format"
       );
+      // Written for the user, so Settings shows it, where the words of openssl stay in the log.
+      expect(() => uploadCertificate("not a cert", validKey)).toThrow(expect.objectContaining({ code: "VALIDATION_ERROR" }));
     });
 
     it("should reject invalid key format", () => {

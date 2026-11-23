@@ -41,9 +41,9 @@ import { isPlainClick, toggleOnClick } from "./row-click";
 import { Skeleton } from "./skeleton";
 import { JOIN_END } from "./page-head";
 import { cn } from "@/lib/utils";
-import type { BulkAction, BulkRunOptions, BulkTrash, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk } from "./data-table-types";
+import type { BulkAction, BulkTrash, DataTableFilterableColumn, RowMenuBulk } from "./data-table-types";
 
-export type { BulkAction, BulkRunOptions, BulkTrash, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk };
+export type { BulkAction, BulkTrash, DataTableFilterableColumn, RowMenuBulk };
 
 /** Rows of skeletons while the first rows load, see `loadingRows`. */
 const LOADING_ROWS = 5;
@@ -98,6 +98,8 @@ interface DataTableProps<TData, TValue> {
     columnLayout?: ColumnLayoutOption;
     /** Extra controls after the filters, such as quick status filters. */
     toolbarExtra?: React.ReactNode;
+    /** A control before the search, like the switch between the platform groups and the groups of the tenants. */
+    toolbarStart?: React.ReactNode;
     /** A line under the toolbar of the card look, like a legend for the marks in the rows. */
     toolbarNote?: React.ReactNode;
     /**
@@ -165,6 +167,7 @@ export function DataTable<TData, TValue>({
     frameless = false,
     columnLayout,
     toolbarExtra,
+    toolbarStart,
     toolbarNote,
     aboveRows,
     hideRows = false,
@@ -336,6 +339,7 @@ export function DataTable<TData, TValue>({
             isLoading={isLoading}
             searchPlaceholder={searchPlaceholder}
             toolbarExtra={toolbarExtra}
+            toolbarStart={toolbarStart}
             columnSettings={layout ? (
                 <DataTableColumnSettings
                     {...layout.settings}

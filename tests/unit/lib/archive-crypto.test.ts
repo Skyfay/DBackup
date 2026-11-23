@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import crypto from "crypto";
-import { Readable } from "stream";
+import { Readable, Writable } from "stream";
 import { pipeline } from "stream/promises";
 import { deriveArchiveKeys, generateKdfSalt, KDF_SALT_LENGTH } from "@/lib/crypto/kdf";
 import {
@@ -184,6 +184,22 @@ describe("sealEntry / openEntry", () => {
             .rejects.toThrow(/authentication failed/i);
         await expect(open(dataKey, prefix, 1, sealedBytes.subarray(0, TAG_LENGTH - 1)))
             .rejects.toThrow(/truncated/i);
+    });
+
+    it("lets the plaintext out before the tag is checked, so a caller acts on it only once the stream ended", async () => {
+        const plaintext = crypto.randomBytes(4096);
+        const sealedBytes = await seal(dataKey, prefix, 1, plaintext);
+        const tampered = Buffer.from(sealedBytes);
+        tampered[tampered.length - 1] ^= 0xff;
+
+        const seen: Buffer[] = [];
+        await expect(pipeline(
+            Readable.from([tampered.subarray(0, 2048), tampered.subarray(2048)]),
+            openEntry(dataKey, prefix, 1),
+            new Writable({ write(chunk: Buffer, _encoding, callback) { seen.push(chunk); callback(); } })
+        )).rejects.toThrow(/authentication failed/i);
+        // Bytes went out before the failure, see the comment of `openEntry`.
+        expect(Buffer.concat(seen).length).toBeGreaterThan(0);
     });
 
     it("fails when opened with the wrong ordinal", async () => {

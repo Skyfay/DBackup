@@ -9,12 +9,11 @@
  */
 
 import prisma from "@/lib/prisma";
-import { registry } from "@/lib/core/registry";
-import { NotificationAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { runAsSystem } from "@/lib/tenant/context";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError } from "@/lib/logging/errors";
 import { renderTemplate } from "@/lib/notifications/templates";
 import { getEventDefinition } from "@/lib/notifications/events";
 import {
@@ -22,30 +21,14 @@ import {
   SystemNotificationConfig,
   NOTIFICATION_EVENTS,
 } from "@/lib/notifications/types";
-import { recordNotificationLog } from "@/services/notifications/notification-log-service";
-import { loadNotificationBrand, type NotificationBrand } from "@/lib/notifications/brand";
+import { loadNotificationBrand } from "@/lib/notifications/brand";
 import { eventReason, userReason } from "@/services/notifications/notification-reason";
+import { EMAIL_ADAPTER_IDS, sendThroughChannel } from "./channel-send";
+import { deliverToTenant, recordTenant, tenantOfRun, type DeliveryResult } from "./tenant-notification-delivery";
 
 const log = logger.child({ service: "SystemNotificationService" });
 
 const SETTING_KEY = "notifications.config";
-
-const NOTIFICATION_TIMEOUT_MS = 30_000;
-
-function notifyWithTimeout(send: () => Promise<unknown>): Promise<unknown> {
-    return Promise.race([
-        send(),
-        new Promise<never>((_, reject) =>
-            setTimeout(
-                () => reject(new Error("Notification send timed out after 30s")),
-                NOTIFICATION_TIMEOUT_MS
-            )
-        ),
-    ]);
-}
-
-/** Email adapter IDs that support per-user `to` override */
-const EMAIL_ADAPTER_IDS = ["email"];
 
 /** Default configuration when none exists yet */
 function defaultConfig(): SystemNotificationConfig {
@@ -108,131 +91,71 @@ function extractUserEmail(event: NotificationEventData): string | undefined {
   return undefined;
 }
 
-/**
- * Send a notification payload through a single adapter channel.
- * If `toOverride` is provided the email `to` field in the channel config is
- * replaced (used for user-targeted delivery).
- */
-async function sendThroughChannel(
-  channel: { id: string; name: string; adapterId: string; config: string; primaryCredentialId: string | null; sshCredentialId: string | null },
-  payload: ReturnType<typeof renderTemplate>,
-  eventType: string,
-  toOverride?: string,
-  opts?: { executionId?: string; brand?: NotificationBrand }
-): Promise<void> {
-  const adapter = registry.get(channel.adapterId) as
-    | NotificationAdapter
-    | undefined;
-
-  if (!adapter) {
-    log.warn("Adapter not found for notification channel", {
-      channelId: channel.id,
-      adapterId: channel.adapterId,
-    });
-    return;
-  }
-
-  let channelConfig = await resolveAdapterConfig(channel) as Record<string, unknown>;
-
-  // Override the recipient for user-targeted emails
-  if (toOverride && EMAIL_ADAPTER_IDS.includes(channel.adapterId)) {
-    channelConfig = { ...channelConfig, to: toOverride };
-  }
-
-  // Build adapter-specific rendered payload for logging
-  let renderedPayload: string | undefined;
-  let renderedHtml: string | undefined;
-
-  if (channel.adapterId === "email") {
-    try {
-      const { renderNotificationEmail } = await import("@/components/email/render-email");
-      renderedHtml = (await renderNotificationEmail(payload, opts?.brand)).html;
-    } catch { /* non-critical */ }
-  } else if (channel.adapterId === "discord") {
-    const color = payload.color
-      ? parseInt(payload.color.replace("#", ""), 16)
-      : payload.success ? 0x00ff00 : 0xff0000;
-    renderedPayload = JSON.stringify({
-      embeds: [{
-        title: payload.title || "Notification",
-        description: payload.message,
-        color,
-        timestamp: new Date().toISOString(),
-        fields: (payload.fields || []).map((f: { name: string; value: string; inline?: boolean }) => ({
-          name: f.name, value: f.value, inline: f.inline ?? true,
-        })),
-      }],
-    });
-  } else if (channel.adapterId === "slack") {
-    const colorHex = payload.color
-      ? payload.color.replace("#", "")
-      : payload.success ? "00ff00" : "ff0000";
-    renderedPayload = JSON.stringify({
-      attachments: [{
-        color: `#${colorHex}`,
-        blocks: [
-          { type: "header", text: { type: "plain_text", text: payload.title || "Notification" } },
-          { type: "section", text: { type: "mrkdwn", text: payload.message } },
-          ...(payload.fields?.length ? [{
-            type: "section",
-            fields: payload.fields.map((f: { name: string; value: string }) => ({
-              type: "mrkdwn", text: `*${f.name}:*\n${f.value || "-"}`,
-            })),
-          }] : []),
-        ],
-      }],
-    });
-  }
-
-  try {
-    const sent = await notifyWithTimeout(() => adapter.send(channelConfig, payload.message, { ...payload, eventType, brand: opts?.brand }));
-    if (sent === false) {
-      throw new Error("Notification delivery failed (adapter returned false)");
-    }
-
-    // Record successful send
-    await recordNotificationLog({
-      eventType,
-      channelId: channel.id,
-      channelName: channel.name,
-      adapterId: channel.adapterId,
-      status: "Success",
-      title: payload.title,
-      message: payload.message,
-      fields: payload.fields,
-      color: payload.color,
-      renderedHtml,
-      renderedPayload,
-      executionId: opts?.executionId,
-    });
-  } catch (err) {
-    // Record failed send
-    await recordNotificationLog({
-      eventType,
-      channelId: channel.id,
-      channelName: channel.name,
-      adapterId: channel.adapterId,
-      status: "Failed",
-      title: payload.title,
-      message: payload.message,
-      fields: payload.fields,
-      color: payload.color,
-      error: getErrorMessage(err),
-      executionId: opts?.executionId,
-    });
-    throw err; // Re-throw so the caller handles it
-  }
-
-  log.info("System notification sent", {
-    eventType,
-    channelName: channel.name,
-    adapterId: channel.adapterId,
-    ...(toOverride ? { toOverride } : {}),
-  });
+export interface NotifyOptions {
+  executionId?: string;
+  /** Sends even while the event is off, for Send a test, and only to the platform. */
+  test?: boolean;
+  /**
+   * The tenant the event is about. Left out, it is found from the event: the run, the connection
+   * or the destination it names, else the tenant the code runs for. Null for none.
+   */
+  tenantId?: string | null;
+  /** False sends to the channels of the tenant alone, for a check of every tenant the platform heard about as a whole. */
+  platform?: boolean;
+  /** Channels of the tenant that heard about it already, like those of the job of a run, which get it once. */
+  skipChannelIds?: readonly string[];
 }
 
 /**
- * Send a system notification for the given event.
+ * The run the log of the platform keeps with a message, only one of the home tenant, where the
+ * platform's channels keep their log. A customer's run, like a check of its backup, stays out, or
+ * Open run would lead nowhere there.
+ */
+async function platformRun(executionId: string | undefined): Promise<string | undefined> {
+  if (!executionId) return undefined;
+  const tenantId = await tenantOfRun(executionId).catch((err: unknown) => {
+    log.warn("Finding the tenant of a run failed", { executionId }, wrapError(err));
+    return null;
+  });
+  return tenantId === HOME_TENANT_ID ? executionId : undefined;
+}
+
+/** Both deliveries as one answer, none while neither had anywhere to send to. */
+function combined(first: DeliveryResult | undefined, second: DeliveryResult | undefined): DeliveryResult | undefined {
+  if (!first && !second) return undefined;
+  return { succeeded: (first?.succeeded ?? 0) + (second?.succeeded ?? 0), failed: (first?.failed ?? 0) + (second?.failed ?? 0) };
+}
+
+/**
+ * Sends an event to the channels of Settings > Notifications, which belong to the platform and
+ * read every tenant, whoever caused the event. An event about the data of a tenant other than the
+ * home tenant then also goes to the channels that tenant picked in its own settings, read in that
+ * tenant, see `deliverToTenant`. Never throws, a caller is never held up by a channel.
+ */
+export async function notify(event: NotificationEventData, opts: NotifyOptions = {}): Promise<DeliveryResult | undefined> {
+  // Found before the system scope of the platform, which would hide the tenant of a run. The links
+  // name it, the home tenant too, so they open in the tenant of their records from any other one.
+  const about = opts.test ? null : await recordTenant(event, opts).catch((err: unknown) => {
+    log.warn("Finding the tenant of a notification failed", { eventType: event.eventType }, wrapError(err));
+    return null;
+  });
+  const tenantId = about && about !== HOME_TENANT_ID ? about : null;
+  const platform = opts.platform === false ? undefined : await runAsSystem(async () => notifyChannels(event, {
+    ...opts,
+    // The log of the platform is the one of the home tenant, which cannot open the run of another one.
+    executionId: await platformRun(opts.executionId),
+  }, about ?? undefined));
+  const tenant = tenantId
+    ? await deliverToTenant(event, tenantId, { executionId: opts.executionId, skipChannelIds: opts.skipChannelIds }).catch((err: unknown) => {
+        log.error("Tenant notification dispatch failed", { eventType: event.eventType, tenantId }, wrapError(err));
+        return undefined;
+      })
+    : undefined;
+  return combined(platform, tenant);
+}
+
+/**
+ * Sends an event to the channels of the platform.
  *
  * 1. Loads the stored config to determine which channels are active.
  * 2. Checks if the event is enabled.
@@ -241,13 +164,15 @@ async function sendThroughChannel(
  * 5. If `notifyUser` is configured ("also" / "only"), sends an additional
  *    email directly to the affected user via any email-type channel.
  *
- * Failures are logged but never thrown – callers should not be blocked by
+ * Failures are logged but never thrown, callers are never blocked by
  * notification delivery issues.
  */
-export async function notify(
+async function notifyChannels(
   event: NotificationEventData,
-  opts?: { executionId?: string; /** Sends even while the event is off, for Send a test. */ test?: boolean }
-): Promise<{ succeeded: number; failed: number } | undefined> {
+  opts?: NotifyOptions,
+  /** The tenant of the records the event is about, which the links name. */
+  linkTenant?: string
+): Promise<DeliveryResult | undefined> {
   let succeeded = 0;
   let failed = 0;
   try {
@@ -283,17 +208,20 @@ export async function notify(
     const brand = await loadNotificationBrand();
     const reminderHours = eventConfig?.reminderIntervalHours ?? eventDef?.defaultReminderHours;
     const payload = {
-      ...renderTemplate(event, { timeZone: brand.timeZone }),
+      ...renderTemplate(event, { timeZone: brand.timeZone, tenantId: linkTenant }),
       reason: eventReason(eventDef, reminderHours, !!opts?.test),
     };
-    const sendOpts = { ...opts, brand };
+    // The channels of the platform send as they are set, whichever tenant the event is about.
+    const sendOpts = { executionId: opts?.executionId, brand };
 
     // Make sure adapters are registered
     registerAdapters();
 
     // Load channel configs
+    // Only channels of the home tenant carry what the platform sends, even if a setting from
+    // before tenants still names another.
     const channels = await prisma.adapterConfig.findMany({
-      where: { id: { in: channelIds }, type: "notification" },
+      where: { id: { in: channelIds }, type: "notification", tenantId: HOME_TENANT_ID },
     });
 
     // Determine user-targeted delivery mode
@@ -335,7 +263,7 @@ export async function notify(
 
       // The person gets the words meant for them, and the reason they get it.
       const userPayload = {
-        ...renderTemplate(event, { timeZone: brand.timeZone, audience: "user" }),
+        ...renderTemplate(event, { timeZone: brand.timeZone, audience: "user", tenantId: linkTenant }),
         reason: userReason(event.eventType, brand.instanceName),
       };
 

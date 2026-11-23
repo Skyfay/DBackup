@@ -1,5 +1,6 @@
 import { NO_GROUP } from "@/components/dashboard/users/user-columns";
 import { freeGroupName } from "@/lib/auth/group-templates";
+import { isEmailDomain, normalizeDomain } from "@/lib/auth/sso-domain";
 import type { OIDCInput } from "@/lib/core/oidc-adapter";
 import type { SsoProviderRow, SsoProvidersModel } from "@/services/sso/sso-providers-types";
 import { defaultName, freeProviderId } from "./sign-in-adapters";
@@ -18,13 +19,21 @@ export interface SignInValues {
     /** Edit shows the saved secret as saved until Replace. A new provider always asks for one. */
     replaceSecret: boolean;
     domain: string;
+    /** The tenant the provider belongs to, null for the platform. */
+    tenantId: string | null;
     allowProvisioning: boolean;
     /** The id of a group, NO_GROUP, or empty while none is picked yet. */
     groupId: string;
 }
 
+/** Another provider as the form checks its domain against. */
+export interface ClaimedDomain {
+    name: string;
+    domain: string | null;
+}
+
 export interface SignInProblem {
-    /** "name", "providerId", "clientId", "clientSecret", "group", or "config." and the name of a field of the type. */
+    /** "name", "providerId", "clientId", "clientSecret", "domain", "group", or "config." and the name of a field of the type. */
     field: string;
     message: string;
 }
@@ -42,6 +51,7 @@ export function initialValues(mode: SignInFormMode, adapterId: string, inputs: O
             clientSecret: "",
             replaceSecret: false,
             domain: provider.domain ?? "",
+            tenantId: provider.tenant?.id ?? null,
             allowProvisioning: provider.allowProvisioning,
             groupId: provider.group?.id ?? NO_GROUP,
         };
@@ -54,14 +64,19 @@ export function initialValues(mode: SignInFormMode, adapterId: string, inputs: O
         clientSecret: "",
         replaceSecret: true,
         domain: "",
+        tenantId: null,
         allowProvisioning: true,
         // Someone new without a group sees nothing, so a new provider asks for a pick.
         groupId: "",
     };
 }
 
-/** The first thing that keeps the form from saving, in the order of the fields. */
-export function problemOf(values: SignInValues, mode: SignInFormMode, inputs: OIDCInput[], takenIds: readonly string[]): SignInProblem | null {
+/**
+ * The first thing that keeps the form from saving, in the order of the fields. The server checks
+ * the same once more. A provider of a tenant is reached by its domain only and adds people to its
+ * tenant, so it needs a domain and, while it adds people, a group of that tenant.
+ */
+export function problemOf(values: SignInValues, mode: SignInFormMode, inputs: OIDCInput[], takenIds: readonly string[], others: readonly ClaimedDomain[] = []): SignInProblem | null {
     if (!values.name.trim()) return { field: "name", message: "Give the provider a name." };
     if (mode.kind === "create") {
         const id = values.providerId.trim();
@@ -75,7 +90,13 @@ export function problemOf(values: SignInValues, mode: SignInFormMode, inputs: OI
     if (values.replaceSecret && !values.clientSecret) {
         return { field: "clientSecret", message: mode.kind === "create" ? "The client secret is missing." : "Paste the new secret, or keep the saved one." };
     }
+    const domain = normalizeDomain(values.domain);
+    if (domain && !isEmailDomain(domain)) return { field: "domain", message: "Type a domain like example.com, without the @." };
+    if (!domain && values.tenantId) return { field: "domain", message: "A provider of a tenant is reached by its email domain only, so it needs one." };
+    const owner = domain ? others.find((other) => normalizeDomain(other.domain) === domain) : undefined;
+    if (owner) return { field: "domain", message: `${owner.name} signs in ${domain} already. A domain belongs to one provider.` };
     if (values.allowProvisioning && !values.groupId) return { field: "group", message: "Pick the group new people start in." };
+    if (values.allowProvisioning && values.tenantId && values.groupId === NO_GROUP) return { field: "group", message: "A provider of a tenant adds people to the tenant, so it needs a group there for them." };
     return null;
 }
 

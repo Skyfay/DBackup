@@ -8,12 +8,14 @@ const mocks = vi.hoisted(() => ({
     getOverview: vi.fn(),
     getRuns: vi.fn(),
     readSources: vi.fn(),
+    logFor: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 // The real checks, reduced to the permission list of the context.
-vi.mock("@/lib/auth/access-control", () => ({
+vi.mock("@/lib/auth/access-control", async (importOriginal) => ({
+    tenantOf: (await importOriginal<typeof import("@/lib/auth/access-control")>()).tenantOf,
     getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
     checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
         if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
@@ -27,6 +29,7 @@ vi.mock("@/services/databases/database-explorer-service", () => ({
         getRuns: (...args: unknown[]) => mocks.getRuns(...args),
     },
 }));
+vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.logFor(...args) } }));
 vi.mock("@/services/databases/database-list-service", () => ({
     databaseListService: { readSources: (...args: unknown[]) => mocks.readSources(...args) },
 }));
@@ -35,7 +38,7 @@ import { GET as getOverview } from "@/app/api/databases/route";
 import { POST as readNow } from "@/app/api/databases/read/route";
 import { GET as getRuns } from "@/app/api/databases/runs/route";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", tenantId: "t-acme", permissions, isPlatformAdmin: false });
 const read = (body: unknown) => readNow(new NextRequest("http://localhost/api/databases/read", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }));
 const runs = (query = "from=2026-09-20T00:00:00Z&until=2026-09-28T00:00:00Z") => getRuns(new NextRequest(`http://localhost/api/databases/runs?${query}`));
 
@@ -43,7 +46,8 @@ describe("Database Explorer API", () => {
     beforeEach(() => {
         mocks.getOverview.mockResolvedValue({ servers: [], databases: [], jobs: [], coverage: false });
         mocks.getRuns.mockResolvedValue({ runs: [], versionChanges: [], planned: [] });
-        mocks.readSources.mockResolvedValue(undefined);
+        mocks.readSources.mockResolvedValue(["Shop MySQL"]);
+        mocks.logFor.mockReset();
     });
 
     it("turns away a request without a session", async () => {
@@ -101,5 +105,31 @@ describe("Database Explorer API", () => {
         await read({});
         expect(mocks.readSources).toHaveBeenLastCalledWith(undefined);
         expect((await read({ serverIds: "s1" })).status).toBe(400);
+    });
+
+    it("notes a read in the audit log, naming the source it read, or how many", async () => {
+        signedIn(PERMISSIONS.SOURCES.VIEW);
+
+        await read({ serverIds: ["s1"] });
+        expect(mocks.logFor).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "u1" }), "EXECUTE", "SOURCE", { action: "databases_read", name: "Shop MySQL", count: 1 }, "s1");
+
+        mocks.readSources.mockResolvedValue(["Shop MySQL", "Wiki Postgres"]);
+        await read({});
+        expect(mocks.logFor).toHaveBeenLastCalledWith(expect.anything(), "EXECUTE", "SOURCE", { action: "databases_read", count: 2, all: true }, undefined);
+    });
+
+    it("reads no server in All tenants, which only reads what DBackup holds", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "root", tenantId: null, allTenants: true, permissions: [PERMISSIONS.SOURCES.VIEW], isPlatformAdmin: true });
+
+        expect((await read({})).status).toBe(403);
+        expect(mocks.readSources).not.toHaveBeenCalled();
+        expect(mocks.logFor).not.toHaveBeenCalled();
+    });
+
+    it("notes no read that was refused", async () => {
+        signedIn(PERMISSIONS.JOBS.READ);
+
+        await read({ serverIds: ["s1"] });
+        expect(mocks.logFor).not.toHaveBeenCalled();
     });
 });

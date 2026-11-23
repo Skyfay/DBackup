@@ -10,10 +10,14 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PermissionEditor } from "@/components/permissions/permission-editor";
+import type { GroupViewer } from "@/components/dashboard/users/user-access";
 import { listed } from "@/components/dashboard/users/user-strip";
+import { useTenantView } from "@/components/tenant/tenant-view";
+import { grantableIn, lockedFor } from "@/lib/auth/group-caps";
 import { freeGroupName } from "@/lib/auth/group-templates";
-import { areaChanges, describeChange, knownPermissions } from "@/lib/auth/permission-areas";
+import { areaChanges, describeChange, knownPermissions, PERMISSION_AREAS } from "@/lib/auth/permission-areas";
 import { AVAILABLE_PERMISSIONS } from "@/lib/auth/permissions";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
@@ -30,6 +34,8 @@ interface GroupFormDialogProps {
     mode: GroupFormMode;
     /** Every group, to copy one and to keep the names apart. */
     groups: GroupRow[];
+    /** Who edits, whose permissions are all a group may get from them. */
+    viewer: GroupViewer;
     onOpenChange: (open: boolean) => void;
     onSaved: () => void;
 }
@@ -39,7 +45,7 @@ interface GroupFormDialogProps {
  * Custom as step 1 of 2, and every way ends in the same editor, which Duplicate and Edit open
  * right away.
  */
-export function GroupFormDialog({ open, mode, groups, onOpenChange, onSaved }: GroupFormDialogProps) {
+export function GroupFormDialog({ open, mode, groups, viewer, onOpenChange, onSaved }: GroupFormDialogProps) {
     const [start, setStart] = useState<GroupStartChoice | null>(null);
     const [saving, setSaving] = useState(false);
 
@@ -61,6 +67,7 @@ export function GroupFormDialog({ open, mode, groups, onOpenChange, onSaved }: G
                         mode={mode}
                         start={start}
                         groups={groups}
+                        viewer={viewer}
                         onBack={mode.kind === "create" ? () => setStart(null) : undefined}
                         onClose={() => onOpenChange(false)}
                         onSaved={onSaved}
@@ -78,6 +85,7 @@ interface EditorFormProps {
     mode: GroupFormMode;
     start: GroupStartChoice | null;
     groups: GroupRow[];
+    viewer: GroupViewer;
     onBack?: () => void;
     onClose: () => void;
     onSaved: () => void;
@@ -95,11 +103,27 @@ function initialOf(mode: GroupFormMode, start: GroupStartChoice | null, taken: s
     return { name: "", permissions: [] as string[] };
 }
 
-/** The second step: the name and the permissions, saved as a new group or into the one being edited. */
-function EditorForm({ mode, start, groups, onBack, onClose, onSaved, onSavingChange }: EditorFormProps) {
+/**
+ * The second step: the name and the permissions, saved as a new group or into the one being
+ * edited. It offers what a group of the open tenant may hold, without the settings of the instance
+ * outside the home tenant, and locks what the viewer may not do themselves. A template or a copy
+ * starts without what the viewer may not give.
+ */
+function EditorForm({ mode, start, groups, viewer, onBack, onClose, onSaved, onSavingChange }: EditorFormProps) {
     const group = mode.kind === "edit" ? mode.group : null;
+    const { activeTenantId } = useTenantView();
+    const tenantId = activeTenantId ?? HOME_TENANT_ID;
+    const areas = useMemo(
+        () => (tenantId === HOME_TENANT_ID ? PERMISSION_AREAS : PERMISSION_AREAS.filter((area) => area.permissions.every((permission) => grantableIn(permission.id, tenantId)))),
+        [tenantId]
+    );
     const taken = useMemo(() => groups.filter((entry) => entry.id !== group?.id).map((entry) => entry.name), [groups, group]);
-    const initial = useMemo(() => initialOf(mode, start, taken), [mode, start, taken]);
+    const initial = useMemo(() => {
+        const base = initialOf(mode, start, taken);
+        if (mode.kind === "edit") return base;
+        const givable = base.permissions.filter((permission) => grantableIn(permission, tenantId) && lockedFor(viewer, permission) === null);
+        return { ...base, permissions: givable, trimmed: givable.length < base.permissions.length };
+    }, [mode, start, taken, tenantId, viewer]);
     const [name, setName] = useState(initial.name);
     const [held, setHeld] = useState<Set<string>>(() => new Set(knownPermissions(initial.permissions)));
     const [problem, setProblem] = useState<string | null>(null);
@@ -152,14 +176,13 @@ function EditorForm({ mode, start, groups, onBack, onClose, onSaved, onSavingCha
         busy(false);
     };
 
+    // A change reaches every member of the group at once.
     const note = group
-        ? members.length > 0
-            ? `A change applies to its ${members.length === 1 ? "member" : `${members.length} members`} at once`
-            : "Nobody is in it yet"
+        ? "A change applies at once to everyone in it"
         : start?.kind === "template"
-          ? `Starts as ${start.template.label}, with nobody in it`
+          ? `Starts as ${start.template.label}, with nobody in it${"trimmed" in initial && initial.trimmed ? ", without what you may not give" : ""}`
           : start?.kind === "copy"
-            ? `Starts as a copy of ${start.group.name}, with nobody in it`
+            ? `Starts as a copy of ${start.group.name}, with nobody in it${"trimmed" in initial && initial.trimmed ? ", without what you may not give" : ""}`
             : "Starts with no permission and nobody in it";
 
     return (
@@ -194,6 +217,8 @@ function EditorForm({ mode, start, groups, onBack, onClose, onSaved, onSavingCha
                     }
                     held={held}
                     onHeldChange={setHeld}
+                    areas={areas}
+                    lockedReason={(permission) => lockedFor(viewer, permission)}
                     changedAreas={group ? new Set(changes.map((change) => change.area.id)) : undefined}
                     note={members.length > 0 && (
                         <div className="flex gap-2.5 rounded-lg border bg-muted/30 p-3 text-xs">

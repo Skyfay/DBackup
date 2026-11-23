@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CONFIG_UPLOAD_MAX_BYTES, CONFIG_UPLOAD_TOO_BIG } from "@/lib/core/config-upload";
-import { ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
+import { readFormWithin } from "@/lib/server/upload-size";
 import { checkUploadedBackup, hasNoAccountYet } from "@/services/config/restore-flow";
 
 const log = logger.child({ route: "setup/restore" });
@@ -20,11 +21,8 @@ export async function POST(req: NextRequest) {
     if (!(await hasNoAccountYet())) {
         return NextResponse.json({ success: false, error: "DBackup has an account already. Sign in and restore under Settings." }, { status: 403 });
     }
-    if (Number(req.headers.get("content-length") ?? 0) > CONFIG_UPLOAD_MAX_BYTES) {
-        return NextResponse.json({ success: false, error: CONFIG_UPLOAD_TOO_BIG }, { status: 413 });
-    }
-
-    const form = await req.formData().catch(() => null);
+    const { form, tooLarge } = await readFormWithin(req, CONFIG_UPLOAD_MAX_BYTES);
+    if (tooLarge) return NextResponse.json({ success: false, error: CONFIG_UPLOAD_TOO_BIG }, { status: 413 });
     const backup = form?.get("backupFile");
     if (!form || !(backup instanceof File)) return NextResponse.json({ success: false, error: "No backup file provided" }, { status: 400 });
     const meta = form.get("metaFile");
@@ -37,6 +35,6 @@ export async function POST(req: NextRequest) {
         if (keyRequired) return keyRequired;
         if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
         log.error("Checking a configuration backup on the sign-up page failed", {}, wrapError(error));
-        return NextResponse.json({ success: false, error: getErrorMessage(error) || "The backup could not be read." }, { status: 500 });
+        return NextResponse.json({ success: false, error: "The backup could not be read. The log of DBackup has the details." }, { status: 500 });
     }
 }

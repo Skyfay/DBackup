@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { AdapterDefinition } from "@/lib/adapters/definitions";
-import type { CredentialType } from "@/lib/core/credentials";
-import { sshManagedKeys } from "@/lib/adapters/ssh-key-convention";
+import { managedConfigKeys, PRIMARY_CREDENTIAL_KEYS } from "@/lib/adapters/credential-keys";
 
 /** What the connection form holds. The config is whatever the adapter's schema describes. */
 export interface ConnectionFormValues {
@@ -9,18 +8,6 @@ export interface ConnectionFormValues {
     adapterId: string;
     config: Record<string, unknown>;
 }
-
-/** The config fields a credential profile of each type fills in, so the form never asks for them. */
-const PRIMARY_CREDENTIAL_KEYS: Record<CredentialType, readonly string[]> = {
-    USERNAME_PASSWORD: ["user", "username", "password"],
-    // SFTP and Rsync: the SSH identity is the adapter's own, so its keys carry no prefix.
-    SSH_KEY: ["username", "authType", "password", "privateKey", "passphrase"],
-    ACCESS_KEY: ["accessKeyId", "secretAccessKey"],
-    TOKEN: ["token", "appToken", "accessToken", "botToken", "authToken"],
-    SMTP: ["user", "password"],
-    WEBHOOK: ["webhookUrl", "url", "authHeader"],
-    OAUTH: ["clientId", "clientSecret", "refreshToken"],
-};
 
 type Shape = Record<string, z.ZodType>;
 
@@ -33,13 +20,7 @@ function shapeOf(adapter: AdapterDefinition): Shape {
  * optional in its schema, since a hidden required field would fail without saying so.
  */
 export function credentialManagedKeys(adapter: AdapterDefinition): Set<string> {
-    const keys = new Set<string>();
-    const primary = adapter.credentials?.primary;
-    if (primary) PRIMARY_CREDENTIAL_KEYS[primary].forEach((key) => keys.add(key));
-    if (adapter.credentials?.ssh === "SSH_KEY") {
-        sshManagedKeys(adapter.configSchema).forEach((key) => keys.add(key));
-    }
-    return keys;
+    return managedConfigKeys(adapter.credentials, adapter.configSchema);
 }
 
 /**

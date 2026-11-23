@@ -54,12 +54,13 @@ Nothing locks you in. Every database backup is a standard dump and every file ba
 - **Restore what you need** - a whole database, a database under a new name, or a single file from a folder backup
 - **Know what happens** - live progress, a history of every run, storage alerts and nine notification channels
 - **Built for teams** - SSO through OIDC, groups with fine-grained permissions, 2FA and passkeys, an audit log and a REST API with scoped keys
+- **Tenants for MSPs** - one instance serves many customers, each with its own connections, jobs, backups, keys, people and audit log
 
 ## 🗄️ Supported
 
 | Database | Versions | Connection | Restore |
 | :--- | :--- | :--- | :--- |
-| PostgreSQL | 12 to 18 | Direct, SSH | Yes |
+| PostgreSQL | 12 to 19 | Direct, SSH | Yes |
 | MySQL | 5.7, 8.x, 9.x | Direct, SSH | Yes |
 | MariaDB | 10.x, 11.x | Direct, SSH | Yes |
 | MongoDB | 4.x to 8.x | Direct, SSH | Yes |
@@ -76,6 +77,12 @@ Nothing locks you in. Every database backup is a standard dump and every file ba
 
 Every one of them has a setup guide in the [documentation](https://docs.dbackup.app).
 
+## 🏢 For MSPs
+
+One DBackup serves many customers. Each tenant keeps its own connections, jobs, backups, encryption keys, people and audit log, and sees nothing of the others. Your team works across them in All tenants and through platform groups, on every tenant or on selected ones, while customers join with an invitation link or through a sign-in provider of their own.
+
+A tenant of the MSP can give single databases of a shared server to the customers they belong to, and share its destinations and notification channels with them. The platform decides what each tenant may add itself, how many backups it may start on demand and whether its connections reach the local network. An existing instance moves into its first tenant with the update and works as before. The [tenants guide](https://docs.dbackup.app/user-guide/admin/tenants) shows how to set it up.
+
 ## 🚀 Quick Start
 
 ```yaml
@@ -91,6 +98,7 @@ services:
       - ENCRYPTION_KEY=       # openssl rand -hex 32
       - BETTER_AUTH_URL=https://localhost:3000
       - BETTER_AUTH_SECRET=   # openssl rand -base64 32
+      - TRUSTED_PROXIES=none  # No reverse proxy in front. Behind one, set its address here
     volumes:
       - ./data:/data          # All persistent data
       - ./backups:/backups    # Optional, for local backups
@@ -150,9 +158,11 @@ Pull requests go into the `dev` branch, never into `main`. [CONTRIBUTING.md](CON
 - 📧 **Support**: [support@dbackup.app](mailto:support@dbackup.app)
 - 🔒 **Security**: report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never in a public issue
 
-## 🤖 AI Development Transparency
+## 🧪 Development, Testing & Security
 
-The architecture, the technology stack and the feature specifications of DBackup were designed and directed by a human system engineer. The code is written by AI coding agents that follow those specifications and the guidelines of the project. Every feature is tested by hand, backed by unit tests, checked against real databases and storage servers in a test lab, and audited for security by AI agents. End-to-end tests run the Docker image in that lab on every pull request that touches the app. They back up every database engine there, also over SSH, restore it and compare the content. They also send a backup to every storage server of the lab and restore it from there, and a test message to every notification receiver.
+The architecture, the technology stack and the feature specifications of DBackup are designed and directed by a human system engineer. The code is written by AI coding agents that follow those specifications and the guidelines of the project.
+
+Every feature is tested by hand, backed by unit tests, checked against real databases and storage servers in a test lab, and audited for security by AI agents. End-to-end tests run the Docker image in that lab on every pull request that touches the app. They back up every database engine there, also over SSH, restore it and compare the content. They also send a backup to every storage server of the lab and restore it from there, and a test message to every notification receiver.
 
 A formal security audit by an external firm has not been done yet. Independent security researchers have reviewed parts of the code and reported vulnerabilities privately. Every report was fixed in a release and published as an advisory that credits the reporter, see [Security Advisories](https://github.com/Skyfay/DBackup/security/advisories). The encryption and the backup format are [publicly documented](https://docs.dbackup.app/developer-guide/reference/archive-format) to make a full review easy. If you review code or work in security, your findings are very welcome, see [SECURITY.md](SECURITY.md) for how to report them.
 

@@ -6,9 +6,12 @@ import {
     sweepStuckExecutions,
     STUCK_TIMEOUT_SETTING,
     DEFAULT_STUCK_TIMEOUT_MINUTES,
+    MAX_RUN_SETTING,
+    DEFAULT_MAX_RUN_MINUTES,
 } from '@/services/system/stuck-execution-service';
 import { HEARTBEAT_KEY } from '@/lib/execution/log-flusher';
 import { LogEntry } from '@/lib/core/logs';
+import { endFollowers } from '@/lib/execution/follower-runs';
 
 vi.mock('@/lib/prisma', () => ({
     default: {
@@ -18,6 +21,7 @@ vi.mock('@/lib/prisma', () => ({
 }));
 
 vi.mock('@/lib/execution/abort', () => ({ abortExecution: vi.fn() }));
+vi.mock('@/lib/execution/follower-runs', () => ({ LEADING_RUNS: { leading: true }, endFollowers: vi.fn(), endOrphanedFollowers: vi.fn().mockResolvedValue(0) }));
 vi.mock('@/lib/execution/queue-manager', () => ({ processQueue: vi.fn().mockResolvedValue(undefined) }));
 
 vi.mock('@/lib/logging/logger', () => ({
@@ -34,11 +38,12 @@ const updateMany = prisma.execution.updateMany as ReturnType<typeof vi.fn>;
 
 const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000);
 
-function execution(overrides: Partial<{ id: string; heartbeatMinutesAgo: number | null; startedMinutesAgo: number }> = {}) {
-    const { id = 'exec-1', heartbeatMinutesAgo = 5, startedMinutesAgo = 600 } = overrides;
+function execution(overrides: Partial<{ id: string; jobId: string | null; type: string; heartbeatMinutesAgo: number | null; startedMinutesAgo: number }> = {}) {
+    const { id = 'exec-1', jobId = 'job-1', type = 'Backup', heartbeatMinutesAgo = 5, startedMinutesAgo = 600 } = overrides;
     return {
         id,
-        jobId: 'job-1',
+        jobId,
+        type,
         metadata: heartbeatMinutesAgo === null
             ? null
             : JSON.stringify({ stage: 'Collecting Files', [HEARTBEAT_KEY]: minutesAgo(heartbeatMinutesAgo).toISOString() }),
@@ -76,6 +81,15 @@ describe('sweepStuckExecutions', () => {
             where: { id: 'exec-1', status: 'Running' },
             data: expect.objectContaining({ status: 'Failed' }),
         }));
+    });
+
+    it('watches the runs that work, never one that follows another, and ends the followers of a run it stops', async () => {
+        findMany.mockResolvedValue([execution({ heartbeatMinutesAgo: 1000 })]);
+
+        await sweepStuckExecutions();
+
+        expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'Running', AND: [{ leading: true }] } }));
+        expect(endFollowers).toHaveBeenCalledWith('exec-1', 'Failed');
     });
 
     it('signals the run before writing it off, so it can unwind on its own', async () => {
@@ -124,6 +138,40 @@ describe('sweepStuckExecutions', () => {
         const result = await sweepStuckExecutions();
 
         expect(result.cancelled).toBe(1);
+    });
+
+    it('cancels a run that keeps reporting but holds its slot longer than a run may take', async () => {
+        // A source that trickles a byte now and then: fresh heartbeat, more than a day old.
+        findMany.mockResolvedValue([execution({ heartbeatMinutesAgo: 1, startedMinutesAgo: DEFAULT_MAX_RUN_MINUTES + 10 })]);
+
+        const result = await sweepStuckExecutions();
+
+        expect(result.cancelled).toBe(1);
+        expect(abortExecution).toHaveBeenCalledWith('exec-1');
+        const logs = JSON.parse(updateMany.mock.calls[0][0].data.logs) as LogEntry[];
+        expect(logs.at(-1)?.message).toContain('the longest a run may take');
+    });
+
+    it('leaves a long restore or system task alone, which holds no slot, and still ends one that stopped reporting', async () => {
+        findMany.mockResolvedValue([
+            execution({ id: 'restore-1', jobId: null, type: 'Restore', heartbeatMinutesAgo: 1, startedMinutesAgo: DEFAULT_MAX_RUN_MINUTES * 2 }),
+            execution({ id: 'check-1', jobId: null, type: 'System', heartbeatMinutesAgo: 1, startedMinutesAgo: DEFAULT_MAX_RUN_MINUTES * 2 }),
+        ]);
+        expect((await sweepStuckExecutions()).cancelled).toBe(0);
+
+        findMany.mockResolvedValue([execution({ id: 'restore-1', jobId: null, type: 'Restore', heartbeatMinutesAgo: DEFAULT_STUCK_TIMEOUT_MINUTES + 30 })]);
+        expect((await sweepStuckExecutions()).cancelled).toBe(1);
+        expect(abortExecution).toHaveBeenCalledWith('restore-1');
+    });
+
+    it('leaves a long run alone when the longest run is set to no limit, and still ends one with the stuck time off', async () => {
+        findSetting.mockImplementation(async ({ where }: { where: { key: string } }) => (where.key === MAX_RUN_SETTING ? { key: MAX_RUN_SETTING, value: '0' } : null));
+        findMany.mockResolvedValue([execution({ heartbeatMinutesAgo: 1, startedMinutesAgo: DEFAULT_MAX_RUN_MINUTES * 3 })]);
+        expect((await sweepStuckExecutions()).cancelled).toBe(0);
+
+        findSetting.mockImplementation(async ({ where }: { where: { key: string } }) => (where.key === STUCK_TIMEOUT_SETTING ? { key: STUCK_TIMEOUT_SETTING, value: '0' } : null));
+        findMany.mockResolvedValue([execution({ heartbeatMinutesAgo: 1, startedMinutesAgo: DEFAULT_MAX_RUN_MINUTES + 10 })]);
+        expect((await sweepStuckExecutions()).cancelled).toBe(1);
     });
 
     it('does nothing at all when the watchdog is switched off', async () => {

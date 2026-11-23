@@ -4,11 +4,12 @@ import { transferConcurrencyRange } from "@/lib/adapters/transfer-concurrency";
 import { STORAGE_ROLES, type StorageRole } from "@/lib/core/storage-roles";
 import { credentialManagedKeys, loginRequired, requiredKeys } from "./connection-form-schema";
 import { AUTHORIZED_KEY, LOGIN_KEY, NAME_KEY, SSH_LOGIN_KEY, type SectionLayout } from "./connection-form-layout";
+import { VERIFY_HOST_KEY } from "@/lib/transport/ssh-endpoint";
 import { STORAGE_ADVANCED_KEYS, STORAGE_CONFIG_KEYS, STORAGE_CONNECTION_KEYS, STORAGE_LOCATION_KEYS } from "./form-constants";
 
 /** Keys another part of the form owns, or that nobody types in: the speed fields and the SSH login. */
 const OWNED_ELSEWHERE = new Set([
-    "connectionMode", "sshHost", "sshPort", ...PREFIXED_SSH_KEYS,
+    "connectionMode", "sshHost", "sshPort", ...PREFIXED_SSH_KEYS, VERIFY_HOST_KEY,
     "maxConcurrentFiles", "uploadConcurrency", "uploadPartSizeMb",
 ]);
 
@@ -35,7 +36,10 @@ function fieldsOf(adapter: AdapterDefinition, keys: readonly string[]): string[]
  * without the ones a login profile fills in.
  */
 export function storageReachKeys(adapter: AdapterDefinition): string[] {
-    return fieldsOf(adapter, STORAGE_CONNECTION_KEYS);
+    // The host key switch belongs to the SSH login: for SFTP and rsync that is the connection
+    // itself, an adapter with an SSH mode shows it in its SSH part instead.
+    const hasMode = "connectionMode" in (adapter.configSchema.shape as Record<string, unknown>);
+    return fieldsOf(adapter, STORAGE_CONNECTION_KEYS).filter((key) => !(hasMode && key === VERIFY_HOST_KEY));
 }
 
 /**

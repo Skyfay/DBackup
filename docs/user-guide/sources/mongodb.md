@@ -29,9 +29,11 @@ DBackup runs every step on the SSH server, so the tools have to be installed the
 
 | Tool | Used for |
 | :--- | :--- |
-| `mongodump` | Backups |
-| `mongorestore` | Restores |
+| `mongodump` 100.3.0 or newer | Backups |
+| `mongorestore` 100.3.0 or newer | Restores |
 | `mongosh`, or the legacy `mongo` shell | Connection test, database list, Database Explorer |
+
+`mongosh` and `mongo` take the password as an argument, since neither reads it from a file or the environment, so it shows in the process list of the SSH server while they run.
 
 <details>
 <summary>Debian/Ubuntu - MongoDB Database Tools + mongosh</summary>
@@ -69,6 +71,10 @@ MongoDB needs a [Credential Profile](/user-guide/security/credential-profiles). 
 | **Login** | `USERNAME_PASSWORD` credential profile | - | ✅ |
 | **Authentication database** | Database the login is defined in, under **Options** | `admin` | ❌ |
 | **Extra options** | Extra `mongodump` flags, under **Options** | - | ❌ |
+
+::: info Extra options are for platform admins
+In direct mode the dump tools run on the server DBackup runs on, where an option can name any file DBackup may write. So only a platform admin, signed in with a session in the home tenant, saves, changes or tests a direct connection with **Extra options**, and anyone else opens such a connection read-only and may still pick it in a job. Over SSH the options are open to everyone. See [Connections to the Server DBackup Runs On](/user-guide/admin/tenants#connections-to-the-server-dbackup-runs-on).
+:::
 
 The databases are picked in the job, not on the source. **All databases** asks the server with `listDatabases` and leaves out `admin`, `config` and `local`, and **Some databases** never offers them either. Users and roles stored in `admin` are therefore not part of a backup.
 
@@ -140,6 +146,7 @@ mongodump <connection> --db <name> --archive=<file> --gzip [Extra options]
 - Each database becomes one gzip-compressed mongodump archive, stored in the job's backup as `databases/<name>.archive`, under an opaque name when the backup is encrypted. DBackup does not compress it a second time. See [Archive Format](/developer-guide/reference/archive-format) for the layout.
 - Collections are dumped one after another, and `--oplog` cannot be combined with `--db`. Writes made while the dump runs can therefore be caught in part.
 - Over SSH, `mongodump` writes the archive to a temporary file on the SSH server. DBackup fetches it over SFTP, or with `cat` where SFTP is not available, and deletes it afterwards.
+- `<connection>` holds the host, the port and the user, never the password. `mongodump` and `mongorestore` read the password, or a whole connection string for an SRV name or several hosts, from a temporary YAML file named with `--config`, readable by its owner alone and deleted after the run. This needs the Database Tools 100.3.0 or newer.
 
 **Extra options** apply to every database of the job. Useful flags:
 

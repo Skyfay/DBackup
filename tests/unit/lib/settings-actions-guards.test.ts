@@ -64,7 +64,7 @@ const { updateRateLimitSettings } = await import("@/app/actions/settings/rate-li
 const { saveConfigBackupSettingsAction } = await import("@/app/actions/backup/config-backup-settings");
 const { saveSystemTaskAction, runSystemTaskAction } = await import("@/app/actions/settings/system-tasks");
 
-const GENERAL = { instanceName: "", timezone: "UTC", maxConcurrentJobs: 1, stuckTimeoutMinutes: 360, checkForUpdates: true, showQuickSetup: false };
+const GENERAL = { instanceName: "", timezone: "UTC", maxConcurrentJobs: 1, stuckTimeoutMinutes: 360, maxRunMinutes: 1440, checkForUpdates: true, showQuickSetup: false };
 const LIMIT = { points: 5, duration: 60 };
 const CONFIG = { enabled: false, storageId: "", profileId: "", schedule: "0 3 * * *", includeStatistics: false, retention: 10 };
 
@@ -129,6 +129,42 @@ describe("the actions of the Settings page", () => {
         expect(await runSystemTaskAction("system.health_check")).toEqual({ success: true });
 
         expect(mocks.startTask).toHaveBeenCalledWith("system.health_check", "Ada");
-        expect(mocks.audit).toHaveBeenCalledWith("admin", "EXECUTE", "SYSTEM", { task: "Health checks", name: "Health checks" }, "system.health_check");
+        // A task of the platform, so the entry goes to the log of the home tenant.
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "EXECUTE", "SYSTEM", { task: "Health checks", name: "Health checks" }, "system.health_check", { tenantId: "default" });
+    });
+
+    describe("the configuration backup, whose file holds every secret of the instance", () => {
+        const TASK = "system.config_backup";
+
+        it("refuses its settings, its schedule, its switch and Run now to someone who may change the settings but is no platform admin", async () => {
+            mocks.checkPermission.mockResolvedValue({ id: "admin", name: "Ada", isPlatformAdmin: false });
+
+            expect(await saveConfigBackupSettingsAction({ ...CONFIG, enabled: true, storageId: "nas", profileId: "key" })).toMatchObject({ success: false });
+            expect(await saveSystemTaskAction(TASK, { schedule: "* * * * *" })).toMatchObject({ success: false });
+            expect(await saveSystemTaskAction(TASK, { enabled: true })).toMatchObject({ success: false });
+            expect(await runSystemTaskAction(TASK)).toMatchObject({ success: false });
+
+            expect(mocks.saveConfigBackup).not.toHaveBeenCalled();
+            expect(mocks.saveTask).not.toHaveBeenCalled();
+            expect(mocks.startTask).not.toHaveBeenCalled();
+            expect(mocks.audit).not.toHaveBeenCalled();
+        });
+
+        it("lets a platform admin change and start it", async () => {
+            mocks.checkPermission.mockResolvedValue({ id: "root", name: "Root", isPlatformAdmin: true });
+            mocks.saveTask.mockResolvedValue(undefined);
+
+            expect(await saveSystemTaskAction(TASK, { schedule: "0 4 * * *" })).toEqual({ success: true });
+            expect(await runSystemTaskAction(TASK)).toEqual({ success: true });
+
+            expect(mocks.saveTask).toHaveBeenCalledWith(TASK, { schedule: "0 4 * * *" });
+            expect(mocks.startTask).toHaveBeenCalledWith(TASK, "Root");
+        });
+
+        it("leaves the other tasks to whoever may change the settings", async () => {
+            mocks.checkPermission.mockResolvedValue({ id: "admin", name: "Ada", isPlatformAdmin: false });
+
+            expect(await runSystemTaskAction("system.health_check")).toEqual({ success: true });
+        });
     });
 });

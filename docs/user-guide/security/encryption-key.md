@@ -22,7 +22,7 @@ The `ENCRYPTION_KEY` protects **credentials in the database**. [Encryption Profi
 openssl rand -hex 32
 ```
 
-This produces a 64-character hex string (256-bit key). Set it as an environment variable:
+This produces a 64-character hex string (256-bit key). DBackup checks the key when it starts and refuses to start with any other length or with a character other than 0-9 and a-f. Set it as an environment variable:
 
 ```bash
 ENCRYPTION_KEY="a3f8c1d2e4b5..."

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { join } from "node:path";
 import { Transform } from "node:stream";
@@ -161,6 +161,23 @@ describe("DirectHost", () => {
             });
         });
 
+        it("never writes through a file or a link laid under its name first", async () => {
+            const planted = join(dir, "planted");
+            const victim = join(dir, "victim.txt");
+            await writeFile(victim, "untouched");
+            await symlink(victim, planted);
+            class GuessedName extends DirectHost {
+                protected override hostTempPath(): string {
+                    return planted;
+                }
+            }
+            const guessed = new GuessedName();
+
+            await expect(guessed.withTempFile({ content: "[client]\npassword=secret", mode: 0o600 }, async () => "ran")).rejects.toThrow(/EEXIST/);
+            expect(await readFile(victim, "utf8")).toBe("untouched");
+            await guessed.dispose();
+        });
+
         it("removes the file even when the callback throws", async () => {
             let captured = "";
             await expect(
@@ -196,6 +213,26 @@ describe("DirectHost", () => {
 
             const content = await host.stageInput(file, { transform: upper }, async (p) => readFile(p, "utf8"));
             expect(content).toBe("CREATE TABLE T;");
+        });
+
+        it("never streams a staged copy through a file or a link laid under its name first", async () => {
+            const file = join(dir, "dump.sql");
+            await writeFile(file, "dump bytes");
+            const planted = join(dir, "planted");
+            const victim = join(dir, "victim.txt");
+            await writeFile(victim, "untouched");
+            await symlink(victim, planted);
+            class GuessedName extends DirectHost {
+                protected override hostTempPath(): string {
+                    return planted;
+                }
+            }
+            const guessed = new GuessedName();
+            const passthrough = () => new Transform({ transform: (c, _e, cb) => cb(null, c) });
+
+            await expect(guessed.stageInput(file, { transform: passthrough }, async () => "ran")).rejects.toThrow(/EEXIST/);
+            expect(await readFile(victim, "utf8")).toBe("untouched");
+            await guessed.dispose();
         });
 
         it("cleans up the staged copy even when the callback throws", async () => {

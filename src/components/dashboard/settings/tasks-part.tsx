@@ -37,10 +37,12 @@ interface TasksPartProps {
     openTaskId: string | null;
     onOpened: () => void;
     onOpenPart: (part: SettingsPartId) => void;
+    /** A platform admin also changes and starts the tasks of `platformAdminOnly`, like the configuration backup. */
+    isPlatformAdmin: boolean;
 }
 
 /** Every system task with its schedule in words, its last run and its switch. A row opens its Edit dialog. */
-export function TasksPart({ tasks, integrity, openTaskId, onOpened, onOpenPart }: TasksPartProps) {
+export function TasksPart({ tasks, integrity, openTaskId, onOpened, onOpenPart, isPlatformAdmin }: TasksPartProps) {
     const router = useRouter();
     const { readOnly } = useSettingsFrame();
     const { autoRedirectOnJobStart } = useUserPreferences();
@@ -48,11 +50,15 @@ export function TasksPart({ tasks, integrity, openTaskId, onOpened, onOpenPart }
     const [editing, setEditing] = useState<string | null>(null);
     const [switching, setSwitching] = useState<string | null>(null);
 
+    // A task only a platform admin changes stays read-only for everyone else, like the whole list for a viewer who may only read.
+    const locked = useCallback((task: SystemTaskRow) => readOnly || (task.platformAdminOnly && !isPlatformAdmin), [readOnly, isPlatformAdmin]);
+
     useEffect(() => {
         if (!openTaskId) return;
-        setEditing(openTaskId);
+        const picked = tasks.find((entry) => entry.id === openTaskId);
+        if (picked && !locked(picked)) setEditing(openTaskId);
         onOpened();
-    }, [openTaskId, onOpened]);
+    }, [openTaskId, onOpened, tasks, locked]);
 
     const run = useCallback(async (task: SystemTaskRow) => {
         try {
@@ -90,26 +96,32 @@ export function TasksPart({ tasks, integrity, openTaskId, onOpened, onOpenPart }
         }
     }, [router]);
 
-    const handlers = useMemo<TaskHandlers>(() => ({
-        ...(readOnly ? {} : { onEdit: (task) => setEditing(task.id), onRun: (task) => void run(task), onSwitch: (task, enabled) => void switchTask(task, enabled) }),
-        onOpenRun: (task) => task.lastRun?.executionId && router.push(runHref(task.lastRun.executionId, "settings")),
-        onOpenPart: (task) => task.follows && onOpenPart(task.follows.part),
-    }), [readOnly, run, switchTask, router, onOpenPart]);
+    const handlersOf = useMemo(() => {
+        const open: TaskHandlers = {
+            onOpenRun: (task) => task.lastRun?.executionId && router.push(runHref(task.lastRun.executionId, "settings")),
+            onOpenPart: (task) => task.follows && onOpenPart(task.follows.part),
+        };
+        const manage: TaskHandlers = { ...open, onEdit: (task) => setEditing(task.id), onRun: (task) => void run(task), onSwitch: (task, enabled) => void switchTask(task, enabled) };
+        return (task: SystemTaskRow): TaskHandlers => (locked(task) ? open : manage);
+    }, [locked, run, switchTask, router, onOpenPart]);
 
     const columns = useMemo(() => taskColumns({
-        handlers,
+        handlersOf,
         switching,
-        renderActions: (task) => (
-            <>
-                {handlers.onRun && (
-                    <Button variant="ghost" className="size-8 p-0" onClick={() => handlers.onRun?.(task)} disabled={task.running} aria-label={`Run ${task.name} now`}>
-                        <Play />
-                    </Button>
-                )}
-                <BackupRowMenu name={task.name} groups={taskActions(task, handlers)} />
-            </>
-        ),
-    }), [handlers, switching]);
+        renderActions: (task) => {
+            const handlers = handlersOf(task);
+            return (
+                <>
+                    {handlers.onRun && (
+                        <Button variant="ghost" className="size-8 p-0" onClick={() => handlers.onRun?.(task)} disabled={task.running} aria-label={`Run ${task.name} now`}>
+                            <Play />
+                        </Button>
+                    )}
+                    <BackupRowMenu name={task.name} groups={taskActions(task, handlers)} />
+                </>
+            );
+        },
+    }), [handlersOf, switching]);
 
     const shown = useMemo(() => tasks.filter(FILTERS[filter]), [tasks, filter]);
     const count = (key: TaskFilter) => tasks.filter(FILTERS[key]).length;
@@ -125,7 +137,7 @@ export function TasksPart({ tasks, integrity, openTaskId, onOpened, onOpenPart }
                 searchKey="name"
                 searchPlaceholder="Search tasks"
                 getRowId={(entry) => entry.id}
-                onRowClick={handlers.onEdit}
+                onRowClick={(entry) => handlersOf(entry).onEdit?.(entry)}
                 activeRowId={editing}
                 toolbarExtra={
                     <QuickFilter
@@ -141,7 +153,7 @@ export function TasksPart({ tasks, integrity, openTaskId, onOpened, onOpenPart }
                     />
                 }
                 renderRowMenu={(entry, bulk) => (
-                    <BackupContextMenu tile={<TaskTile taskId={entry.id} />} title={entry.name} note={scheduleWords(entry.schedule)} groups={taskActions(entry, handlers)} bulk={bulk} />
+                    <BackupContextMenu tile={<TaskTile taskId={entry.id} />} title={entry.name} note={scheduleWords(entry.schedule)} groups={taskActions(entry, handlersOf(entry))} bulk={bulk} />
                 )}
             />
             <TaskDialog task={task} integrity={integrity} onOpenChange={(open) => !open && setEditing(null)} onRun={(entry) => void run(entry)} />

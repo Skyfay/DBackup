@@ -15,7 +15,8 @@ import {
 import { TarFileEntry } from "../common/types";
 import { awaitDumpProcess } from "../common/dump-process";
 import { MYSQL_DUMP, withAuthArgs } from "./args";
-import { dumpClientOf, readableContent } from "./dump-content";
+import { dumpClientOf, plannedContent, readableContent } from "./dump-content";
+import { dumpsOwnRoutines, readRoutines } from "./routines";
 import { compareVersions } from "@/lib/utils";
 
 /** Oldest MySQL version the adapter is documented and tested against. */
@@ -71,9 +72,14 @@ async function dumpSingleDatabase(
     await withAuthArgs(host, config.password, async (authArgs) => {
         // Events and routines the login may not read are left out with a warning, not a failed dump.
         const readable = await readableContent(config, dbName, host, authArgs, onLog);
+        // MariaDB's tool fails on the routines of MySQL 26 and later, so DBackup reads them
+        // itself, before the dump so a failure stops it early, and writes them after it.
+        const ownRoutines = dumpsOwnRoutines(config, client) && plannedContent({ ...config, ...readable }).routines
+            ? await readRoutines(config, dbName, host, authArgs)
+            : null;
         // Both transports get the version-aware dialect flags. The SSH path used
         // to hand-roll a smaller argument set and miss them entirely.
-        const args = dialect.getDumpArgs({ ...config, ...readable }, [dbName], host, client);
+        const args = dialect.getDumpArgs({ ...config, ...readable, ...(ownRoutines ? { routines: false } : {}) }, [dbName], host, client);
 
         const safeCmd = `${dumpBin} ${args.join(' ').replace(config.password || '___NONE___', '******')}`;
         onLog(`Dumping database: ${dbName}`, 'info', 'command', safeCmd);
@@ -90,6 +96,11 @@ async function dumpSingleDatabase(
         });
 
         await awaitDumpProcess(proc, writeStream, dumpBin);
+
+        if (ownRoutines && ownRoutines.count > 0) {
+            await fs.appendFile(destinationPath, ownRoutines.sql);
+            onLog(`Stored procedures and functions of ${dbName} written by DBackup (${ownRoutines.count}), since ${dumpBin} cannot dump them from MySQL ${config.detectedVersion}.`);
+        }
     });
 
     const stats = await fs.stat(destinationPath);

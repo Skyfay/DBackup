@@ -1,6 +1,6 @@
 /**
- * Saves the rate limits of the Settings page and rebuilds the limiters of this process. The
- * middleware reads them through its internal endpoint within 30 seconds.
+ * Saves the rate limits of the Settings page and rebuilds the limiters of this process, which
+ * `src/proxy.ts` counts with from the next request on.
  */
 
 import prisma from "@/lib/prisma";

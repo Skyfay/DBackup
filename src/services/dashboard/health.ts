@@ -9,6 +9,7 @@ const MAX_ERROR_LENGTH = 300;
 export interface HealthJob {
     id: string;
     name: string;
+    tenantId?: string;
     enabled: boolean;
     nextRunAt: string | null;
 }
@@ -43,6 +44,7 @@ function toUnhealthyJob(job: HealthJob, runs: RunSummary[], trigger: RunSummary)
     return {
         jobId: job.id,
         jobName: job.name,
+        ...(job.tenantId ? { tenantId: job.tenantId } : {}),
         executionId: trigger.id,
         failedAt: trigger.startedAt,
         badRuns: outcomes.filter((run) => run.status === trigger.status).length,
@@ -94,7 +96,7 @@ export function deriveHealth(jobs: HealthJob[], runsByJob: Map<string, RunSummar
     return {
         state: "healthy",
         lastRunAt,
-        nextRun: next ? { jobName: next.name, at: next.nextRunAt! } : null,
+        nextRun: next ? { jobName: next.name, at: next.nextRunAt!, ...(next.tenantId ? { tenantId: next.tenantId } : {}) } : null,
     };
 }
 

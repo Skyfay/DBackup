@@ -2,14 +2,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const mocks = vi.hoisted(() => ({ ctx: null as null | { permissions: string[]; isSuperAdmin: boolean }, search: vi.fn() }));
+type Ctx = { permissions: string[]; isPlatformAdmin: boolean; tenantId: string | null; allTenants?: boolean };
+const mocks = vi.hoisted(() => ({ ctx: null as null | Ctx, search: vi.fn(), reach: vi.fn() }));
 
 vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue(new Headers()) }));
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn(async () => mocks.ctx),
-    hasPermissionWithContext: (ctx: { permissions: string[]; isSuperAdmin: boolean }, permission: string) => ctx.isSuperAdmin || ctx.permissions.includes(permission),
+    // Like the real check, a platform admin in All tenants holds only the permissions of that view.
+    hasPermissionWithContext: (ctx: Ctx, permission: string) => (ctx.isPlatformAdmin && !ctx.allTenants) || ctx.permissions.includes(permission),
 }));
 vi.mock("@/services/search/search-service", () => ({ searchRecords: (...args: unknown[]) => mocks.search(...args) }));
+vi.mock("@/services/user/account-visibility", () => ({ accountsSeenReach: (...args: unknown[]) => mocks.reach(...args) }));
 
 const { GET } = await import("@/app/api/search/route");
 const request = (q: string) => new NextRequest(`http://localhost/api/search?q=${encodeURIComponent(q)}`);
@@ -18,6 +21,7 @@ describe("the route of the global search", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.search.mockResolvedValue([]);
+        mocks.reach.mockResolvedValue("all");
     });
 
     it("refuses someone who is not signed in", async () => {
@@ -28,7 +32,7 @@ describe("the route of the global search", () => {
     });
 
     it("searches only the kinds the viewer may open", async () => {
-        mocks.ctx = { permissions: ["jobs:read", "history:read", "notifications:read", "groups:read", "vault:read"], isSuperAdmin: false };
+        mocks.ctx = { permissions: ["jobs:read", "history:read", "notifications:read", "groups:read", "vault:read"], isPlatformAdmin: false, tenantId: "tenant-a" };
 
         const response = await GET(request("mysql"));
 
@@ -44,20 +48,28 @@ describe("the route of the global search", () => {
             templates: false,
             keys: true,
             credentials: false,
-        });
+        }, "tenant-a");
         expect(await response.json()).toEqual({ success: true, data: { hits: [] } });
     });
 
     it("finds the saved logins only with the credentials as well as the Vault", async () => {
-        mocks.ctx = { permissions: ["vault:read", "credentials:read"], isSuperAdmin: false };
+        mocks.ctx = { permissions: ["vault:read", "credentials:read"], isPlatformAdmin: false, tenantId: "default" };
 
         await GET(request("prod"));
 
-        expect(mocks.search).toHaveBeenCalledWith("prod", expect.objectContaining({ keys: true, credentials: true }));
+        expect(mocks.search).toHaveBeenCalledWith("prod", expect.objectContaining({ keys: true, credentials: true }), "default");
     });
 
-    it("searches everything for a SuperAdmin", async () => {
-        mocks.ctx = { permissions: [], isSuperAdmin: true };
+    it("finds no saved logins with the credentials alone, whose tab lies on the Vault page", async () => {
+        mocks.ctx = { permissions: ["credentials:read"], isPlatformAdmin: false, tenantId: "default" };
+
+        await GET(request("prod"));
+
+        expect(mocks.search).toHaveBeenCalledWith("prod", expect.objectContaining({ keys: false, credentials: false }), "default");
+    });
+
+    it("searches everything for a platform admin, in the tenant they work in", async () => {
+        mocks.ctx = { permissions: [], isPlatformAdmin: true, tenantId: "tenant-b" };
 
         await GET(request("prod"));
 
@@ -73,6 +85,46 @@ describe("the route of the global search", () => {
             templates: true,
             keys: true,
             credentials: true,
-        });
+        }, "tenant-b");
+    });
+
+    it("searches every tenant for a platform admin in All tenants, with what that view may read", async () => {
+        mocks.ctx = { permissions: ["jobs:read", "storage:read", "sources:view"], isPlatformAdmin: true, tenantId: null, allTenants: true };
+
+        const response = await GET(request("prod"));
+
+        expect(mocks.search).toHaveBeenCalledWith("prod", expect.objectContaining({ jobs: true, backups: true, databases: true, connections: ["database"], users: false }), null, "all");
+        expect(response.status).toBe(200);
+    });
+
+    it("finds people in All tenants only with the right to see the accounts of the platform, where they open", async () => {
+        mocks.ctx = { permissions: ["users:read"], isPlatformAdmin: false, tenantId: null, allTenants: true };
+        await GET(request("anna"));
+        expect(mocks.search).toHaveBeenLastCalledWith("anna", expect.objectContaining({ users: false }), null, "all");
+
+        mocks.ctx = { permissions: ["platform-accounts:read"], isPlatformAdmin: false, tenantId: null, allTenants: true };
+        await GET(request("anna"));
+        expect(mocks.search).toHaveBeenLastCalledWith("anna", expect.objectContaining({ users: true }), null, "all");
+    });
+
+    it("finds no API keys in All tenants, and groups only of the tenants whose people the viewer sees", async () => {
+        mocks.ctx = { permissions: ["groups:read", "api-keys:read"], isPlatformAdmin: false, tenantId: null, allTenants: true };
+        mocks.reach.mockResolvedValue([]);
+        await GET(request("ops"));
+        expect(mocks.search).toHaveBeenLastCalledWith("ops", expect.objectContaining({ groups: false, apiKeys: false }), null, []);
+
+        mocks.reach.mockResolvedValue(["acme"]);
+        await GET(request("ops"));
+        expect(mocks.search).toHaveBeenLastCalledWith("ops", expect.objectContaining({ groups: true, apiKeys: false }), null, ["acme"]);
+        expect(mocks.reach).toHaveBeenCalledWith(mocks.ctx);
+    });
+
+    it("finds nothing for an account that works in no tenant", async () => {
+        mocks.ctx = { permissions: ["jobs:read"], isPlatformAdmin: false, tenantId: null };
+
+        const response = await GET(request("prod"));
+
+        expect(mocks.search).not.toHaveBeenCalled();
+        expect(await response.json()).toEqual({ success: true, data: { hits: [] } });
     });
 });

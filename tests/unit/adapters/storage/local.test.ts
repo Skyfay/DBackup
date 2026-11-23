@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Readable } from "stream";
 import { LocalFileSystemAdapter } from "@/lib/adapters/storage/local";
+import { FileTooLargeError, SIDECAR_READ_LIMIT } from "@/lib/adapters/storage/common/read-limit";
 
 // --- Hoisted mocks ---
-const { mockFsStat, mockFsAccess, mockFsMkdir, mockFsReadFile, mockFsWriteFile, mockFsUnlink, mockFsReaddir, mockCreateReadStream, mockCreateWriteStream, mockPipeline } = vi.hoisted(() => {
+const { mockFsStat, mockFsAccess, mockFsMkdir, mockFsReadFile, mockFsWriteFile, mockFsUnlink, mockFsReaddir, mockFsOpen, mockCreateReadStream, mockCreateWriteStream, mockPipeline } = vi.hoisted(() => {
     const mockReadStream = {
         on: vi.fn().mockReturnThis(),
         pipe: vi.fn(),
@@ -15,6 +17,7 @@ const { mockFsStat, mockFsAccess, mockFsMkdir, mockFsReadFile, mockFsWriteFile, 
         mockFsWriteFile: vi.fn().mockResolvedValue(undefined),
         mockFsUnlink: vi.fn().mockResolvedValue(undefined),
         mockFsReaddir: vi.fn().mockResolvedValue([]),
+        mockFsOpen: vi.fn(),
         mockCreateReadStream: vi.fn().mockReturnValue(mockReadStream),
         mockCreateWriteStream: vi.fn().mockReturnValue({ on: vi.fn(), end: vi.fn() }),
         mockPipeline: vi.fn().mockResolvedValue(undefined),
@@ -30,6 +33,11 @@ vi.mock("fs/promises", () => ({
         writeFile: (...args: unknown[]) => mockFsWriteFile(...args),
         unlink: (...args: unknown[]) => mockFsUnlink(...args),
         readdir: (...args: unknown[]) => mockFsReaddir(...args),
+        open: (...args: unknown[]) => mockFsOpen(...args),
+        // A delete looks at the entry itself, a link included, the way access looks at a file here.
+        lstat: (...args: unknown[]) => mockFsAccess(...args),
+        // No links in these folders, every path is its own real path.
+        realpath: async (target: string) => target,
     },
     stat: (...args: unknown[]) => mockFsStat(...args),
     access: (...args: unknown[]) => mockFsAccess(...args),
@@ -38,6 +46,8 @@ vi.mock("fs/promises", () => ({
     writeFile: (...args: unknown[]) => mockFsWriteFile(...args),
     unlink: (...args: unknown[]) => mockFsUnlink(...args),
     readdir: (...args: unknown[]) => mockFsReaddir(...args),
+    lstat: (...args: unknown[]) => mockFsAccess(...args),
+    realpath: async (target: string) => target,
 }));
 
 vi.mock("fs", () => ({
@@ -207,8 +217,15 @@ describe("LocalFileSystemAdapter", () => {
     // ===== read() =====
 
     describe("read()", () => {
+        /** A handle of a file holding `content`, which reads only the range it is asked for. */
+        const handleOf = (content: Buffer, size = content.length) => ({
+            stat: vi.fn().mockResolvedValue({ size }),
+            createReadStream: vi.fn(({ start, end }: { start: number; end: number }) => Readable.from([content.subarray(start, end + 1)])),
+            close: vi.fn().mockResolvedValue(undefined),
+        });
+
         it("returns file content as string", async () => {
-            mockFsReadFile.mockResolvedValue("backup metadata");
+            mockFsOpen.mockResolvedValue(handleOf(Buffer.from("backup metadata")));
 
             const result = await LocalFileSystemAdapter.read!(config, "Job/backup.sql.meta.json");
 
@@ -216,7 +233,7 @@ describe("LocalFileSystemAdapter", () => {
         });
 
         it("returns null when file does not exist", async () => {
-            mockFsAccess.mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
+            mockFsOpen.mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
 
             const result = await LocalFileSystemAdapter.read!(config, "Job/missing.meta.json");
 
@@ -224,12 +241,30 @@ describe("LocalFileSystemAdapter", () => {
         });
 
         it("returns null on unexpected read error", async () => {
-            mockFsAccess.mockResolvedValue(undefined);
-            mockFsReadFile.mockRejectedValue(new Error("IO error"));
+            const handle = handleOf(Buffer.from("x"));
+            handle.createReadStream.mockImplementation(() => new Readable({ read() { this.destroy(new Error("IO error")); } }));
+            mockFsOpen.mockResolvedValue(handle);
 
             const result = await LocalFileSystemAdapter.read!(config, "Job/meta.json");
 
             expect(result).toBeNull();
+            expect(handle.close).toHaveBeenCalled();
+        });
+
+        it("refuses a file larger than the limit of the read without reading it", async () => {
+            const handle = handleOf(Buffer.from("{}"), SIDECAR_READ_LIMIT + 1);
+            mockFsOpen.mockResolvedValue(handle);
+
+            await expect(LocalFileSystemAdapter.read!(config, "Job/huge.meta.json")).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(handle.createReadStream).not.toHaveBeenCalled();
+        });
+
+        it("reads one byte past the limit at most, so a file that grows is refused too", async () => {
+            const handle = handleOf(Buffer.alloc(64), 4);
+            mockFsOpen.mockResolvedValue(handle);
+
+            await expect(LocalFileSystemAdapter.readBytes!(config, "Job/x.index", { maxBytes: 10 })).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(handle.createReadStream).toHaveBeenCalledWith(expect.objectContaining({ start: 0, end: 10 }));
         });
     });
 

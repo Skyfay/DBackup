@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Check, CircleHelp, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, CircleHelp, Loader2, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type OutcomeTone = "warning" | "success" | "muted";
@@ -63,6 +64,26 @@ export function Notice({ tone, icon: Icon = AlertTriangle, title, children }: { 
                 {title && <p className="font-medium">{title}</p>}
                 <div className={cn(title && "text-muted-foreground")}>{children}</div>
             </div>
+        </div>
+    );
+}
+
+/**
+ * A dashed card in place of the restore, with an icon, a title, one line and a way back, like when
+ * no backup is picked.
+ */
+export function RestorePlaceholder({ icon: Icon, title, children, action }: { icon: React.ComponentType<{ className?: string }>; title: string; children: React.ReactNode; action?: { label: string; onClick: () => void } }) {
+    return (
+        <div className="rounded-xl border border-dashed bg-card px-4 py-16 text-center shadow-sm">
+            <Icon className="mx-auto mb-4 size-10 text-muted-foreground/40" aria-hidden="true" />
+            <p className="font-medium">{title}</p>
+            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{children}</p>
+            {action && (
+                <Button variant="outline" className="mt-4" onClick={action.onClick}>
+                    <ArrowLeft />
+                    {action.label}
+                </Button>
+            )}
         </div>
     );
 }

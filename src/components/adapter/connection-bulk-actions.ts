@@ -5,6 +5,7 @@ import { isAirGapped } from "@/lib/core/air-gap";
 import type { AdapterConfig } from "./types";
 import { kindNames, type ConnectionKind } from "./connection-columns";
 import { adapterTypeIcon } from "./connection-type-icon";
+import { configBackupLock } from "./connection-row-rules";
 
 const UPDATED = { verb: "update", verbPast: "updated", noun: "connection" };
 
@@ -30,6 +31,10 @@ const ITEM = {
  * The server checks again, so a use added meanwhile still shows up in the failure list.
  */
 export function deleteBlocker(config: AdapterConfig): string | null {
+    // Another tenant shares it, so only that tenant deletes it.
+    if (config.provided) return `${config.provided.providerName} shares it with this tenant`;
+    // Its customers name it in their jobs and templates, which they lose when sharing stops.
+    if (config.share) return "It is shared with other tenants. Stop sharing it first";
     const usedBy = config.overview?.usedBy;
     if (!usedBy) return null;
     const jobs = config.type === "notification" ? 0 : usedBy.jobs;
@@ -48,7 +53,7 @@ const run = (action: string) => (rows: AdapterConfig[], { permanently }: { perma
  * connection would change, so the menu never offers what is already so. A connection the setting
  * does not apply to is `ineligible`, left out and never sent.
  */
-function setting(
+function settingOf(
     id: string,
     label: string,
     group: string,
@@ -80,8 +85,12 @@ const noHealthAlerts = (config: AdapterConfig) => (isAirGapped(config) ? "It is 
  * checks and whether they are air-gapped, the switches of the Behavior part every adapter of the
  * kind has. Notification channels keep to deleting.
  */
-export function connectionBulkActions(kind: ConnectionKind, canManage: boolean, trash: Omit<BulkTrash<AdapterConfig>, "permanentLine">): BulkAction<AdapterConfig>[] {
+export function connectionBulkActions(kind: ConnectionKind, canManage: boolean, trash: Omit<BulkTrash<AdapterConfig>, "permanentLine">, isPlatformAdmin = false): BulkAction<AdapterConfig>[] {
     if (!canManage) return [];
+    // The destination of the configuration backup stays out of every change, unless a platform admin makes it.
+    const locked = (config: AdapterConfig) => configBackupLock(config, isPlatformAdmin);
+    const setting = (...[id, label, group, icon, changes, ineligible]: Parameters<typeof settingOf>) =>
+        settingOf(id, label, group, icon, changes, (config) => locked(config) ?? ineligible?.(config) ?? null);
 
     const remove: BulkAction<AdapterConfig> = {
         id: "delete",
@@ -90,7 +99,7 @@ export function connectionBulkActions(kind: ConnectionKind, canManage: boolean, 
         variant: "destructive",
         ...ITEM,
         // Connections still in use are listed apart in the confirmation and never sent.
-        ineligible: deleteBlocker,
+        ineligible: (config) => locked(config) ?? deleteBlocker(config),
         confirm: {
             title: (rows) => `Delete ${rows.length} connection${rows.length === 1 ? "" : "s"}?`,
             confirmLabel: "Delete",

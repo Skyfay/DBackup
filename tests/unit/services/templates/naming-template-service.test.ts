@@ -97,7 +97,7 @@ describe("NamingTemplateService", () => {
 
   describe("createNamingTemplate", () => {
     it("creates a new template successfully", async () => {
-      prismaMock.namingTemplate.findUnique.mockResolvedValue(null);
+      prismaMock.namingTemplate.findFirst.mockResolvedValue(null);
       const created = makeTemplate({ name: "New" });
       prismaMock.namingTemplate.create.mockResolvedValue(created as any);
 
@@ -111,17 +111,20 @@ describe("NamingTemplateService", () => {
     });
 
     it("throws ServiceError when a template with the same name already exists", async () => {
-      prismaMock.namingTemplate.findUnique.mockResolvedValue(
+      // A name is unique per tenant, so the lookup by name is a findFirst the tenant filter narrows.
+      prismaMock.namingTemplate.findFirst.mockResolvedValue(
         makeTemplate() as any
       );
 
       await expect(
         createNamingTemplate({ name: "Default", pattern: "x" })
       ).rejects.toBeInstanceOf(ServiceError);
+      expect(prismaMock.namingTemplate.findFirst).toHaveBeenCalledWith({ where: { name: "Default" } });
+      expect(prismaMock.namingTemplate.create).not.toHaveBeenCalled();
     });
 
     it("clears previous default when isDefault is true", async () => {
-      prismaMock.namingTemplate.findUnique.mockResolvedValue(null);
+      prismaMock.namingTemplate.findFirst.mockResolvedValue(null);
       prismaMock.namingTemplate.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.namingTemplate.create.mockResolvedValue(
         makeTemplate({ isDefault: true }) as any
@@ -179,13 +182,14 @@ describe("NamingTemplateService", () => {
 
     it("throws ServiceError when renaming to an already used name", async () => {
       const tpl = makeTemplate({ name: "OldName" });
-      prismaMock.namingTemplate.findUnique
-        .mockResolvedValueOnce(tpl as any) // current template lookup
-        .mockResolvedValueOnce(makeTemplate({ name: "Taken" }) as any); // name-collision check
+      prismaMock.namingTemplate.findUnique.mockResolvedValueOnce(tpl as any); // current template lookup
+      prismaMock.namingTemplate.findFirst.mockResolvedValueOnce(makeTemplate({ name: "Taken" }) as any); // name-collision check
 
       await expect(
         updateNamingTemplate("tpl-1", { name: "Taken" })
       ).rejects.toBeInstanceOf(ServiceError);
+      expect(prismaMock.namingTemplate.findFirst).toHaveBeenCalledWith({ where: { name: "Taken" } });
+      expect(prismaMock.namingTemplate.update).not.toHaveBeenCalled();
     });
 
     it("clears previous default when isDefault is set to true", async () => {

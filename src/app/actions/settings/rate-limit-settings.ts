@@ -1,11 +1,12 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { saveRateLimitConfig } from "@/services/system/rate-limit-settings-service";
 import { rateLimitSettings, SETTINGS_AREAS } from "@/services/system/settings-audit";
-import { invalid, savePart, type SaveResult } from "@/lib/settings/save-part";
+import { invalid, savePart, type SaveResult } from "@/services/system/settings-save";
 
 const window = z.coerce.number().int().min(10, "A window is at least 10 seconds").max(3600, "A window is at most 3600 seconds");
 
@@ -22,5 +23,7 @@ export async function updateRateLimitSettings(data: RateLimitFormData): Promise<
 
     const parsed = rateLimitSchema.safeParse(data);
     if (!parsed.success) return invalid(parsed.error.issues);
-    return savePart(user.id, SETTINGS_AREAS.RATE_LIMITS, rateLimitSettings, () => saveRateLimitConfig(parsed.data));
+    const result = await savePart(user.id, SETTINGS_AREAS.RATE_LIMITS, rateLimitSettings, () => saveRateLimitConfig(parsed.data));
+    if (result.success) revalidatePath("/dashboard/settings");
+    return result;
 }

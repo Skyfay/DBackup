@@ -47,6 +47,13 @@ export interface RunRow {
     note: string | null;
     live: RunLive | null;
     starter: RunStarter;
+    /** The tenant of the run, which All tenants shows and filters by. */
+    tenantId?: string;
+    /**
+     * Set for a run of some databases of its job alone, like a backup a customer started of a shared
+     * database. Running its job again backs up every database of the job, not these.
+     */
+    someDatabases?: true;
 }
 
 export interface RunFacets {
@@ -54,12 +61,16 @@ export interface RunFacets {
     status: Record<string, number>;
     job: Record<string, number>;
     starter: Record<string, number>;
+    /** The runs of each tenant, only in All tenants, where the list holds every tenant. */
+    tenant?: Record<string, number>;
 }
 
 export interface RunJobOption {
     id: string;
     name: string;
     adapterId: string | null;
+    /** The tenant of the job, which the Job filter groups by in All tenants. */
+    tenantId?: string;
 }
 
 export interface RunStarterOption {
@@ -201,9 +212,13 @@ export interface RunDumpProgress {
     etaMs: number | null;
 }
 
-/** One database of the dump step. */
+/** One database of the dump step, or of the restore step with the database it went to. */
 export interface RunDump {
     name: string;
+    /** The database a restore wrote it into. Undefined for a dump. */
+    target?: string;
+    /** Why something of it is not shown, like the command of a customer's restore that names the server. */
+    note?: string | null;
     state: "waiting" | "dumping" | "done" | "failed";
     bytes: number | null;
     durationMs: number | null;
@@ -233,9 +248,11 @@ export interface RunSummaryItem {
 /** A step told in a sentence or two, with a row for each database, destination or channel it went through. */
 export interface RunStepSummary {
     step: string;
-    /** What the step did. `{tool}` in it stands for the program it ran, which the page shows as a badge. */
+    /** What the step did. `{tool}` in it stands for the program it ran, which the page shows as a badge, `{file}` for `file`. */
     text: string | null;
     tool: string | null;
+    /** The archive a restore read, which the page shows in a monospace font. */
+    file: string | null;
     dumps: RunDump[];
     items: RunSummaryItem[];
     /** The checksum every copy is checked against, on the upload step. */
@@ -282,6 +299,16 @@ export interface RunChecks {
     backup: { name: string; file: string; size: number | null } | null;
 }
 
+/** What a restore read, for the strip of its page. */
+export interface RunRestoreRead {
+    /** Bytes read out of the backup. */
+    bytes: number;
+    /** The size of the archive, when its backup run is still known. */
+    total: number | null;
+    /** Whether only the entries it needed were read, false when the backup was fetched in full. */
+    ranged: boolean | null;
+}
+
 export interface RunDetail extends RunRow {
     job: { id: string; name: string } | null;
     path: string | null;
@@ -294,6 +321,8 @@ export interface RunDetail extends RunRow {
     uploads: RunUpload[];
     /** What an integrity check or a verification checked. Null for every other run. */
     checks: RunChecks | null;
+    /** What a restore read. Null for every other run, and for a restore that recorded nothing. */
+    restore: RunRestoreRead | null;
     notifications: RunNotification[];
     /** The runs of the same job, newest first, for the switcher and the bars. */
     recent: RunNeighbour[];

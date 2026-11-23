@@ -10,8 +10,8 @@ import { action, ago, formatterFor, paths, size } from "./format";
 
 /** The alerts of a destination, and a run that left out an air-gapped one. */
 
-function openStorage(id: string | undefined) {
-    return action("Open destination", id ? paths.storage(id) : undefined, "archive");
+function openStorage(id: string | undefined, options?: TemplateOptions) {
+    return action("Open destination", id ? paths.storage(id, options?.tenantId) : undefined, "archive");
 }
 
 export function storageUsageSpikeTemplate(data: StorageUsageSpikeData, options?: TemplateOptions): NotificationPayload {
@@ -40,7 +40,7 @@ export function storageUsageSpikeTemplate(data: StorageUsageSpikeData, options?:
             { label: "Measured", value: f.time(data.timestamp) ?? "" },
         ],
         details: [{ name: "Destination", value: data.storageName }],
-        actions: openStorage(data.storageId),
+        actions: openStorage(data.storageId, options),
         timestamp: data.timestamp,
     };
 }
@@ -74,7 +74,7 @@ export function storageLimitWarningTemplate(data: StorageLimitWarningData, optio
         ],
         usage: { percent: Math.min(100, data.usagePercent), label: `${percent}% of the limit`, aside: "Alert from 90%" },
         details: [{ name: "Destination", value: data.storageName }],
-        actions: openStorage(data.storageId),
+        actions: openStorage(data.storageId, options),
         timestamp: data.timestamp,
     };
 }
@@ -104,7 +104,7 @@ export function storageMissingBackupTemplate(data: StorageMissingBackupData, opt
             { name: "Destination", value: data.storageName },
             ...(data.lastBackupAt ? [{ name: "Last backup", value: f.date(data.lastBackupAt)! }] : []),
         ],
-        actions: openStorage(data.storageId),
+        actions: openStorage(data.storageId, options),
         timestamp: data.timestamp,
     };
 }
@@ -135,8 +135,8 @@ export function airGapSkippedTemplate(data: AirGapSkippedData, options?: Templat
             ...(data.lastConnectedAt ? [{ name: "Last connected", value: f.date(data.lastConnectedAt)! }] : []),
         ],
         actions: [
-            ...action("Open destination", data.storageId ? paths.connection("storage", data.storageId) : undefined, "archive"),
-            ...action("Open job", data.jobId ? paths.job(data.jobId) : undefined, "calendar-clock"),
+            ...action("Open destination", data.storageId ? paths.connection("storage", data.storageId, options?.tenantId) : undefined, "archive"),
+            ...action("Open job", data.jobId ? paths.job(data.jobId, options?.tenantId) : undefined, "calendar-clock"),
         ],
         timestamp: data.timestamp,
     };

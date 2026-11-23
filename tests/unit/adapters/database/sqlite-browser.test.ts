@@ -11,11 +11,13 @@ function queryOf(argv: string[]): string {
     return argv[argv.length - 1] ?? "";
 }
 
-function browserHost(kind: HostKind, responses: { tables?: string; counts?: string; pragma?: string; count?: string; data?: string }): FakeHost {
+function browserHost(kind: HostKind, responses: { tables?: string; counts?: string; pragma?: string; count?: string; data?: string; listed?: string }): FakeHost {
     return createFakeHost({
         kind,
         onExec: (argv) => {
             const query = queryOf(argv);
+            // The question whether the file lists the table and its columns, asked before any read.
+            if (query.startsWith("SELECT (SELECT count(*)")) return { stdout: responses.listed ?? "1\n" };
             if (query.includes("sqlite_master")) return { stdout: responses.tables ?? "" };
             if (query.includes("UNION ALL") || query.startsWith("SELECT count(*)")) return { stdout: responses.counts ?? "" };
             if (query.startsWith("PRAGMA")) return { stdout: responses.pragma ?? "" };
@@ -89,7 +91,7 @@ describe.each<HostKind>(["direct", "ssh"])("SQLite browser over a %s host", (kin
                 kind,
                 onExec: (argv) => queryOf(argv).startsWith("SELECT COUNT(*)")
                     ? { code: 1, stderr: "boom" }
-                    : { stdout: "" },
+                    : { stdout: queryOf(argv).startsWith("SELECT (SELECT count(*)") ? "1\n" : "" },
             });
 
             await expect(getTableData(baseConfig as never, options as never, host))

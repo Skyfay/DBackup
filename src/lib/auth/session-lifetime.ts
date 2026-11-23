@@ -21,8 +21,8 @@ export const SESSION_OPTIONS = {
     expiresIn: SESSION_DURATION_LIMITS.max,
     // A session ends after its length, however often it is used.
     disableSessionRefresh: true,
-    // No action here asks for a fresh sign-in, and the default of a day made unlinking an
-    // account fail with SESSION_NOT_FRESH for most people.
+    // The default of a day made unlinking an account fail with SESSION_NOT_FRESH for most people.
+    // Adding a passkey asks for a recent sign-in through DBackup's own check, see reauth-guard.ts.
     freshAge: 0,
 } as const;
 

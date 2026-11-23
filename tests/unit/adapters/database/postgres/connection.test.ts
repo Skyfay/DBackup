@@ -28,7 +28,8 @@ const baseConfig = {
 
 /** Which database a recorded call connected to. */
 function connectedTo(argv: string[]): string {
-    return argv[argv.indexOf("-d") + 1];
+    // The name goes to libpq as a literal keyword value, see dbArg.
+    return argv[argv.indexOf("-d") + 1].replace(/^dbname='(.*)'$/, "$1");
 }
 
 /** A host where only `reachable` answers and every other database refuses. */
@@ -130,6 +131,26 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL connection over a %s host
                 { name: "shop", sizeInBytes: 1024, tableCount: 7 },
                 { name: "analytics", sizeInBytes: 2048, tableCount: 7 },
             ]);
+        });
+
+        it("counts the tables of each database with the catalog alone on the search path", async () => {
+            const envs: (string | undefined)[] = [];
+            const host = createFakeHost({
+                kind,
+                onExec: (argv, options) => {
+                    const query = argv[argv.indexOf("-c") + 1] ?? "";
+                    if (query.includes("pg_database_size")) return { stdout: "shop\t1024\n" };
+                    if (query.includes("pg_catalog.pg_tables")) {
+                        envs.push(options?.env?.PGOPTIONS);
+                        return { stdout: "7\n" };
+                    }
+                    return { stdout: "" };
+                },
+            });
+
+            await getDatabasesWithStats(baseConfig as never, host);
+
+            expect(envs).toEqual(["-c search_path=pg_catalog,pg_temp"]);
         });
 
         it("omits the table count when that query fails", async () => {

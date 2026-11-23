@@ -49,6 +49,7 @@ prisma/dev.db
 prisma/dev.db-journal
 prisma/dev.db-shm
 prisma/dev.db-wal
+prisma/dev.db.before-*
 db-data/
 
 # backups (Docker mount point, root only so src/app/dashboard/backups stays tracked)

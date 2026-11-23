@@ -15,13 +15,15 @@ vi.mock("@/lib/adapters/database/mongodb/meta", () => ({
     withMongoMeta: (_config: unknown, _host: unknown, fn: (meta: unknown) => unknown) => fn(mockMeta()),
 }));
 
-vi.mock("@/lib/adapters/database/common/tar-utils", () => ({
+vi.mock("@/lib/adapters/database/common/tar-utils", async (importOriginal) => ({
     isMultiDbTar: (...args: unknown[]) => mockIsMultiDbTar(...args),
     extractSelectedDatabases: (...args: unknown[]) => mockExtractSelected(...args),
     createTempDir: (...args: unknown[]) => mockCreateTempDir(...args),
     cleanupTempDir: (...args: unknown[]) => mockCleanupTempDir(...args),
     shouldRestoreDatabase: (...args: unknown[]) => mockShouldRestore(...args),
     getTargetDatabaseName: (...args: unknown[]) => mockGetTargetName(...args),
+    // The real lookup, so a dump is found among the files the extraction wrote, never joined from the manifest.
+    extractedFileOf: (await importOriginal<typeof import("@/lib/adapters/database/common/tar-utils")>()).extractedFileOf,
 }));
 
 import { createFakeHost, type FakeHost } from "@/lib/testing/fake-host";
@@ -95,6 +97,19 @@ describe.each<HostKind>(["direct", "ssh"])("MongoDB restore over a %s host", (ki
             expect(argv).toContain("--drop");
         });
 
+        it("hands mongorestore the password in a file of mode 0600 named by --config, never in argv", async () => {
+            const host = restoreHost(kind);
+            await restoreOne(baseConfig as never, "/tmp/in.archive", "shop", host);
+
+            const argv = host.calls.spawn[0];
+            expect(argv).not.toContain("--password");
+            expect(argv.join(" ")).not.toContain("secret");
+            const file = host.calls.tempFiles[0];
+            expect(file).toEqual({ path: expect.stringMatching(/\.yaml$/), content: 'password: "secret"\n', mode: 0o600 });
+            expect(argv).toContain(`--config=${file.path}`);
+            expect(host.calls.removed).toContain(file.path);
+        });
+
         it("reads the archive from a path rather than through stdin", async () => {
             // The single-archive path used to pipe the file into mongorestore
             // while the multi-database path passed --archive=<path>.
@@ -123,12 +138,37 @@ describe.each<HostKind>(["direct", "ssh"])("MongoDB restore over a %s host", (ki
             expect(argv[argv.indexOf("--nsTo") + 1]).toBe("target.*");
         });
 
+        it("runs no mongorestore for a target or a source name that starts with -", async () => {
+            const host = restoreHost(kind);
+            await expect(restoreOne(baseConfig as never, "/tmp/a.archive", "--dir=/tmp", host, undefined, undefined, "source")).rejects.toThrow(/starts with -/);
+            await expect(restoreOne(baseConfig as never, "/tmp/a.archive", "target", host, undefined, undefined, "-source")).rejects.toThrow(/starts with -/);
+            expect(host.calls.spawn).toHaveLength(0);
+        });
+
         it("limits the restore to the target namespace when there is no rename", async () => {
             const host = restoreHost(kind);
             await restoreOne(baseConfig as never, "/tmp/a.archive", "target", host);
 
             const argv = host.calls.spawn[0];
             expect(argv[argv.indexOf("--nsInclude") + 1]).toBe("target.*");
+        });
+
+        it("escapes a * in a name, so the pattern matches only that database", async () => {
+            const host = restoreHost(kind);
+            await restoreOne(baseConfig as never, "/tmp/a.archive", "new*db", host, undefined, undefined, "old*db");
+            await restoreOne(baseConfig as never, "/tmp/a.archive", "only*db", host);
+
+            const [renamed, included] = host.calls.spawn;
+            expect(renamed[renamed.indexOf("--nsFrom") + 1]).toBe("old\\*db.*");
+            expect(renamed[renamed.indexOf("--nsTo") + 1]).toBe("new\\*db.*");
+            expect(included[included.indexOf("--nsInclude") + 1]).toBe("only\\*db.*");
+        });
+
+        it.each(["a.b", "a$b", "a\\b", "a/b", "a b", "a\"b"])("runs no mongorestore for the name %s, which MongoDB refuses", async (name) => {
+            const host = restoreHost(kind);
+            await expect(restoreOne(baseConfig as never, "/tmp/a.archive", name, host)).rejects.toThrow(/does not allow/);
+            await expect(restoreOne(baseConfig as never, "/tmp/a.archive", "target", host, undefined, undefined, name)).rejects.toThrow(/does not allow/);
+            expect(host.calls.spawn).toHaveLength(0);
         });
     });
 

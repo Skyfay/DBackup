@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { jobService } from "@/services/jobs/job-service";
 import { jobAuditSnapshot, jobChangeDetails } from "@/services/jobs/job-audit";
@@ -7,6 +8,12 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { PERMANENT_DELETE_REFUSED, permanentlyFrom } from "@/lib/core/delete-mode";
+import { idList, parseJobBody, textList } from "@/lib/core/job-body";
+import { refusedUnless, serviceRefusal } from "@/lib/server/permission-refusal";
+import { logger } from "@/lib/logging/logger";
+import { wrapError } from "@/lib/logging/errors";
+
+const log = logger.child({ route: "jobs/[id]" });
 
 export async function DELETE(
     req: NextRequest,
@@ -14,10 +21,11 @@ export async function DELETE(
 ) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE));
+    if (refused) return refused;
 
     const params = await props.params;
     try {
@@ -30,8 +38,12 @@ export async function DELETE(
         const deleted = await jobService.deleteJob(params.id, { permanently, by: ctx.userId });
         await auditService.logFor(ctx, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.JOB, { name: deleted.name, ...(permanently ? { permanently: true } : {}) }, params.id);
         return NextResponse.json({ success: true });
-    } catch (_error) {
-        return NextResponse.json({ error: "Failed to delete job" }, { status: 500 });
+    } catch (error: unknown) {
+        // A refusal written for the caller keeps its own status, anything else broke and goes to the log.
+        const refusal = serviceRefusal(error);
+        if (refusal) return refusal;
+        log.error("Delete job error", { jobId: params.id }, wrapError(error));
+        return NextResponse.json({ error: "The job could not be deleted. The log of DBackup has the details." }, { status: 500 });
     }
 }
 
@@ -41,14 +53,16 @@ export async function PUT(
 ) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE));
+    if (refused) return refused;
 
     const params = await props.params;
     try {
-        const body = await req.json();
+        // Checked before anything reads it: an object where an id belongs is a write of its own for Prisma.
+        const body = parseJobBody(await req.json());
         const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification, backupMode, fullEveryDays, verifyByHash } = body;
 
         const before = await jobAuditSnapshot(params.id);
@@ -56,27 +70,29 @@ export async function PUT(
             name,
             schedule,
             enabled,
-            sourceId,
+            // Null clears the source like the empty text, which the service reads as no source.
+            sourceId: sourceId === null ? "" : sourceId,
             databases: Array.isArray(databases) ? databases : undefined,
-            destinations: destinations ? destinations.map((d: { configId: string; priority?: number; retention?: any; retentionPolicyId?: string | null }, i: number) => ({
+            destinations: destinations ? destinations.map((d, i) => ({
                 configId: d.configId,
                 priority: d.priority ?? i,
                 retention: d.retention ? JSON.stringify(d.retention) : "{}",
                 retentionPolicyId: d.retentionPolicyId ?? null,
             })) : undefined,
-            sources: sources ? sources.map((s: { configId: string; priority?: number; path: string; excludePatterns?: string[]; excludePatternPresetIds?: string[]; stopContainers?: boolean }, i: number) => ({
+            sources: sources ? sources.map((s, i) => ({
                 configId: s.configId,
                 priority: s.priority ?? i,
                 path: s.path,
-                excludePatterns: Array.isArray(s.excludePatterns) ? s.excludePatterns : [],
-                excludePatternPresetIds: Array.isArray(s.excludePatternPresetIds) ? s.excludePatternPresetIds : [],
+                excludePatterns: textList(s.excludePatterns),
+                excludePatternPresetIds: idList(s.excludePatternPresetIds) ?? [],
                 // Omitted rather than defaulted when absent: an update that does not mention
                 // the setting must leave whatever the user chose alone.
                 ...(typeof s.stopContainers === "boolean" ? { stopContainers: s.stopContainers } : {}),
             })) : undefined,
             notificationIds,
-            notificationTemplateIds: Array.isArray(notificationTemplateIds) ? notificationTemplateIds : undefined,
-            encryptionProfileId,
+            notificationTemplateIds: idList(notificationTemplateIds),
+            // Null clears the key like the empty text, which the service stores as no key.
+            encryptionProfileId: encryptionProfileId === null ? "" : encryptionProfileId,
             compression,
             pgCompression,
             notificationEvents,
@@ -99,8 +115,10 @@ export async function PUT(
 
         return NextResponse.json(updatedJob);
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "Failed to update job";
-        const status = message.includes("already exists") ? 409 : 500;
-        return NextResponse.json({ error: message }, { status });
+        // A linked record of another tenant, a value the job refuses or a name in use is the caller's to fix.
+        const refusal = serviceRefusal(error);
+        if (refusal) return refusal;
+        log.error("Update job error", { jobId: params.id }, wrapError(error));
+        return NextResponse.json({ error: "The job could not be saved. The log of DBackup has the details." }, { status: 500 });
     }
 }

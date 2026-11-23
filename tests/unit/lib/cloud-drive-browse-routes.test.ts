@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { AuthenticationError, PermissionError } from "@/lib/logging/errors";
+import { AuthenticationError, PermissionError, ValidationError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     checkPermission: vi.fn(),
@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
     graphGet: vi.fn(),
     /** The paths the OneDrive route asked Microsoft Graph for. */
     graphPaths: [] as string[],
+    assertOffSharedLogins: vi.fn(),
 }));
+
+vi.mock("@/services/adapters/shared-login", () => ({ assertOffSharedLogins: (...args: unknown[]) => mocks.assertOffSharedLogins(...args) }));
 
 vi.mock("@/lib/auth/access-control", () => ({ checkPermission: (...args: unknown[]) => mocks.checkPermission(...args) }));
 vi.mock("@/services/auth/credential-service", () => ({
@@ -40,6 +43,7 @@ vi.mock("@microsoft/microsoft-graph-client", () => {
         },
     };
 });
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: "home-drive", profileId: null, credentialIds: ["config-login"] }) }));
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
@@ -55,9 +59,26 @@ const STEPPING_OUT = ["Backups/../../users/someone", "Backups/%2e%2E/x", "Backup
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.graphPaths.length = 0;
-    mocks.checkPermission.mockResolvedValue(undefined);
+    mocks.checkPermission.mockResolvedValue({ id: "ada", isPlatformAdmin: false });
+    mocks.assertOffSharedLogins.mockResolvedValue(undefined);
     // The access token of the OneDrive route.
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ access_token: "access" }) })));
+});
+
+describe("a drive browsed with the saved login of a destination shared with customers", () => {
+    it.each([
+        ["dropbox", browseDropbox],
+        ["onedrive", browseOneDrive],
+    ])("is refused on %s before the drive is asked", async (drive, browse) => {
+        mocks.assertOffSharedLogins.mockRejectedValue(new ValidationError("This saved login signs in to a destination shared with customers."));
+
+        const response = await browse(request(drive, { credentialId: "shared-drive-login" }));
+
+        expect(response.status).toBe(400);
+        expect(mocks.assertOffSharedLogins).toHaveBeenCalledWith({ primaryCredentialId: "shared-drive-login" });
+        expect(mocks.filesListFolder).not.toHaveBeenCalled();
+        expect(mocks.graphPaths).toEqual([]);
+    });
 });
 
 describe("POST /api/system/filesystem/dropbox", () => {
@@ -121,5 +142,23 @@ describe("the login and permission of the cloud drive routes", () => {
 
         expect(mocks.filesListFolder).not.toHaveBeenCalled();
         expect(fetch).not.toHaveBeenCalled();
+    });
+});
+
+describe("the folders of the saved login of the configuration backup's destination", () => {
+    it("are listed for nobody but a platform admin, before the login is opened", async () => {
+        const dropbox = await browseDropbox(request("dropbox", { credentialId: "config-login" }));
+        const oneDrive = await browseOneDrive(request("onedrive", { credentialId: "config-login" }));
+
+        expect([dropbox.status, oneDrive.status]).toEqual([403, 403]);
+        expect(mocks.filesListFolder).not.toHaveBeenCalled();
+        expect(mocks.graphGet).not.toHaveBeenCalled();
+    });
+
+    it("are listed for a platform admin signed in", async () => {
+        mocks.checkPermission.mockResolvedValue({ id: "ada", isPlatformAdmin: true });
+        mocks.filesListFolder.mockResolvedValue({ result: { entries: [], has_more: false } });
+
+        expect((await browseDropbox(request("dropbox", { credentialId: "config-login" }))).status).toBe(200);
     });
 });

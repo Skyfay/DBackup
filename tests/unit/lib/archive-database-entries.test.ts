@@ -69,7 +69,7 @@ describe("database-only archives", () => {
                 expect(line.s).toBe(content.length);
 
                 const entry = index.entries.get(entryKey(undefined, line.n))!;
-                const restored = await readAll(await openArchiveEntry(source, manifest, entry, masterKey));
+                const restored = await readAll(await openArchiveEntry(source, manifest, entry, masterKey, line.s));
                 expect(restored.equals(content)).toBe(true);
             }
         });
@@ -102,7 +102,7 @@ describe("database-only archives", () => {
         const index = await readArchiveIndex(source, manifest, { masterKey: MASTER_KEY });
         for (const [i, line] of index.databases.entries()) {
             const entry = index.entries.get(entryKey(undefined, line.n))!;
-            expect((await readAll(await openArchiveEntry(source, manifest, entry, MASTER_KEY))).equals(contents[i])).toBe(true);
+            expect((await readAll(await openArchiveEntry(source, manifest, entry, MASTER_KEY, line.s))).equals(contents[i])).toBe(true);
         }
     });
 

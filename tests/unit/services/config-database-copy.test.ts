@@ -5,7 +5,7 @@
  * encrypts its secrets again for another DBackup and lays it beside the live database.
  */
 import { execFileSync } from "child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "fs";
 import os from "os";
 import path from "path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +31,7 @@ vi.mock("@/services/system/database-service", async () => {
     };
 });
 
-const { COPY_KEYS_SETTING, createConfigCopy, openCopy } = await import("@/services/config/database-copy");
+const { COPY_KEYS_SETTING, createConfigCopy, createDownloadCopy, openCopy } = await import("@/services/config/database-copy");
 const { inspectDatabaseCopy, isDatabaseCopy } = await import("@/services/config/copy-inspect");
 const { stageDatabaseRestore } = await import("@/services/config/restore-staging");
 
@@ -110,6 +110,29 @@ describe("the copy a configuration backup uploads", () => {
         const db = openCopy(copy.file);
         expect(await db.execution.count()).toBe(1);
         await db.$disconnect();
+    });
+});
+
+describe("the copy Download the database hands out", () => {
+    it("leaves the live sign-ins and the verification codes empty and keeps everything else", async () => {
+        mocks.live = await oldDatabase("live-for-download.db");
+        const live = openCopy(mocks.live);
+        await live.verification.create({ data: { id: "v-1", identifier: "reset-password:anna", value: "reset-code-1", expiresAt: new Date(Date.now() + 3_600_000) } });
+        await live.$disconnect();
+
+        const download = await createDownloadCopy();
+
+        const db = openCopy(download.tempFile);
+        expect(await db.session.count()).toBe(0);
+        expect(await db.verification.count()).toBe(0);
+        expect(await db.user.count()).toBe(1);
+        expect(await db.execution.count()).toBe(1);
+        expect(await db.adapterConfig.count()).toBe(1);
+        await db.$disconnect();
+        // The VACUUM wrote the file again, so the deleted token is in no free page either.
+        expect(readFileSync(download.tempFile).includes("token-1")).toBe(false);
+        expect(readFileSync(download.tempFile).includes("reset-code-1")).toBe(false);
+        expect(download.sizeBytes).toBe(statSync(download.tempFile).size);
     });
 });
 

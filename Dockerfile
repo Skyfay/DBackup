@@ -5,8 +5,10 @@
 # architecture automatically: buildx runs this stage once per target platform.
 # Verified on linux/arm64 as well as linux/amd64 - Microsoft's standalone zip is
 # x64-only, which is why the dotnet tool is used instead of the download.
+# Pinned, so a release build installs the version that was tested. Bump it by hand.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS sqlpackage-build
-RUN dotnet tool install --tool-path /tmp/sqlpkg microsoft.sqlpackage && \
+ARG SQLPACKAGE_VERSION=170.5.96
+RUN dotnet tool install --tool-path /tmp/sqlpkg microsoft.sqlpackage --version "${SQLPACKAGE_VERSION}" && \
     PAYLOAD="$(find /tmp/sqlpkg/.store -type d -path '*/tools/net10.0/any' | head -1)" && \
     test -n "$PAYLOAD" && \
     mkdir -p /opt/sqlpackage && \
@@ -17,7 +19,7 @@ FROM node:24-slim AS base
 
 # Install system tools for database backups
 # mariadb-client (Debian 12)       -> mysql, mysqldump, mariadb, mariadb-dump (libmariadb3 3.3.x supports caching_sha2_password)
-# postgresql-client-18 (PGDG)      -> pg_dump, pg_restore, psql (backward compatible with PG 12-18)
+# postgresql-client-19 (PGDG)      -> pg_dump, pg_restore, psql (backward compatible with PG 12-19)
 # mongodb-database-tools (CDN)     -> mongodump, mongorestore (direct download - APT repo has no arm64 builds for Debian 12;
 #                                    MongoDB only ships debian12 x86_64 packages; arm64 uses ubuntu2204 package)
 # redis-tools                      -> redis-cli (for Redis backups)
@@ -34,8 +36,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Step 2: Configure external APT repositories
 RUN \
-    # PGDG: PostgreSQL 18 client
-    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg && \
+    # PGDG: PostgreSQL 19 client. The key goes to a file first, so a retried download never hands gpg
+    # half a key followed by a whole one. Every download retries, a mirror drops a stream now and then.
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /tmp/pgdg.asc && \
+    gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg /tmp/pgdg.asc && \
+    rm /tmp/pgdg.asc && \
     echo "deb [signed-by=/etc/apt/trusted.gpg.d/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list
 
 # Step 3: Install backup tools
@@ -44,7 +49,7 @@ RUN \
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
     mariadb-client \
-    postgresql-client-18 \
+    postgresql-client-19 \
     redis-tools \
     smbclient \
     lz4 \
@@ -64,7 +69,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         arm64) MONGO_DEB="mongodb-database-tools-ubuntu2204-arm64-100.16.1.deb" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
     esac && \
-    curl -fsSL "https://fastdl.mongodb.org/tools/db/${MONGO_DEB}" -o /tmp/mongo-tools.deb && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 "https://fastdl.mongodb.org/tools/db/${MONGO_DEB}" -o /tmp/mongo-tools.deb && \
     apt-get install -y --no-install-recommends /tmp/mongo-tools.deb && \
     rm /tmp/mongo-tools.deb && \
     rm -rf /var/lib/apt/lists/*
@@ -97,7 +102,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         arm64) FB_ARCH="arm64" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
     esac && \
-    curl -fsSL "https://github.com/FirebirdSQL/firebird/releases/download/v${FIREBIRD_RELEASE_TAG}/Firebird-${FIREBIRD_ASSET_VERSION}-linux-${FB_ARCH}.tar.gz" -o /tmp/firebird.tar.gz && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 "https://github.com/FirebirdSQL/firebird/releases/download/v${FIREBIRD_RELEASE_TAG}/Firebird-${FIREBIRD_ASSET_VERSION}-linux-${FB_ARCH}.tar.gz" -o /tmp/firebird.tar.gz && \
     mkdir -p /tmp/firebird-extract && \
     tar -xzf /tmp/firebird.tar.gz -C /tmp/firebird-extract --strip-components=1 && \
     tar -xzf /tmp/firebird-extract/buildroot.tar.gz -C /tmp/firebird-extract && \
@@ -122,7 +127,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # and the apphost shim from a --tool-path install is not on PATH here.
 RUN apt-get update && apt-get install -y --no-install-recommends libicu72 && \
     rm -rf /var/lib/apt/lists/* && \
-    curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh && \
     bash /tmp/dotnet-install.sh --channel 10.0 --runtime dotnet --install-dir /usr/share/dotnet --no-path && \
     rm /tmp/dotnet-install.sh
 
@@ -132,16 +137,16 @@ RUN printf '#!/bin/sh\nexec /usr/share/dotnet/dotnet /opt/sqlpackage/sqlpackage.
     chmod +x /usr/local/bin/sqlpackage && \
     sqlpackage /version
 
-# Enable corepack for pnpm support and symlink PostgreSQL 18 binaries
-# On Debian with PGDG, pg binaries live under /usr/lib/postgresql/18/bin/
+# Enable corepack for pnpm support and symlink PostgreSQL 19 binaries
+# On Debian with PGDG, pg binaries live under /usr/lib/postgresql/19/bin/
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate && \
-    ln -sf /usr/lib/postgresql/18/bin/pg_dump /usr/local/bin/pg_dump && \
-    ln -sf /usr/lib/postgresql/18/bin/pg_restore /usr/local/bin/pg_restore && \
-    ln -sf /usr/lib/postgresql/18/bin/psql /usr/local/bin/psql
+    ln -sf /usr/lib/postgresql/19/bin/pg_dump /usr/local/bin/pg_dump && \
+    ln -sf /usr/lib/postgresql/19/bin/pg_restore /usr/local/bin/pg_restore && \
+    ln -sf /usr/lib/postgresql/19/bin/psql /usr/local/bin/psql
 
 # Validate pg_dump version resolves correctly (fail-fast on broken symlinks/packages)
-RUN pg_dump --version | grep -q 'PostgreSQL) 18\.' || \
-    (echo "ERROR: pg_dump version validation failed! Check PostgreSQL 18 client package." && exit 1)
+RUN pg_dump --version | grep -q 'PostgreSQL) 19\.' || \
+    (echo "ERROR: pg_dump version validation failed! Check PostgreSQL 19 client package." && exit 1)
 
 # 1. Install Dependencies
 FROM base AS deps
@@ -149,6 +154,12 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
+
+# The Prisma CLI for the migrations at start, copied with the packages it needs out of the
+# frozen install above, so every one of them stays on the version and hash of pnpm-lock.yaml.
+FROM deps AS prisma-cli
+COPY scripts/copy-prisma-cli.js /app/scripts/copy-prisma-cli.js
+RUN node /app/scripts/copy-prisma-cli.js /app/node_modules /opt/prisma-cli
 
 # 2. Builder Phase
 FROM base AS builder
@@ -158,7 +169,7 @@ COPY . .
 
 # Environment variables for build
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV NODE_OPTIONS="--max-old-space-size=6144"
 
 # Generate Prisma Client, build Next.js app, and compile custom server
 # --mount=type=cache persists the Next.js incremental build cache (.next/cache)
@@ -179,11 +190,14 @@ COPY --from=builder --link --chown=1001:1001 /app/scripts/dbackup-recover.js ./s
 
 # Swaps in a configuration restore before the migrations run, called by docker-entrypoint.sh.
 COPY --from=builder --link --chown=1001:1001 /app/scripts/apply-pending-restore.js ./scripts/apply-pending-restore.js
+# Keeps a copy of the database before the migrations change it, called by docker-entrypoint.sh.
+COPY --from=builder --link --chown=1001:1001 /app/scripts/backup-before-migrate.js ./scripts/backup-before-migrate.js
+# Refuses a missing or bad ENCRYPTION_KEY before the migrations run, called by docker-entrypoint.sh.
+# The entrypoint runs it as root, so it is owned by root and lives outside /app, which the runtime user owns.
+COPY --from=builder --link /app/scripts/check-encryption-key.sh /usr/local/lib/dbackup/check-encryption-key.sh
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
 
 # Default environment variables (can be overridden at runtime)
 ENV DATABASE_URL="file:/data/db/dbackup.db"
@@ -201,26 +215,21 @@ COPY --from=builder --link --chown=1001:1001 /app/.next/standalone ./
 COPY --from=builder --link --chown=1001:1001 /app/.next/static ./.next/static
 COPY --from=builder --link --chown=1001:1001 /app/prisma ./prisma
 
-# Create runtime data directory + install Prisma CLI for migrations
-# Prisma version is read from package.json to stay in sync automatically
+# Create runtime data directory + install the Prisma CLI for migrations
+# The CLI comes from the prisma-cli stage and stays owned by root, the runtime user only runs it.
 #
-# pnpm 10 skips the install scripts of dependencies, so the postinstall of @prisma/engines
-# never downloads the schema engine. Left like that, `prisma migrate deploy` fetches it from
-# binaries.prisma.sh on the first start of every new container, and a host without internet
-# or without working DNS at that moment never starts. `prisma version` downloads the engines
-# here instead, and the build fails when the schema engine is still missing.
-#
-# pnpm add -g runs as root, so /pnpm is handed to the runtime user afterwards
-COPY --from=builder --link /app/package.json /tmp/package.json
+# When the install did not leave the schema engine beside @prisma/engines, `prisma migrate deploy`
+# fetches it from binaries.prisma.sh on the first start of every new container, and a host without
+# internet or without working DNS at that moment never starts. `prisma version` downloads the
+# engines here instead, and the build fails when the schema engine is still missing.
+COPY --from=prisma-cli --link /opt/prisma-cli /opt/prisma-cli
 RUN mkdir -p /data/db /data/certs && \
     chown -R 1001:1001 /data && \
-    PRISMA_VERSION=$(node -e "console.log(require('/tmp/package.json').devDependencies.prisma.replace(/[\^~>=<]/g,''))") && \
-    pnpm add -g prisma@${PRISMA_VERSION} && \
-    prisma version && \
-    rm /tmp/package.json && \
-    chown -R 1001:1001 /pnpm
+    printf '#!/bin/sh\nexec /usr/local/bin/node /opt/prisma-cli/node_modules/prisma/build/index.js "$@"\n' > /usr/local/bin/prisma && \
+    chmod 755 /usr/local/bin/prisma && \
+    prisma version
 
-RUN test -n "$(find /pnpm -type f -name 'schema-engine-*' | head -1)" || \
+RUN test -n "$(find /opt/prisma-cli -type f -name 'schema-engine-*' | head -1)" || \
     (echo "ERROR: the Prisma schema engine is missing from the image, migrations would download it at startup" && exit 1)
 
 # Copy compiled custom HTTPS server (replaces default Next.js server entry point)
@@ -234,8 +243,9 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Health check: verify app + database are reachable
 # Uses --insecure for self-signed certs; falls back to http if DISABLE_HTTPS=true
 # PORT env var is respected - defaults to 3000 if not set
+# It runs as root, so curl is called by its full path and never looked up on PATH
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -fk https://localhost:${PORT:-3000}/api/health 2>/dev/null || curl -f http://localhost:${PORT:-3000}/api/health || exit 1
+    CMD /usr/bin/curl -fk https://localhost:${PORT:-3000}/api/health 2>/dev/null || /usr/bin/curl -f http://localhost:${PORT:-3000}/api/health || exit 1
 
 EXPOSE 3000
 

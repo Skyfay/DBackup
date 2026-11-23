@@ -34,8 +34,8 @@ function askFor(kind: Exclude<UserConfirmKind, "delete">, user: UserRow): Ask {
         case "reset-2fa":
             return {
                 title: `Reset 2FA of ${user.name}?`,
-                note: "Their authenticator app or passkey no longer counts",
-                description: "They sign in with the password alone until they set up a second factor again under Profile.",
+                note: "Their authenticator app and passkeys are removed",
+                description: "They sign in with the password alone until they set up a second factor and add passkeys again under Profile.",
                 confirm: "Reset 2FA",
                 icon: ShieldOff,
                 run: () => resetUserTwoFactor(user.id),

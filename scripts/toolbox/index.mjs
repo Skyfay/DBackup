@@ -15,6 +15,7 @@ import { checkCommand as checkAudit } from "./audit.mjs";
 import { amendCommand, checkCommand as checkChangelog, previewCommand } from "./changelog.mjs";
 import { ask, bold, closePrompt, fail, messageOf, out } from "./cli.mjs";
 import { checkCommand as checkCodeql } from "./codeql.mjs";
+import { notesCommand } from "./release-notes.mjs";
 import { tagCommand, untagCommand } from "./release-tag.mjs";
 import { checkCommand as checkUpdates } from "./updates.mjs";
 import { bumpCommand, syncCommand } from "./version.mjs";
@@ -29,13 +30,14 @@ import { bumpCommand, syncCommand } from "./version.mjs";
  * @type {Command[]}
  */
 export const COMMANDS = [
-    { name: "version:bump", group: "Release", title: "Bump the version and write its changelog block", run: (args) => bumpCommand(args) },
-    { name: "release:tag", group: "Release", title: "Tag the release on main and push the tag", run: () => tagCommand() },
+    { name: "version:bump", group: "Release", title: "Bump the version and write its changelog block, or set a beta", run: (args) => bumpCommand(args) },
+    { name: "release:tag", group: "Release", title: "Tag the release on main, or the beta on dev, and push the tag", run: (args) => tagCommand(args) },
     { name: "release:untag", group: "Release", title: "Delete a tag here and on GitHub", run: ([tag]) => untagCommand(tag) },
     { name: "version:sync", group: "Release", title: "Copy the current version everywhere", run: () => syncCommand() },
     { name: "changelog:check", group: "Changelog", title: "Check the changelog fragments", run: () => checkChangelog() },
     { name: "changelog:preview", group: "Changelog", title: "Preview the block of the next release", run: () => previewCommand() },
     { name: "changelog:amend", group: "Changelog", title: "Add the fragments to a version block written already", run: (args) => amendCommand(args) },
+    { name: "changelog:notes", group: "Changelog", title: "Print the notes of the GitHub release of a tag", run: (args) => notesCommand(args) },
     { name: "codeql:check", group: "Security", title: "CodeQL alerts on dev that main does not have", run: () => checkCodeql() },
     { name: "audit:check", group: "Security", title: "Known vulnerabilities in the dependencies", run: () => checkAudit() },
     { name: "update:check", group: "Maintenance", title: "Outdated dependencies", run: () => checkUpdates() },

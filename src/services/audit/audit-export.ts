@@ -1,6 +1,8 @@
 import prisma from "@/lib/prisma";
+import { currentTenantId } from "@/lib/tenant/current";
 import { buildAuditWhere, type AuditFilter } from "./audit-query";
-import { AUDIT_ROW_SELECT, resolveTargets, toRow } from "./audit-rows";
+import { AUDIT_ROW_SELECT, originShown, resolveTargets, toRow } from "./audit-rows";
+import { auditVisibleWhere, FULL_VIEW, type LogView } from "./log-reach";
 
 /** The most entries one export holds, newest first. */
 export const AUDIT_EXPORT_LIMIT = 50_000;
@@ -8,19 +10,20 @@ export const AUDIT_EXPORT_LIMIT = 50_000;
 const HEADER = ["Time (UTC)", "Who", "API key", "Action", "Area", "What", "Record ID", "Address", "Browser", "Details"];
 
 /**
- * A cell as CSV: quoted when it holds a comma, a quote or a line break. A cell that starts like a
- * formula gets a quote in front, so a spreadsheet shows it instead of running it.
+ * A cell as CSV: quoted when it holds a comma, a semicolon, a tab, a quote or a line break, so a
+ * spreadsheet that splits at any of them keeps it one cell. A cell that starts like a formula gets
+ * a quote in front, so a spreadsheet shows it instead of running it.
  */
 export function csvCell(value: string | null | undefined): string {
     let text = value ?? "";
     if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    return /[",;\t\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-/** The entries a filter keeps as a CSV file, one line each, with the sentence the list shows. */
-export async function auditCsv(filter: AuditFilter, now = new Date()): Promise<{ csv: string; count: number }> {
+/** The entries a filter keeps of those the view sees, as a CSV file, one line each, with the sentence the list shows. */
+export async function auditCsv(filter: AuditFilter, now = new Date(), view: LogView = FULL_VIEW): Promise<{ csv: string; count: number }> {
     const records = await prisma.auditLog.findMany({
-        where: buildAuditWhere(filter, now),
+        where: buildAuditWhere({ ...filter, viewerTenantId: await currentTenantId(), visible: await auditVisibleWhere(view) }, now),
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: AUDIT_EXPORT_LIMIT,
         select: AUDIT_ROW_SELECT,
@@ -28,7 +31,7 @@ export async function auditCsv(filter: AuditFilter, now = new Date()): Promise<{
     const targets = await resolveTargets(records);
     const lines = [HEADER.join(",")];
     for (const record of records) {
-        const row = toRow(record, targets, new Set());
+        const row = toRow(record, targets, new Set(), view);
         const what = row.parts.map((part) => part.text).join("") + (row.summary ? `: ${row.summary}` : "");
         lines.push([
             row.at,
@@ -38,8 +41,8 @@ export async function auditCsv(filter: AuditFilter, now = new Date()): Promise<{
             row.area,
             what,
             record.resourceId,
-            record.ipAddress,
-            record.userAgent,
+            row.ipAddress,
+            originShown(record, view) ? record.userAgent : null,
             record.details,
         ].map(csvCell).join(","));
     }

@@ -163,3 +163,14 @@ export async function setTaskColors(userId: string, colors: TaskColors): Promise
         update: { value },
     });
 }
+
+/** Whether starting a job takes the user to its run, true until they turn it off. */
+export async function getAutoRedirectOnJobStart(userId: string): Promise<boolean> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { autoRedirectOnJobStart: true } });
+    return user?.autoRedirectOnJobStart ?? true;
+}
+
+/** Stores whether starting a job takes the user to its run. Left out, it stays as it is. */
+export async function setAutoRedirectOnJobStart(userId: string, value: boolean | undefined): Promise<void> {
+    await prisma.user.update({ where: { id: userId }, data: { autoRedirectOnJobStart: value } });
+}

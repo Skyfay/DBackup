@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GoogleDriveAdapter } from "@/lib/adapters/storage/google-drive";
 import { Readable } from "stream";
+import { FileTooLargeError, SIDECAR_READ_LIMIT } from "@/lib/adapters/storage/common/read-limit";
 
 // --- Hoisted mocks (available in vi.mock factories) ---
 const { mockDrive, mockSetCredentials, mockFs, mockPipeline } = vi.hoisted(() => ({
@@ -388,7 +389,7 @@ describe("GoogleDriveAdapter", () => {
             });
 
             mockDrive.files.get.mockResolvedValue({
-                data: '{"iv":"abc","authTag":"def"}',
+                data: Readable.from([Buffer.from('{"iv":"abc","authTag":"def"}')]),
             });
 
             const result = await GoogleDriveAdapter.read!(validConfig, "backup.meta.json");
@@ -412,6 +413,24 @@ describe("GoogleDriveAdapter", () => {
             const result = await GoogleDriveAdapter.read!(validConfig, "backup.meta.json");
 
             expect(result).toBeNull();
+        });
+
+        it("refuses a file Drive lists larger than the limit without downloading it", async () => {
+            mockDrive.files.list.mockResolvedValueOnce({
+                data: { files: [{ id: "big-id", name: "backup.meta.json", size: String(SIDECAR_READ_LIMIT + 1) }] },
+            });
+
+            await expect(GoogleDriveAdapter.read!(validConfig, "backup.meta.json")).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(mockDrive.files.get).not.toHaveBeenCalled();
+        });
+
+        it("stops a download that sends more than the limit, whatever the size said", async () => {
+            mockDrive.files.list.mockResolvedValueOnce({
+                data: { files: [{ id: "id", name: "backup.meta.json", size: "2" }] },
+            });
+            mockDrive.files.get.mockResolvedValue({ data: Readable.from([Buffer.alloc(64), Buffer.alloc(64)]) });
+
+            await expect(GoogleDriveAdapter.read!(validConfig, "backup.meta.json", { maxBytes: 100 })).rejects.toBeInstanceOf(FileTooLargeError);
         });
     });
 
@@ -650,7 +669,7 @@ describe("GoogleDriveAdapter", () => {
             });
 
             mockDrive.files.get.mockResolvedValue({
-                data: '{"iv":"abc"}',
+                data: Readable.from([Buffer.from('{"iv":"abc"}')]),
             });
 
             const result = await GoogleDriveAdapter.read!(validConfig, "subdir/backup.meta.json");
@@ -689,6 +708,47 @@ describe("GoogleDriveAdapter", () => {
 
             expect(result).toHaveLength(1);
             expect(result[0].name).toBe("backup.sql");
+        });
+    });
+
+    // ====================================================================
+    // list() of a subfolder that is not there yet
+    // ====================================================================
+    describe("list() of a subfolder nothing was written to yet", () => {
+        it("lists it as empty and creates no folder", async () => {
+            mockDrive.files.list.mockResolvedValueOnce({ data: { files: [] } }); // "tenants" is not there
+
+            const result = await GoogleDriveAdapter.list(validConfig, "tenants/t1");
+
+            expect(result).toEqual([]);
+            expect(mockDrive.files.create).not.toHaveBeenCalled();
+            expect(mockDrive.files.list).toHaveBeenCalledTimes(1);
+            expect(mockDrive.files.list.mock.calls[0][0].q).toContain("name='tenants' and 'root-folder-id' in parents");
+        });
+
+        it("lists it as empty when only its last folder is missing, still creating nothing", async () => {
+            mockDrive.files.list
+                .mockResolvedValueOnce({ data: { files: [{ id: "tenants-id", name: "tenants" }] } })
+                .mockResolvedValueOnce({ data: { files: [] } }); // "t1" is not there
+
+            const result = await GoogleDriveAdapter.list(validConfig, "tenants/t1");
+
+            expect(result).toEqual([]);
+            expect(mockDrive.files.create).not.toHaveBeenCalled();
+            expect(mockDrive.files.list.mock.calls[1][0].q).toContain("name='t1' and 'tenants-id' in parents");
+        });
+
+        it("still fails when looking the folder up fails", async () => {
+            mockDrive.files.list.mockRejectedValueOnce(new Error("invalid_grant"));
+
+            await expect(GoogleDriveAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("invalid_grant");
+            expect(mockDrive.files.create).not.toHaveBeenCalled();
+        });
+
+        it("still fails a missing root, so the storage numbers keep their last values", async () => {
+            mockDrive.files.list.mockRejectedValueOnce(new Error("File not found: root-folder-id."));
+
+            await expect(GoogleDriveAdapter.list(validConfig, "")).rejects.toThrow("File not found: root-folder-id.");
         });
     });
 

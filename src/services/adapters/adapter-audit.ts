@@ -11,9 +11,6 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
  * compared but never kept: a new password or token is written as changed, without either value.
  */
 
-/** Fields that can carry a secret without being stored encrypted, like extra headers with a token. */
-const UNENCRYPTED_SECRETS = ["customHeaders"];
-
 /** The longest value an entry keeps of a field, so a pasted payload template does not fill the log. */
 const MAX_VALUE = 200;
 
@@ -43,7 +40,7 @@ export interface ConfigPair {
     after: unknown;
 }
 
-const isSecretKey = (key: string) => SENSITIVE_KEYS.includes(key) || UNENCRYPTED_SECRETS.includes(key);
+const isSecretKey = (key: string) => SENSITIVE_KEYS.includes(key);
 
 /** A secret as something to compare, never as its value. */
 function secretMark(value: unknown): string | null {

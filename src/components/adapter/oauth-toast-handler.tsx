@@ -3,45 +3,40 @@
 import { useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { OAUTH_RESULT_PARAMS, oauthResultToast } from "@/lib/core/oauth-result";
 
 /**
- * Handles OAuth redirect query parameters (?oauth=success|error&message=...)
- * and displays a toast notification. Cleans up the URL after processing.
+ * Shows how an OAuth callback went (`?oauth=success|error&code=...&provider=...`) as a toast and
+ * takes it off the address. The sentence comes from the fixed code, never from the address, so a
+ * link of another site cannot make the page say what it wants. An unknown code shows nothing.
  *
- * When loaded inside a popup window (window.opener is set), it sends a
- * postMessage to the opener and closes the popup instead of showing a toast.
+ * When loaded inside a popup window (window.opener is set), it sends the same fixed sentence to
+ * the opener and closes the popup instead of showing a toast.
  */
 export function OAuthToastHandler() {
     const searchParams = useSearchParams();
     const router = useRouter();
 
     useEffect(() => {
-        const oauthStatus = searchParams.get("oauth");
-        const message = searchParams.get("message");
+        if (!searchParams.get("oauth")) return;
+        const result = oauthResultToast(searchParams);
 
-        if (oauthStatus && message) {
-            // When running in a popup, communicate back to the parent and close.
-            if (window.opener) {
-                window.opener.postMessage(
-                    { type: "oauth_complete", status: oauthStatus, message },
-                    window.location.origin
-                );
-                window.close();
-                return;
+        // When running in a popup, communicate back to the parent and close.
+        if (window.opener) {
+            if (result) {
+                window.opener.postMessage({ type: "oauth_complete", status: result.kind, message: result.text }, window.location.origin);
             }
-
-            if (oauthStatus === "success") {
-                toast.success(message);
-            } else if (oauthStatus === "error") {
-                toast.error(message);
-            }
-
-            // Clean up URL
-            const url = new URL(window.location.href);
-            url.searchParams.delete("oauth");
-            url.searchParams.delete("message");
-            router.replace(url.pathname, { scroll: false });
+            window.close();
+            return;
         }
+
+        if (result?.kind === "success") toast.success(result.text);
+        else if (result) toast.error(result.text);
+
+        // Clean up URL
+        const url = new URL(window.location.href);
+        for (const name of OAUTH_RESULT_PARAMS) url.searchParams.delete(name);
+        router.replace(`${url.pathname}${url.search}`, { scroll: false });
     }, [searchParams, router]);
 
     return null;

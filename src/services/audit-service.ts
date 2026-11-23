@@ -1,9 +1,12 @@
-import { headers } from "next/headers";
+import { requestHeaders } from "@/lib/server/request-headers";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { clientAddress } from "@/lib/core/client-address";
 import type { AuthContext } from "@/lib/auth/access-control";
+import { runAsSystem } from "@/lib/tenant/context";
+import { currentTenantId } from "@/lib/tenant/current";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const log = logger.child({ service: "AuditService" });
 
@@ -16,16 +19,32 @@ export interface AuditOrigin {
   apiKeyId?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
+  /**
+   * The tenant whose log keeps the entry. Left out, the tenant of the code that writes it, and the
+   * home tenant for what belongs to no tenant, like a sign-in or a system task.
+   */
+  tenantId?: string;
 }
 
 /** The address and browser of the request being handled, nothing outside a request. */
 async function requestOrigin(): Promise<{ ipAddress: string | null; userAgent: string | null }> {
   try {
-    const list = await headers();
+    const list = await requestHeaders();
     return { ipAddress: clientAddress(list), userAgent: list.get("user-agent") };
   } catch {
     return { ipAddress: null, userAgent: null };
   }
+}
+
+/** The origin of an entry a route writes: the API key of the request and the tenant it names. */
+function routeOrigin(
+  ctx: Pick<AuthContext, "authMethod" | "apiKeyId">,
+  place: Pick<AuditOrigin, "tenantId">
+): AuditOrigin {
+  return {
+    apiKeyId: ctx.authMethod === "apikey" ? ctx.apiKeyId ?? null : null,
+    ...(place.tenantId ? { tenantId: place.tenantId } : {}),
+  };
 }
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value : null);
@@ -34,7 +53,7 @@ export class AuditService {
   /**
    * Writes an entry. It keeps the name of the user and of the API key as they are now, so the
    * entry still names them after they are deleted or renamed. Never throws: a failed write is
-   * logged, the action it records goes on.
+   * logged, the action it records goes on. What hands out a secret writes through `logStrict`.
    */
   async log(
     userId: string | null,
@@ -45,11 +64,50 @@ export class AuditService {
     origin: AuditOrigin = {}
   ) {
     try {
-      const fromRequest = origin.ipAddress === undefined || origin.userAgent === undefined ? await requestOrigin() : null;
-      const ipAddress = origin.ipAddress ?? text(details?.ipAddress) ?? fromRequest?.ipAddress ?? null;
-      const userAgent = origin.userAgent ?? text(details?.userAgent) ?? fromRequest?.userAgent ?? null;
-      const apiKeyId = origin.apiKeyId ?? null;
+      await this.write(userId, action, resource, details, resourceId, origin);
+    } catch (error) {
+      // We don't want audit logging to crash the application, but we should log the error
+      log.error("Failed to create audit log", { action, resource, userId }, wrapError(error));
+    }
+  }
 
+  /**
+   * Writes an entry like `log`, but throws when it could not be written. For a read that hands
+   * out a secret, like a revealed login or a recovery kit, which must never happen unrecorded.
+   */
+  async logStrict(
+    userId: string | null,
+    action: string,
+    resource: string,
+    details?: Record<string, unknown>,
+    resourceId?: string,
+    origin: AuditOrigin = {}
+  ) {
+    try {
+      await this.write(userId, action, resource, details, resourceId, origin);
+    } catch (error) {
+      log.error("Failed to create audit log, the action stops", { action, resource, userId }, wrapError(error));
+      throw error;
+    }
+  }
+
+  /** Writes the entry, throws when it could not be written. */
+  private async write(
+    userId: string | null,
+    action: string,
+    resource: string,
+    details: Record<string, unknown> | undefined,
+    resourceId: string | undefined,
+    origin: AuditOrigin
+  ) {
+    const fromRequest = origin.ipAddress === undefined || origin.userAgent === undefined ? await requestOrigin() : null;
+    const ipAddress = origin.ipAddress ?? text(details?.ipAddress) ?? fromRequest?.ipAddress ?? null;
+    const userAgent = origin.userAgent ?? text(details?.userAgent) ?? fromRequest?.userAgent ?? null;
+    const apiKeyId = origin.apiKeyId ?? null;
+    const tenantId = origin.tenantId ?? (await currentTenantId()) ?? HOME_TENANT_ID;
+
+    // Written for the tenant named above, also where no request names one, like at a sign-in.
+    await runAsSystem(async () => {
       const [user, apiKey] = await Promise.all([
         userId ? prisma.user.findUnique({ where: { id: userId }, select: { name: true } }) : null,
         apiKeyId ? prisma.apiKey.findUnique({ where: { id: apiKeyId }, select: { name: true } }) : null,
@@ -57,6 +115,7 @@ export class AuditService {
 
       await prisma.auditLog.create({
         data: {
+          tenantId,
           userId,
           actorName: user?.name ?? null,
           apiKeyId,
@@ -69,42 +128,50 @@ export class AuditService {
           userAgent,
         },
       });
-    } catch (error) {
-      // We don't want audit logging to crash the application, but we should log the error
-      log.error("Failed to create audit log", { action, resource, userId }, wrapError(error));
-    }
+    });
   }
 
   /**
    * Writes an entry for the caller of an API route, naming the API key when the request came with
-   * one. The key acts as its owner, so the entry belongs to the owner too.
+   * one. The key acts as its owner, so the entry belongs to the owner too. `place` names the tenant
+   * whose log keeps it, like the tenant of the record it is about in All tenants, see `AuditOrigin`.
    */
   async logFor(
     ctx: Pick<AuthContext, "userId" | "authMethod" | "apiKeyId">,
     action: string,
     resource: string,
     details?: Record<string, unknown>,
-    resourceId?: string
+    resourceId?: string,
+    place: Pick<AuditOrigin, "tenantId"> = {}
   ) {
-    return this.log(ctx.userId, action, resource, details, resourceId, {
-      apiKeyId: ctx.authMethod === "apikey" ? ctx.apiKeyId ?? null : null,
-    });
+    return this.log(ctx.userId, action, resource, details, resourceId, routeOrigin(ctx, place));
   }
 
-  /**
-   * Clean up old audit logs
-   */
+  /** `logFor` that throws when the entry could not be written, see `logStrict`. */
+  async logForStrict(
+    ctx: Pick<AuthContext, "userId" | "authMethod" | "apiKeyId">,
+    action: string,
+    resource: string,
+    details?: Record<string, unknown>,
+    resourceId?: string,
+    place: Pick<AuditOrigin, "tenantId"> = {}
+  ) {
+    return this.logStrict(ctx.userId, action, resource, details, resourceId, routeOrigin(ctx, place));
+  }
+
+  /** Clean up old audit logs, of every tenant. */
   async cleanOldLogs(retentionDays: number) {
     const dateThreshold = new Date();
     dateThreshold.setDate(dateThreshold.getDate() - retentionDays);
 
-    return prisma.auditLog.deleteMany({
+    // Retention is one setting of the instance, so the entries of every tenant age out together.
+    return runAsSystem(() => prisma.auditLog.deleteMany({
       where: {
         createdAt: {
           lt: dateThreshold,
         },
       },
-    });
+    }));
   }
 }
 

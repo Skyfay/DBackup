@@ -18,10 +18,10 @@ function started(data: BackupResultData, options?: TemplateOptions): string | un
     return at;
 }
 
-function runActions(data: BackupResultData) {
+function runActions(data: BackupResultData, options?: TemplateOptions) {
     return [
-        ...action("Open run", data.executionId ? paths.run(data.executionId) : undefined, "history"),
-        ...action("Open job", data.jobId ? paths.job(data.jobId) : undefined, "calendar-clock"),
+        ...action("Open run", data.executionId ? paths.run(data.executionId, options?.tenantId) : undefined, "history"),
+        ...action("Open job", data.jobId ? paths.job(data.jobId, options?.tenantId) : undefined, "calendar-clock"),
     ];
 }
 
@@ -48,7 +48,8 @@ export function backupSuccessTemplate(data: BackupResultData, options?: Template
         ? `${what} ${data.databases && data.databases > 1 ? "are" : "is"} now in ${plural(done.length, "destination")}.`
         : `${data.jobName} finished${data.duration !== undefined ? ` in ${duration(data.duration)}` : ""}.`;
     return {
-        title: `${data.jobName} finished`,
+        title: `Backup Successful: ${data.jobName}`,
+        heading: `${data.jobName} finished`,
         message,
         preheader: done.length > 0
             ? `${data.size !== undefined ? size(data.size) : "The backup"} went to ${names(done.map((dest) => dest.name))}${data.duration !== undefined ? ` in ${duration(data.duration)}` : ""}.`
@@ -70,7 +71,7 @@ export function backupSuccessTemplate(data: BackupResultData, options?: Template
             ...(source(data) ? [{ name: "Source", value: source(data)! }] : []),
             ...(data.encryptionKey ? [{ name: "Encrypted", value: `with ${data.encryptionKey}` }] : []),
         ],
-        actions: runActions(data).slice(0, 1),
+        actions: runActions(data, options).slice(0, 1),
         timestamp: data.timestamp,
     };
 }
@@ -84,7 +85,8 @@ export function backupPartialTemplate(data: BackupResultData, options?: Template
         ? `${done.length} of ${plural(all.length, "destination")} got the backup.${failed.length ? ` ${names(failed.map((dest) => dest.name), 3)} did not.` : ""}`
         : "Some destinations did not get the backup.";
     return {
-        title: `${data.jobName} finished partially`,
+        title: `Backup Partial: ${data.jobName}`,
+        heading: `${data.jobName} finished partially`,
         message,
         preheader: data.problem ? `${message} ${data.problem.title}.` : message,
         fields: [
@@ -111,7 +113,7 @@ export function backupPartialTemplate(data: BackupResultData, options?: Template
             ...(source(data) ? [{ name: "Source", value: source(data)! }] : []),
             ...(started(data, options) ? [{ name: "Started", value: started(data, options)! }] : []),
         ],
-        actions: runActions(data),
+        actions: runActions(data, options),
         timestamp: data.timestamp,
     };
 }
@@ -124,7 +126,8 @@ export function backupFailureTemplate(data: BackupResultData, options?: Template
     const last = data.lastSuccessAt ? ago(data.lastSuccessAt, data.timestamp) : null;
     const raw = data.problem?.raw ?? data.error;
     return {
-        title: `${data.jobName} failed`,
+        title: `Backup Failed: ${data.jobName}`,
+        heading: `${data.jobName} failed`,
         message,
         preheader: `${data.problem ? `${data.problem.title}.` : message}${last ? ` Last clean run ${last}.` : ""}`,
         fields: [
@@ -150,7 +153,7 @@ export function backupFailureTemplate(data: BackupResultData, options?: Template
             ...((data.destinations ?? []).length ? [{ name: "Destinations", value: data.destinations!.map((dest) => dest.name).join(", ") }] : []),
             ...(data.lastSuccessAt ? [{ name: "Last clean run", value: f.date(data.lastSuccessAt)! }] : []),
         ],
-        actions: runActions(data),
+        actions: runActions(data, options),
         timestamp: data.timestamp,
     };
 }

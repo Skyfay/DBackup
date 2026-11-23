@@ -337,7 +337,11 @@ export async function stepRetention(ctx: RunnerContext): Promise<void> {
 
 ## Queue Manager
 
-Controls concurrent backup execution:
+Controls concurrent backup execution. The queue is one for every tenant. A free slot goes to the
+tenant with the fewest running runs, then to the tenant that got a slot longest ago, and inside a
+tenant to its oldest waiting run (`pickFairly` in `src/lib/core/queue-fairness.ts`). The plan of
+the queue the Timeline draws (`planQueue`) follows the same rule. The sketch below shows only the
+slots:
 
 ```typescript
 // src/lib/execution/queue-manager.ts
@@ -464,6 +468,18 @@ const result = await verifyFileChecksum("/path/to/file", expectedHash);
 ### Periodic Integrity Checks
 
 The `IntegrityService` provides a system task (`system.integrity_check`) that verifies all backups across all storage destinations. See [Service Layer](services.md) for details.
+
+## Restore Summary
+
+A restore is no step of this pipeline, but its run has a Summary like a backup run, built from three files:
+
+| File | Holds |
+| :--- | :--- |
+| `src/services/restore/restore-record.ts` | `createRestoreTracker`, which the restore calls as it goes. It keeps what the restore read, from where and how much, and every database and folder with its target, state, size and times under `restore` in the metadata of the run. A customer's restore of a shared database keeps `view(true)`, without the destination and the archive of the server |
+| `src/services/history/restore-rows.ts` | The rows of the Summary: a database each, from the record and the lines between the fetch of its dump and the line that ends it, and a folder each with where its files went. A run from before the record gets its databases out of the log alone |
+| `src/services/history/restore-summary.ts` | `buildRestoreSummary`, every step of the restore in a sentence or two with those rows, which `run-detail-service.ts` calls for the page of the run |
+
+The last two are pure and tested on plain logs.
 
 ## Live Progress
 

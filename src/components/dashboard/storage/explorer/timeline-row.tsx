@@ -2,6 +2,7 @@
 
 import { describeSchedule } from "@/components/dashboard/jobs/job-schedule";
 import { describeRetention } from "@/components/templates/retention-words";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { cn } from "@/lib/utils";
 import type { ExplorerDestination, ExplorerJob, JobPlan } from "@/services/storage/explorer-types";
 import { JobTile } from "./explorer-cells";
@@ -38,6 +39,10 @@ interface TimelineJobRowProps {
 export function TimelineJobRow({ row, range, template, destinations, format, at, pick, onToggle }: TimelineJobRowProps) {
     const { job, plan } = row;
     const lanePicked = isPicked(pick, job.key, range.from, range.to);
+    // In All tenants two tenants may have a job of the same name, so the line under it names the tenant.
+    const { allTenants } = useTenantView();
+    const nameOf = useTenantName();
+    const tenant = allTenants ? nameOf(job.tenantId) : null;
     return (
         <div className={cn("relative grid items-center border-b px-5 py-2 last:border-b-0", lanePicked && "bg-foreground/[0.045]")} style={template}>
             <button
@@ -55,7 +60,7 @@ export function TimelineJobRow({ row, range, template, destinations, format, at,
                             <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">Job deleted</span>
                         )}
                     </span>
-                    <span className="block truncate text-xs text-muted-foreground">{metaOf(job, plan)}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{tenant ? `${tenant} · ${metaOf(job, plan)}` : metaOf(job, plan)}</span>
                 </span>
             </button>
             {row.cells.map((cell, index) => {

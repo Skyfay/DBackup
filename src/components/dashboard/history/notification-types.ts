@@ -17,6 +17,8 @@ export interface NotificationLogRow {
     error?: string | null;
     executionId?: string | null;
     sentAt: string;
+    /** The tenant of the entry, which All tenants shows and filters by. */
+    tenantId?: string;
 }
 
 export interface NotificationPage {
@@ -51,4 +53,12 @@ export const EVENT_LABELS: Record<string, string> = {
 
 export function eventLabel(eventType: string): string {
     return EVENT_LABELS[eventType] ?? eventType.replace(/_/g, " ").replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+/** The channels on the Connections page. */
+export const CHANNELS_HREF = "/dashboard/connections?tab=notifications";
+
+/** The channel of an entry on the Connections page, with its details open while it still exists. */
+export function channelHref(entry: Pick<NotificationLogRow, "channelId">): string {
+    return entry.channelId ? `${CHANNELS_HREF}&open=${encodeURIComponent(entry.channelId)}` : CHANNELS_HREF;
 }

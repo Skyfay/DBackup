@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { z } from "zod";
-import prisma from "@/lib/prisma";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getExecutionHistoryFacets, listExecutionHistory } from "@/services/system/execution-history-service";
+import { getTimezone } from "@/services/system/system-settings-service";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 
 const QuerySchema = z.object({
     page: z.coerce.number().int().min(1).optional(),
@@ -28,7 +30,7 @@ const QuerySchema = z.object({
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -59,10 +61,10 @@ export async function GET(req: NextRequest) {
             triggers: q.trigger,
             search: q.search,
         };
-        const [result, facets, tzSetting] = await Promise.all([
+        const [result, facets, systemTimezone] = await Promise.all([
             listExecutionHistory(historyQuery),
             q.facets === "true" ? getExecutionHistoryFacets(historyQuery) : Promise.resolve(undefined),
-            prisma.systemSetting.findUnique({ where: { key: "system.timezone" } })
+            getTimezone(),
         ]);
 
         return NextResponse.json({
@@ -71,9 +73,11 @@ export async function GET(req: NextRequest) {
             page: result.page,
             pageSize: result.pageSize,
             ...(facets ? { facets } : {}),
-            systemTimezone: tzSetting?.value || "UTC"
+            systemTimezone,
         });
-    } catch (_error) {
+    } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         return NextResponse.json({ error: "Failed to fetch history" }, { status: 500 });
     }
 }

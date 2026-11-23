@@ -6,6 +6,7 @@ import type { LatestJobEntry } from "@/services/dashboard-service";
 import { ExecutionStatusBadge } from "./execution-status";
 import { RelativeTime } from "./relative-time";
 import { runHref } from "@/components/dashboard/history/run-links";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 
 interface ExecutionsListProps {
     executions: LatestJobEntry[];
@@ -14,18 +15,18 @@ interface ExecutionsListProps {
 
 const COLUMNS = "grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_4.5rem_7.5rem]";
 
-const TYPE_LABELS: Record<string, string> = {
-    IntegrityCheck: "Integrity check",
-};
-
 function tookLabel(execution: LatestJobEntry): string {
     if (execution.status === "Pending") return "queued";
     if (execution.status === "Running") return formatDuration(Math.max(0, Date.now() - new Date(execution.startedAt).getTime()));
     return execution.duration > 0 ? formatDuration(execution.duration) : "-";
 }
 
-/** The most recent executions of any type, newest first. */
+/** The most recent executions of any type, newest first, named like the History page names them. */
 export function ExecutionsList({ executions, canViewHistory }: ExecutionsListProps) {
+    // In All tenants the list holds the runs of every tenant, so each names its tenant.
+    const { allTenants } = useTenantView();
+    const tenantName = useTenantName();
+
     if (executions.length === 0) {
         return <p className="px-4 py-10 text-center text-sm text-muted-foreground md:px-5">No executions yet.</p>;
     }
@@ -43,7 +44,8 @@ export function ExecutionsList({ executions, canViewHistory }: ExecutionsListPro
                 {executions.map((execution) => {
                     const took = tookLabel(execution);
                     const size = execution.size ? formatBytes(execution.size, 1) : "-";
-                    const subtitle = [TYPE_LABELS[execution.type] ?? execution.type, execution.databaseName].filter(Boolean).join(" · ");
+                    const tenant = allTenants ? tenantName(execution.tenantId) : null;
+                    const subtitle = tenant ? `${tenant} · ${execution.sub}` : execution.sub;
                     const rowClassName = cn(
                         "grid items-center gap-x-4 gap-y-1 px-4 py-3 md:px-5",
                         COLUMNS,

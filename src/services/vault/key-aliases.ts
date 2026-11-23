@@ -19,17 +19,19 @@ export function aliasesOf(value: string | null | undefined): string[] {
  * Notes that a key opens the backups that name another profile id, one that was deleted or
  * belongs to another install. The Vault then counts those backups under the key instead of as
  * backups whose key is missing. Never throws, since it only sharpens what the Vault counts and
- * must not fail the restore that found the match.
+ * must not fail the restore that found the match. True when it noted the id now.
  */
-export async function rememberKeyFor(profileId: string, namedId: string | null | undefined): Promise<void> {
-    if (!namedId || namedId === profileId) return;
+export async function rememberKeyFor(profileId: string, namedId: string | null | undefined): Promise<boolean> {
+    if (!namedId || namedId === profileId) return false;
     try {
         const profile = await prisma.encryptionProfile.findUnique({ where: { id: profileId }, select: { aliases: true } });
-        if (!profile) return;
+        if (!profile) return false;
         const aliases = aliasesOf(profile.aliases);
-        if (aliases.includes(namedId)) return;
+        if (aliases.includes(namedId)) return false;
         await prisma.encryptionProfile.update({ where: { id: profileId }, data: { aliases: JSON.stringify([...aliases, namedId]) } });
+        return true;
     } catch (error) {
         log.warn("Could not note which backups a key opens", { profileId }, wrapError(error));
+        return false;
     }
 }

@@ -61,6 +61,10 @@ Pick **Create as directory source** in the menu of a destination, or **Create as
 4. Leave **Used as** on **Backup destination** in the **Behavior** part
 5. Click **Test connection**, then **Create destination**
 
+A password, key or token saved in the destination itself is kept while it still reaches the same server. Pointed at another server, port or endpoint, it is not sent there and a saved login has to sign in instead, see [Editing a Connection](/user-guide/sources/#editing-a-connection).
+
+A destination is checked against the fields of its type before it is saved, also through the API, like a source, see [Adding a Source](/user-guide/sources/#adding-a-source).
+
 ## Air-Gapped Destinations
 
 A destination that is connected only now and then, like a USB disk you plug in once a week or a NAS that is only switched on for its backups, can be marked **Air-gapped** in the **Behavior** part of its form. This works with every destination type, since DBackup asks it with the same connection check the health check uses. Being away is then how it is meant to be, not a problem.

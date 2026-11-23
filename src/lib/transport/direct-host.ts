@@ -6,6 +6,9 @@ import os from "node:os";
 import { PassThrough, Readable, type Duplex, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
+import { checkedSocket } from "@/lib/network/checked-socket";
+import type { ReachPolicy } from "@/lib/network/reach-policy";
+
 import { BaseHost } from "./base-host";
 import type {
     HostKind,
@@ -30,6 +33,11 @@ export class DirectHost extends BaseHost {
     readonly tmpDir = os.tmpdir();
 
     private readonly whichCache = new Map<string, Promise<string>>();
+
+    /** `reach` holds `connect` to checked addresses for a tenant that blocks the local network, see `reach-check.ts`. */
+    constructor(private readonly reach?: ReachPolicy) {
+        super();
+    }
 
     async spawn(argv: string[], options: SpawnOptions = {}): Promise<HostProcess> {
         if (argv.length === 0) {
@@ -129,12 +137,17 @@ export class DirectHost extends BaseHost {
         return { size: result.size, isDirectory: result.isDirectory() };
     }
 
+    /**
+     * Writes a new temp file, refusing one that is there already, a link included, so nobody who
+     * lays a file or a link under the name first gets the content, like the password of an option file.
+     */
     protected async writeHostFile(hostPath: string, content: string | Buffer, mode?: number): Promise<void> {
-        await writeFile(hostPath, content, mode !== undefined ? { mode } : undefined);
+        await writeFile(hostPath, content, mode !== undefined ? { flag: "wx", mode } : { flag: "wx" });
     }
 
+    /** A new temp file like `writeHostFile`, so a file or a link laid under the name first never receives the bytes. */
     protected async openHostWriteStream(hostPath: string): Promise<Writable> {
-        return createWriteStream(hostPath);
+        return createWriteStream(hostPath, { flags: "wx" });
     }
 
     /**
@@ -163,6 +176,8 @@ export class DirectHost extends BaseHost {
     }
 
     async connect(remoteHost: string, remotePort: number): Promise<Duplex> {
+        // To checked addresses only, the next one where the first does not answer.
+        if (this.reach) return checkedSocket(remoteHost, remotePort, this.reach.allowed);
         return new Promise((resolve, reject) => {
             const socket = net.createConnection({ host: remoteHost, port: remotePort });
             socket.once("connect", () => {

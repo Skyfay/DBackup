@@ -1,4 +1,5 @@
 import type { RedisConfig } from "@/lib/adapters/definitions";
+import type { ExecOptions } from "@/lib/transport";
 
 /**
  * Argument builders for redis-cli.
@@ -9,33 +10,51 @@ import type { RedisConfig } from "@/lib/adapters/definitions";
  * Escaping here would double-escape over SSH.
  */
 
-type AnyRedisConfig = RedisConfig & { username?: string; password?: string; tls?: boolean };
+/**
+ * The key of the name of a server that `-h` reaches by its checked address, for the server name of
+ * TLS, set by `pinned-host.ts` for a tenant that blocks the local network. A symbol, so a config of
+ * a request or a stored row, which is JSON, cannot bring one of its own.
+ */
+export const TLS_SERVER_NAME: unique symbol = Symbol("dbackup.redis.tlsServerName");
+
+type AnyRedisConfig = RedisConfig & { username?: string; password?: string; tls?: boolean; [TLS_SERVER_NAME]?: string };
 
 export function buildConnectionArgs(config: AnyRedisConfig): string[] {
+    // A host that is no text, like a list from a request, would reach redis-cli as the text of
+    // its entries, a host no check of the config ever read.
+    if (typeof config.host !== "string") throw new Error("The Redis host is no text.");
     const args = ["-h", config.host, "-p", String(config.port)];
 
     if (config.username) {
         args.push("--user", config.username);
     }
-    if (config.password) {
-        // redis-cli takes the password on the command line. It stays visible in
-        // the process list on whichever machine runs the client, which is a
-        // pre-existing limitation of this adapter rather than something the
-        // transport introduced.
-        //
-        // --no-auth-warning suppresses the "Using a password with -a is
-        // insecure" line that would otherwise pollute every stderr stream. The
-        // table browser already passed it; now every redis-cli call does.
-        args.push("-a", config.password, "--no-auth-warning");
-    }
     if (config.tls) {
         args.push("--tls");
+        // `-h` holds the checked address of the name for a tenant that blocks the local network,
+        // see `pinned-host.ts`, and the name goes along for the server name of TLS.
+        const serverName = config[TLS_SERVER_NAME];
+        if (serverName) args.push("--sni", serverName);
     }
     if (config.database !== undefined && config.database !== 0) {
+        // The index of a database is a whole number. A restore target or a stored value of
+        // another kind would reach redis-cli as something else than the value of -n.
+        if (!/^\d+$/.test(String(config.database))) {
+            throw new Error(`The Redis database ${String(config.database)} is no index. Use a whole number like 0.`);
+        }
         args.push("-n", String(config.database));
     }
 
     return args;
+}
+
+/**
+ * The password of a redis-cli call, as `REDISCLI_AUTH` in its environment. Never `-a` in argv,
+ * which every user of the machine that runs the client reads in the process list and which an SSH
+ * connection writes into the remote command. redis-cli sends it with the user of `--user`, and an
+ * environment value prints no warning. Every redis-cli call passes these options.
+ */
+export function redisCliOptions(config: { password?: string }): ExecOptions {
+    return config.password ? { env: { REDISCLI_AUTH: config.password } } : {};
 }
 
 /** Replace the password with stars for anything that gets logged. */

@@ -25,8 +25,10 @@
 
 import { deriveArchiveKeys } from "@/lib/crypto/kdf";
 import { parseIndex } from "@/lib/archive/index-file";
-import { EncryptionKeyRequiredError, ValidationError, getErrorMessage } from "@/lib/logging/errors";
+import { EncryptionKeyRequiredError, PermissionError, ValidationError, getErrorMessage } from "@/lib/logging/errors";
+import { CONFIG_BACKUP_KEY_USE_LOCKED } from "@/lib/core/config-backup-locks";
 import { getEncryptionProfiles, getProfileMasterKey } from "./encryption-service";
+import { parseWithinBudget, type ParseBudget } from "./index-parse-budget";
 import { rememberKeyFor } from "@/services/vault/key-aliases";
 
 /**
@@ -64,6 +66,20 @@ export interface KeyResolutionRequest {
     /** Omit only when the format offers no way to test a key - Smart Recovery is then skipped. */
     verify?: KeyVerifier;
     log?: KeyResolutionLog;
+    /**
+     * Whether a profile of the Vault may not open this backup for its caller, see
+     * `wholeFileKeyRefusal` in `config-key-lock.ts`. A profile the request or the backup names is
+     * then refused with a `PermissionError`, and Smart Recovery leaves it out.
+     */
+    refuse?: KeyRefusal;
+}
+
+/** Answers true for a profile whose key the caller may not use on this backup. */
+export type KeyRefusal = (profileId: string) => Promise<boolean>;
+
+/** @throws PermissionError when the profile is one the caller may not use on this backup. */
+async function assertKeyAllowed(profileId: string, refuse: KeyRefusal | undefined): Promise<void> {
+    if (refuse && (await refuse(profileId))) throw new PermissionError("platform admin", { message: CONFIG_BACKUP_KEY_USE_LOCKED });
 }
 
 const MASTER_KEY_HEX = /^[0-9a-fA-F]{64}$/;
@@ -74,14 +90,16 @@ export async function resolveBackupKey({
     override,
     verify,
     log,
+    refuse,
 }: KeyResolutionRequest): Promise<Buffer> {
     const say: KeyResolutionLog = log ?? (() => { });
 
     // ── 1. The user's explicit choice ─────────────────────────────────────
     if (override?.rawKeyHex || override?.profileId) {
+        if (!override.rawKeyHex) await assertKeyAllowed(override.profileId!, refuse);
         const key = override.rawKeyHex
             ? parseRawKey(override.rawKeyHex)
-            : await getProfileMasterKey(override.profileId!);
+            : await pickedProfileKey(override.profileId!, profileId);
 
         // Verified rather than trusted, unlike the metadata's own profile: a pasted key is
         // the one input nobody has checked, and handing a wrong one to the decryption
@@ -98,6 +116,7 @@ export async function resolveBackupKey({
 
     // ── 2. The profile the backup names ───────────────────────────────────
     if (profileId) {
+        await assertKeyAllowed(profileId, refuse);
         try {
             return await getProfileMasterKey(profileId);
         } catch {
@@ -117,6 +136,8 @@ export async function resolveBackupKey({
     say(`Smart Recovery: Found ${profiles.length} candidate profile(s).`, "info");
 
     for (const profile of profiles) {
+        // Never a candidate, so a renamed copy of what the key encrypts does not open by trying it.
+        if (refuse && (await refuse(profile.id))) continue;
         say(`Smart Recovery: Testing profile '${profile.name}' (${profile.id})...`, "info");
         try {
             const candidate = await getProfileMasterKey(profile.id);
@@ -135,6 +156,20 @@ export async function resolveBackupKey({
         `Encryption profile ${profileId ?? "(unknown)"} is missing, and no other profile could decrypt this file.`,
         profileId
     );
+}
+
+/**
+ * The key of the profile the user picked. A profile that is not in the Vault of the tenant, one
+ * that never existed or one of another tenant alike, asks for a key again: its error would
+ * otherwise read as an unusable index, and the callers fell back to reading the archive as an
+ * older format, which failed with a message of the parser.
+ */
+async function pickedProfileKey(pickedId: string, profileId: string | undefined): Promise<Buffer> {
+    try {
+        return await getProfileMasterKey(pickedId);
+    } catch {
+        throw new EncryptionKeyRequiredError("The key picked to open this backup is not in the Vault.", profileId);
+    }
 }
 
 function parseRawKey(keyHex: string): Buffer {
@@ -163,17 +198,21 @@ export interface ArchiveKeyParams {
  * authentication tag and can never parse. It is also cheap - the index is already in hand
  * when this runs, so testing the whole vault costs no further I/O.
  *
+ * The key that fits parses the whole index, so each candidate waits for its share of the heap like
+ * every other parse, see `index-parse-budget.ts`. A wrong key fails on the first sealed chunk.
+ *
  * @param indexBytes - The sealed index, from the sidecar or the archive's index member
  * @param params - The archive's `kdfSalt` and `noncePrefix`, both cleartext by design
+ * @param budget - The budget of the parses of this process, `parseWithinBudget` unless a test sets one
  */
-export function archiveIndexVerifier(indexBytes: Buffer, params: ArchiveKeyParams): KeyVerifier {
+export function archiveIndexVerifier(indexBytes: Buffer, params: ArchiveKeyParams, budget: ParseBudget = parseWithinBudget): KeyVerifier {
     const noncePrefix = Buffer.from(params.noncePrefix, "hex");
     const kdfSalt = Buffer.from(params.kdfSalt, "hex");
 
     return async (candidate: Buffer) => {
         try {
             const { indexKey } = deriveArchiveKeys(candidate, kdfSalt);
-            await parseIndex(indexBytes, { indexKey, noncePrefix });
+            await budget(indexBytes.length, () => parseIndex(indexBytes, { indexKey, noncePrefix }));
             return true;
         } catch {
             return false;

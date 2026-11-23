@@ -46,7 +46,7 @@ export function TrashNote({ days, many = false, subject, children }: TrashNotePr
         <div className="flex items-start gap-2.5 rounded-lg border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
             <Hourglass className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <p className="min-w-0">
-                {subject ?? (many ? "They" : "It")} {many ? "move" : "moves"} to <span className="font-medium text-foreground">Recently deleted</span> under Settings for {daysText(days)}.{" "}
+                {subject ?? (many ? "They" : "It")} {many ? "move" : "moves"} to <span className="font-medium text-foreground">Settings › Recently deleted</span> for {daysText(days)}.{" "}
                 {children ?? `Restore ${many ? "them" : "it"} until ${until} from there.`}
             </p>
         </div>

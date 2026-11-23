@@ -19,6 +19,23 @@ export type AdapterDefinition = {
      */
     credentials?: { primary?: CredentialType; ssh?: CredentialType; primaryOptional?: boolean };
     /**
+     * Database only, and every database adapter declares it: whether one database of a server can
+     * be given to a customer alone, see Shared Databases. True where a backup holds each database
+     * as a dump of its own and a restore writes that one database. Redis and Valkey write one
+     * snapshot of every logical database, so a database of theirs never goes to a customer.
+     *
+     * Here rather than on the runtime adapter because the page of a server hides its sharing card
+     * by it, and that page runs in the browser.
+     */
+    sharesSingleDatabases?: boolean;
+    /**
+     * Database only: false where a customer may not restore a shared database of this engine
+     * themselves, only the provider from its own History. Such an engine restores with the login of
+     * the provider's connection and has no way to keep the code of the customer's dump to the rights
+     * of the customer, see Shared Databases. Omitted, a customer restores.
+     */
+    customerRestores?: false;
+    /**
      * Storage only: how many files this adapter can usefully transfer at once as a directory
      * source - a suggested starting point and a ceiling the connection may not exceed.
      *
@@ -112,6 +129,15 @@ export const safeBinaryPath = z.string().regex(
     "Binary path may only contain letters, digits, slashes, underscores, hyphens, and dots"
 );
 
+/**
+ * Whether the SSH clients of a connection check the host key of its server against the one pinned
+ * on the first connect, see `src/lib/transport/host-key.ts`. One name in every schema with an SSH
+ * login: `sshFields`, SQLite, SFTP and rsync. Zod defaults do not run on a stored config, so a
+ * missing value is read as on, see `verifiesHostKey` in `ssh-endpoint.ts`, and the form shows it
+ * as on, see `HostKeySwitch`. Optional like the other SSH fields, so a config may leave it out.
+ */
+export const verifyHostKeyField = z.boolean().default(true).optional().describe("Check the host key of the SSH server against the one pinned on the first connect");
+
 // Shared SSH fields for adapters that support SSH remote execution mode
 export const sshFields = {
     connectionMode: z.enum(["direct", "ssh"]).default("direct").describe("Connection mode (direct TCP or via SSH)"),
@@ -122,4 +148,5 @@ export const sshFields = {
     sshPassword: z.string().optional().describe("SSH password"),
     sshPrivateKey: z.string().optional().describe("SSH private key (PEM format)"),
     sshPassphrase: z.string().optional().describe("Passphrase for SSH private key"),
+    verifyHostKey: verifyHostKeyField,
 };

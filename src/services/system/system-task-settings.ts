@@ -26,6 +26,8 @@ export interface SystemTaskRow {
     nextRunAt: string | null;
     /** The setting of another part that switches it on and off. */
     follows: TaskFollows | null;
+    /** Only a platform admin changes or starts it, see `platformAdminOnly` in the definitions. */
+    platformAdminOnly: boolean;
 }
 
 /** What the integrity check looks at, set in its Edit dialog. */
@@ -74,6 +76,7 @@ async function row(taskId: SystemTaskId, timezone: string): Promise<SystemTaskRo
         lastRun,
         nextRunAt: next ? next.toISOString() : null,
         follows: definition.follows ?? null,
+        platformAdminOnly: definition.platformAdminOnly === true,
     };
 }
 

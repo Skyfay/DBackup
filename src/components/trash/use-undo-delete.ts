@@ -22,7 +22,7 @@ export function reportRestore(result: TrashRestoreResult, names: Map<string, str
         else toast.success(title);
     }
     for (const conflict of conflicts) {
-        toast.warning(conflict.message, { description: "Restore it under Settings, Recently deleted, with another name." });
+        toast.warning(conflict.message, { description: "Restore it under Settings › Recently deleted with another name." });
     }
     if (failed.length === 1) toast.error(`${names.get(failed[0].id) ?? failed[0].name}: ${failed[0].error}`);
     else if (failed.length > 1) toast.error(`${failed.length} entries could not be restored.`, { description: failed[0].error });

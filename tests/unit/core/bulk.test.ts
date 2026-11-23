@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runBulk, summarizeBulkResult, emptyBulkResult, countNoun, describeBulkFailures, type BulkLabels } from '@/lib/core/bulk';
+import { runBulk, summarizeBulkResult, emptyBulkResult, countNoun, describeBulkFailures, BULK_ROW_FAILED, type BulkLabels } from '@/lib/core/bulk';
+import { ValidationError } from '@/lib/logging/errors';
+
+vi.mock('@/lib/logging/logger', () => ({
+    logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
+}));
 
 const jobLabels: BulkLabels = { verb: 'delete', verbPast: 'deleted', noun: 'job' };
 
@@ -17,7 +22,7 @@ describe('runBulk', () => {
 
         const result = await runBulk(['a', 'b', 'c'], async (id) => {
             seen.push(id);
-            if (id === 'b') throw new Error('b is in use');
+            if (id === 'b') throw new ValidationError('b is in use');
         });
 
         expect(seen).toEqual(['a', 'b', 'c']);
@@ -27,10 +32,18 @@ describe('runBulk', () => {
 
     it('records the failure reason so the user can act on it', async () => {
         const result = await runBulk(['x'], async () => {
-            throw new Error('Cannot delete the last SuperAdmin user.');
+            throw new ValidationError('Cannot delete the last SuperAdmin user.');
         });
 
         expect(result.failed[0].error).toBe('Cannot delete the last SuperAdmin user.');
+    });
+
+    it('answers a fixed sentence for an error not written for the user, whose words may name a host or a path', async () => {
+        const result = await runBulk(['x'], async () => {
+            throw new Error('connect ECONNREFUSED 10.0.0.5:5432 at /var/lib/dbackup/secrets');
+        });
+
+        expect(result.failed[0].error).toBe(BULK_ROW_FAILED);
     });
 
     it('attaches a display name to failures when one is available', async () => {

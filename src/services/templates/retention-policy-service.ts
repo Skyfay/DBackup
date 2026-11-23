@@ -44,7 +44,7 @@ export async function createRetentionPolicy(input: {
   config: RetentionConfiguration;
   isDefault?: boolean;
 }) {
-  const existing = await prisma.retentionPolicy.findUnique({
+  const existing = await prisma.retentionPolicy.findFirst({
     where: { name: input.name },
   });
   if (existing) {
@@ -91,7 +91,7 @@ export async function updateRetentionPolicy(
   }
 
   if (input.name && input.name !== policy.name) {
-    const existing = await prisma.retentionPolicy.findUnique({
+    const existing = await prisma.retentionPolicy.findFirst({
       where: { name: input.name },
     });
     if (existing) {

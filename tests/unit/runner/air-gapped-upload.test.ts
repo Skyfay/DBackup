@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { stepUpload } from '@/lib/runner/steps/03-upload';
-import { reportSkippedAirGaps, SKIP_STATE_KEY } from '@/lib/runner/steps/air-gap';
+import { reportSkippedAirGaps, SKIP_STATE_KEY, skipKey } from '@/lib/runner/steps/air-gap';
 import { AIR_GAP_SKIP } from '@/lib/core/air-gap';
 import { NOTIFICATION_EVENTS } from '@/lib/notifications/types';
 import type { RunnerContext, DestinationContext } from '@/lib/runner/types';
@@ -229,5 +229,64 @@ describe('the report of a skipped air-gapped destination', () => {
         prismaMock.systemSetting.findUnique.mockRejectedValue(new Error('database is locked'));
 
         await expect(reportSkippedAirGaps(ctx, [away])).resolves.toBeUndefined();
+    });
+});
+
+describe('the report of a skipped air-gapped destination another tenant shares', () => {
+    /** A job of Globex, whose run skips the USB rotation Acme Hosting shares with it. */
+    const globexRun = { job: { id: 'globex-job', name: 'Globex shop', tenantId: 'globex' }, execution: { id: 'exec-3' } } as unknown as RunnerContext;
+    const acmeRun = { job: { id: 'acme-job', name: 'Acme mail', tenantId: 'acme' }, execution: { id: 'exec-4' } } as unknown as RunnerContext;
+    const sharedUsb = usb({ customer: 'globex' });
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        skipState = null;
+        prismaMock.systemSetting.findUnique.mockImplementation(async () => (skipState ? { value: JSON.stringify(skipState) } : null));
+        prismaMock.systemSetting.upsert.mockImplementation(async ({ update }: { update: { value: string } }) => {
+            skipState = JSON.parse(update.value);
+        });
+        prismaMock.healthCheckLog.findFirst.mockResolvedValue(null);
+        notifyMock.mockResolvedValue({ succeeded: 1, failed: 0 });
+    });
+
+    it('goes to the tenant of the job, never to the tenant that shares the destination', async () => {
+        await reportSkippedAirGaps(globexRun, [sharedUsb]);
+
+        expect(notifyMock).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ storageId: 'usb', jobName: 'Globex shop', jobId: 'globex-job' }) }),
+            { executionId: 'exec-3', tenantId: 'globex' },
+        );
+        expect(Object.keys(skipState ?? {})).toEqual([skipKey('usb', 'globex')]);
+    });
+
+    it('is reported to each tenant once, so the report of one does not silence another', async () => {
+        await reportSkippedAirGaps(acmeRun, [usb()]);
+        await reportSkippedAirGaps(globexRun, [sharedUsb]);
+        await reportSkippedAirGaps(globexRun, [sharedUsb]);
+
+        expect(notifyMock).toHaveBeenCalledTimes(2);
+        expect(notifyMock.mock.calls.map((call) => call[1].tenantId)).toEqual(['acme', 'globex']);
+        expect(Object.keys(skipState ?? {}).sort()).toEqual(['usb@acme', 'usb@globex']);
+    });
+
+    it('reads a report of an earlier version, kept by the destination alone, for the tenant of the destination only', async () => {
+        skipState = { usb: new Date(Date.now() - 86_400_000).toISOString() };
+
+        await reportSkippedAirGaps(acmeRun, [usb()]);
+        expect(notifyMock).not.toHaveBeenCalled();
+
+        await reportSkippedAirGaps(globexRun, [sharedUsb]);
+        expect(notifyMock).toHaveBeenCalledTimes(1);
+        expect(notifyMock.mock.calls[0][1]).toEqual({ executionId: 'exec-3', tenantId: 'globex' });
+    });
+
+    it('moves a report of an earlier version to the key of the tenant once it reports again', async () => {
+        skipState = { usb: new Date(Date.now() - 7 * 86_400_000).toISOString() };
+        prismaMock.healthCheckLog.findFirst.mockResolvedValue({ createdAt: new Date(Date.now() - 86_400_000) });
+
+        await reportSkippedAirGaps(acmeRun, [usb()]);
+
+        expect(notifyMock).toHaveBeenCalledTimes(1);
+        expect(Object.keys(skipState ?? {})).toEqual(['usb@acme']);
     });
 });

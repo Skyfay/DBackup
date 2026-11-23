@@ -8,11 +8,11 @@ import { logger } from "@/lib/logging/logger";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { auditService } from "@/services/audit-service";
-import { isSystemTaskId, SYSTEM_TASKS } from "@/services/system/system-task-definitions";
+import { isPlatformAdminTask, isSystemTaskId, PLATFORM_ADMIN_TASK_REFUSAL, SYSTEM_TASKS } from "@/services/system/system-task-definitions";
 import { saveSystemTask, startSystemTask } from "@/services/system/system-task-settings";
 import { taskChanges, taskName, taskSnapshot } from "@/services/system/system-task-audit";
 import { integritySettings, settingsChanges, SETTINGS_AREAS } from "@/services/system/settings-audit";
-import type { SaveResult } from "@/lib/settings/save-part";
+import { PLATFORM_LOG, type SaveResult } from "@/services/system/settings-save";
 
 const log = logger.child({ action: "system-tasks" });
 
@@ -37,8 +37,10 @@ export async function saveSystemTaskAction(id: string, input: z.infer<typeof tas
     const parsedId = taskId.safeParse(id);
     const parsed = taskSchema.safeParse(input);
     if (!parsedId.success || !isSystemTaskId(parsedId.data)) return { success: false, error: "Unknown system task" };
-    if (!parsed.success) return { success: false, error: parsed.error.issues[0].message, field: String(parsed.error.issues[0].path[0] ?? "") };
     const task = parsedId.data;
+    // The configuration backup holds every secret of the instance, so its schedule and switch are a platform admin's.
+    if (isPlatformAdminTask(task) && !user.isPlatformAdmin) return { success: false, error: PLATFORM_ADMIN_TASK_REFUSAL };
+    if (!parsed.success) return { success: false, error: parsed.error.issues[0].message, field: String(parsed.error.issues[0].path[0] ?? "") };
 
     try {
         const [before, integrityBefore] = await Promise.all([taskSnapshot(task), integritySettings()]);
@@ -53,12 +55,12 @@ export async function saveSystemTaskAction(id: string, input: z.infer<typeof tas
                 name: after.name,
                 ...(parsed.data.enabled !== undefined ? { enabled: parsed.data.enabled } : {}),
                 ...(switchedOnly ? {} : { changes }),
-            }, task);
+            }, task, PLATFORM_LOG);
         }
         if (task === SYSTEM_TASKS.INTEGRITY_CHECK && parsed.data.integrity) {
             const integrityChanges = settingsChanges(integrityBefore, await integritySettings());
             if (integrityChanges.length > 0) {
-                await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.INTEGRITY, changes: integrityChanges });
+                await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.INTEGRITY, changes: integrityChanges }, undefined, PLATFORM_LOG);
             }
         }
         revalidatePath("/dashboard/settings");
@@ -77,12 +79,13 @@ export async function runSystemTaskAction(id: string): Promise<{ success: boolea
     const parsedId = taskId.safeParse(id);
     if (!parsedId.success || !isSystemTaskId(parsedId.data)) return { success: false, error: "Unknown system task" };
     const task = parsedId.data;
+    if (isPlatformAdminTask(task) && !user.isPlatformAdmin) return { success: false, error: PLATFORM_ADMIN_TASK_REFUSAL };
 
     try {
         const started = await startSystemTask(task, user.name ?? "Manual");
         if (!started.started) return { success: false, error: started.reason };
         const name = taskName(task);
-        await auditService.log(user.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, { task: name, name }, task);
+        await auditService.log(user.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, { task: name, name }, task, PLATFORM_LOG);
         revalidatePath("/dashboard/settings");
         return { success: true, ...(started.executionId ? { executionId: started.executionId } : {}) };
     } catch (error: unknown) {

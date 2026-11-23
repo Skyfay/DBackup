@@ -225,8 +225,6 @@ function compareSemver(v1: ParsedVersion, v2: ParsedVersion): number {
 
     if (s1 !== s2) return s1 - s2;
 
-    // If stability level is same (e.g. both 'dev'), compare lexicographically
-    // or by checking for trailing numbers (dev1 vs dev2)
-    // Simple string compare as fallback
-    return v1.prerelease!.localeCompare(v2.prerelease!);
+    // The same stability, like two betas: their numbers count as numbers, so beta.10 comes after beta.2.
+    return v1.prerelease!.localeCompare(v2.prerelease!, "en", { numeric: true });
 }

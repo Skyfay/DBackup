@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client'
 import { logger } from '@/lib/logging/logger'
 import { wrapError } from '@/lib/logging/errors'
+import { tenantScopeExtension } from '@/lib/tenant/prisma-scope'
+import { relationOrderPaging } from '@/lib/prisma-paging'
 
 const log = logger.child({ module: 'Prisma' })
 
@@ -80,8 +82,10 @@ const prismaClientSingleton = () => {
         async $allOperations({ args, query, operation }) {
           const result = await query(args);
 
-          const readActions = ['findUnique', 'findFirst', 'findMany'];
-          if (!readActions.includes(operation) || !result) return result;
+          // Every operation that answers with records, the writes too: the SSO plugin of better-auth
+          // locks a provider with an update and compares the row it answers with the one it read.
+          const recordActions = ['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow', 'findMany', 'create', 'update', 'upsert', 'delete'];
+          if (!recordActions.includes(operation) || !result) return result;
 
           // Lazy import to avoid circular dependency (crypto.ts does not import prisma.ts)
           const { decrypt } = await import('./crypto');
@@ -115,7 +119,15 @@ const prismaClientSingleton = () => {
     },
   });
 
-  return client;
+  // ── Tenants ──────────────────────────────────────────────────
+  // Every query on a tenant model is narrowed to the tenant of the code that runs now, see
+  // src/lib/tenant/prisma-scope.ts. The request is asked lazily, it imports this client itself.
+  // A read of more than 999 parents with an ordered relation breaks Prisma on SQLite, so it runs
+  // in pages, see src/lib/prisma-paging.ts. Prisma runs the extensions in the order they were added,
+  // so the tenant filter narrows the read first and every page carries that narrowed read.
+  return client
+    .$extends(tenantScopeExtension(async () => (await import('./tenant/current')).requestScope()))
+    .$extends(relationOrderPaging);
 }
 
 declare global {

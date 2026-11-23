@@ -11,7 +11,6 @@ import type {
     SpawnOptions,
     StageInputOptions,
     TempFileOptions,
-    TransferOptions,
 } from "@/lib/transport/types";
 
 /**
@@ -225,11 +224,3 @@ export function createFakeHost(options: FakeHostOptions = {}): FakeHost {
 
     return host;
 }
-
-/** A host for adapters that ignore the transport entirely. */
-export function noopHost(kind: HostKind = "direct"): ExecutionHost {
-    return createFakeHost({ kind });
-}
-
-/** Convenience for the common `TransferOptions` argument in tests. */
-export const noTransferOptions: TransferOptions = {};

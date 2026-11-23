@@ -34,8 +34,8 @@ const baseMariaDBConfig: MariaDBConfig = {
 // --- getDialect ---
 
 /** The client tools as dumpClientOf tells them apart. */
-const MYSQL_TOOL = { setsGtidPurged: true, sslOff: "--ssl-mode=DISABLED" } as const;
-const MARIADB_TOOL = { setsGtidPurged: false, sslOff: "--skip-ssl" } as const;
+const MYSQL_TOOL = { mariadb: false, setsGtidPurged: true, sslOff: "--ssl-mode=DISABLED" } as const;
+const MARIADB_TOOL = { mariadb: true, setsGtidPurged: false, sslOff: "--skip-ssl" } as const;
 
 describe("getDialect", () => {
     it("returns MariaDBDialect for adapterId 'mariadb' without version", () => {
@@ -60,6 +60,13 @@ describe("getDialect", () => {
 
     it("returns MySQL80Dialect for 'mysql' with an 8.x version string", () => {
         expect(getDialect("mysql", "8.0.33")).toBeInstanceOf(MySQL80Dialect);
+    });
+
+    it("gives MySQL 26 and later, which count by the year, the flags of MySQL 8", () => {
+        expect(getDialect("mysql", "26.10.0")).toBeInstanceOf(MySQL80Dialect);
+        expect(getDialect("mysql", "25.7.1")).toBeInstanceOf(MySQL80Dialect);
+        expect(getDialect("mysql", "35.7.0")).toBeInstanceOf(MySQL80Dialect);
+        expect(getDialect("mysql", "5.7")).toBeInstanceOf(MySQL57Dialect);
     });
 
     it("returns MySQL80Dialect for unknown adapterId without version", () => {
@@ -235,9 +242,20 @@ describe("MySQLBaseDialect.getRestoreArgs", () => {
         expect(args).not.toContain("targetdb");
     });
 
-    it("appends target database when provided", () => {
+    it("names the target database as the value of --database, never as a bare argument", () => {
         const args = dialect.getRestoreArgs(baseMySQLConfig, "targetdb");
-        expect(args).toContain("targetdb");
+        expect(args).toContain("--database=targetdb");
+        expect(args).not.toContain("targetdb");
+    });
+
+    it("keeps a name with dashes and dots inside as it is", () => {
+        expect(dialect.getRestoreArgs(baseMySQLConfig, "shop-v2.archive")).toContain("--database=shop-v2.archive");
+        expect(dialect.getDumpArgs(baseMySQLConfig, ["shop-v2.archive"]).slice(-2)).toEqual(["--databases", "shop-v2.archive"]);
+    });
+
+    it("refuses a database name that starts with -, which a tool would read as an option", () => {
+        expect(() => dialect.getRestoreArgs(baseMySQLConfig, "--init-command=x")).toThrow(/starts with -/);
+        expect(() => dialect.getDumpArgs(baseMySQLConfig, ["--result-file=/tmp/x"])).toThrow(/starts with -/);
     });
 
     it("adds --skip-ssl when disableSsl is true", () => {

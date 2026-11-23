@@ -84,16 +84,29 @@ function inJobCell(configs: AdapterConfig[]): StripCell {
     };
 }
 
+/** When a connection was last backed up: by a job of the tenant, or for a provided server by its provider. */
+const lastBackupAt = (config: AdapterConfig) => config.overview?.lastBackup?.at ?? config.sharedServer?.lastBackup?.at ?? null;
+
 function lastBackupCell(configs: AdapterConfig[]): StripCell {
     const newest = configs
-        .filter((config) => config.overview?.lastBackup)
-        .sort((a, b) => Date.parse(b.overview!.lastBackup!.at) - Date.parse(a.overview!.lastBackup!.at))[0];
+        .filter((config) => lastBackupAt(config) !== null)
+        .sort((a, b) => Date.parse(lastBackupAt(b)!) - Date.parse(lastBackupAt(a)!))[0];
     return {
         label: "Last backup",
         icon: Archive,
-        value: newest ? <RelativeTime date={newest.overview!.lastBackup!.at} /> : "-",
+        value: newest ? <RelativeTime date={lastBackupAt(newest)!} /> : "-",
         extra: newest ? `of ${newest.name}` : "no backup yet",
     };
+}
+
+/** "Shared MySQL and Shared Postgres from Skyfay Hosting", the provided servers by who gives them. */
+function sharedText(shared: AdapterConfig[]): string {
+    const byProvider = new Map<string, string[]>();
+    for (const config of shared) {
+        const provider = config.sharedServer!.providerName;
+        byProvider.set(provider, [...(byProvider.get(provider) ?? []), config.name]);
+    }
+    return [...byProvider].map(([provider, names]) => `${namesFor(names)} from ${provider}`).join(", ");
 }
 
 function storedCell(configs: AdapterConfig[]): StripCell {
@@ -143,13 +156,27 @@ function channelCells(configs: AdapterConfig[]): StripCell[] {
     ];
 }
 
-/** The numbers above a list of connections, worked out from the list itself, for each kind its own. */
+/**
+ * The numbers above a list of connections, worked out from the list itself, for each kind its own.
+ * A server of another tenant with databases of this one counts among the connections, while whether
+ * it answers and the jobs that back it up stay with its provider, so the other numbers leave it out.
+ */
 export function ConnectionStrip({ kind, configs }: { kind: ConnectionKind; configs: AdapterConfig[] }) {
-    const count: StripCell = { label: KIND[kind].label, icon: KIND[kind].icon, value: configs.length.toLocaleString(), extra: configs.length > 0 ? typesOf(configs) : "none yet" };
+    const shared = configs.filter((config) => config.sharedServer);
+    const own = shared.length > 0 ? configs.filter((config) => !config.sharedServer) : configs;
+    const given = shared.reduce((sum, config) => sum + (config.sharedServer?.databases.length ?? 0), 0);
+    const count: StripCell = {
+        label: shared.length > 0
+            ? `Connections, ${shared.length.toLocaleString()} provided, ${given.toLocaleString()} ${given === 1 ? "database" : "databases"}`
+            : KIND[kind].label,
+        icon: KIND[kind].icon,
+        value: configs.length.toLocaleString(),
+        extra: configs.length === 0 ? "none yet" : [own.length > 0 ? typesOf(own) : null, shared.length > 0 ? sharedText(shared) : null].filter(Boolean).join(", "),
+    };
     const cells: StripCell[] = kind === "notification"
         ? [count, ...channelCells(configs)]
         : kind === "destination"
             ? [count, answeringCell(configs), responseCell(configs), storedCell(configs), inJobCell(configs)]
-            : [count, answeringCell(configs), responseCell(configs), inJobCell(configs), lastBackupCell(configs)];
+            : [count, answeringCell(own), responseCell(own), inJobCell(own), lastBackupCell(configs)];
     return <ExplorerStrip joined cells={cells} />;
 }

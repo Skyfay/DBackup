@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
 import { ValidationError } from "@/lib/logging/errors";
+import { explicitScope } from "@/lib/tenant/context";
 
 const auditClean = vi.fn();
 const healthClean = vi.fn();
@@ -23,7 +24,7 @@ vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 
-const { getDataRetentionValues, updateDataRetentionSettings, runDataRetention } = await import(
+const { getDataRetentionOverview, getDataRetentionValues, updateDataRetentionSettings, runDataRetention } = await import(
     "@/services/system/data-retention-service"
 );
 
@@ -153,5 +154,20 @@ describe("Data retention cleanup run", () => {
         expect(notificationClean).toHaveBeenCalled();
         expect(healthClean).toHaveBeenCalled();
         expect(result.healthChecks).toBe(100);
+    });
+});
+
+describe("Data retention overview", () => {
+    it("counts the records of every tenant, since the periods hold for the whole instance", async () => {
+        stored({});
+        // Read across every tenant only in the system scope, a request would see its own tenant.
+        const count = (async () => (explicitScope()?.kind === "system" ? 7 : 1)) as never;
+        for (const model of [prismaMock.execution, prismaMock.auditLog, prismaMock.notificationLog, prismaMock.storageSnapshot, prismaMock.healthCheckLog, prismaMock.deletedRecord]) {
+            model.count.mockImplementation(count);
+        }
+
+        const { counts } = await getDataRetentionOverview();
+
+        expect(counts).toEqual({ executionLogs: 7, executionHistory: 7, auditLog: 7, notificationHistory: 7, storageUsage: 7, healthChecks: 7, deletedItems: 7 });
     });
 });

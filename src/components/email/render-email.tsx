@@ -29,7 +29,7 @@ function preheaderHtml(text: string): string {
 }
 
 export function emailText(payload: NotificationPayload, brand: NotificationBrand): string {
-    const blocks: string[] = [`${payload.title}\n${payload.message}`];
+    const blocks: string[] = [`${payload.heading ?? payload.title}\n${payload.message}`];
     if (payload.stats?.length) blocks.push(payload.stats.map((stat) => `${stat.label}: ${stat.value}`).join("\n"));
     if (payload.usage) blocks.push(`${payload.usage.label}, ${payload.usage.aside}`);
     if (payload.problem) {

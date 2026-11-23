@@ -18,6 +18,10 @@ const prismaMock = {
     adapterConfig: { findUnique: vi.fn() },
     jobSource: { findUnique: vi.fn().mockResolvedValue(null) },
     systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
+    // Whether the tenant of the destination shares it with customers.
+    connectionShare: { count: vi.fn().mockResolvedValue(0) },
+    // No run of History wrote these backups, see `recorded-encryption.ts`.
+    execution: { findMany: vi.fn().mockResolvedValue([]) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
@@ -127,7 +131,7 @@ beforeEach(async () => {
     archiveDownloads = 0;
     registryGet.mockReturnValue(makeAdapter());
     prismaMock.adapterConfig.findUnique.mockResolvedValue({
-        id: "storage-1", type: "storage", adapterId: "test-storage", name: "Test Storage", config: "{}",
+        id: "storage-1", type: "storage", adapterId: "test-storage", name: "Test Storage", config: "{}", tenantId: "tenant-1",
     });
 });
 

@@ -15,7 +15,7 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 // The real checks, reduced to the permission list of the signed in user.
 vi.mock("@/lib/auth/access-control", () => ({
-    getAuthContext: async () => ({ userId: "u1", permissions: mocks.permissions, isSuperAdmin: false }),
+    getAuthContext: async () => ({ userId: "u1", permissions: mocks.permissions, isPlatformAdmin: false }),
     checkPermissionWithContext: (_ctx: unknown, permission: string) => {
         if (!mocks.permissions.includes(permission)) throw new PermissionError(permission);
     },
@@ -88,5 +88,24 @@ describe("POST /api/storage/[id]/restore-files", () => {
         mocks.permissions = ["storage:read"];
         expect((await post({ ...PICK, dryRun: true })).ok).toBe(false);
         expect(mocks.planFileRestore).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuses a target folder that leaves its connection before anything runs", async () => {
+        mocks.permissions = ["storage:restore"];
+
+        for (const basePath of ["../../home/ops/.ssh", "restore/%2e%2e/x", "restore/.. /x"]) {
+            const response = await post({ ...PICK, target: { kind: "storage", configId: "local", basePath } });
+            expect(response.status, basePath).toBe(400);
+        }
+        expect(mocks.restoreFilesToStorage).not.toHaveBeenCalled();
+    });
+
+    it("hands the restore who restores, for the volumes and files only some may write", async () => {
+        mocks.permissions = ["storage:restore"];
+        mocks.restoreFilesToStorage.mockResolvedValue({ restored: 1, failed: [], totalBytes: 1 });
+
+        await post({ ...PICK, target: { kind: "storage", configId: "local", basePath: "/restore" } });
+
+        expect(mocks.restoreFilesToStorage).toHaveBeenCalledWith(expect.objectContaining({ caller: expect.objectContaining({ userId: "u1", isPlatformAdmin: false }) }));
     });
 });

@@ -15,10 +15,12 @@ import { getTables, getTableData } from "./browser";
  * statement, no server-scoped catalog views and no three-part names, so the backup
  * format is a BACPAC and every catalog read needs its own connection.
  *
- * No `transport` resolver and no `connectionMode` in the schema, which is what
- * makes `standardTransport` resolve to a DirectHost. That is the correct answer for
- * a public PaaS endpoint, and it is also what bounds the argv exception documented
- * in exporter/sqlpackage.ts.
+ * No `connectionMode` in the schema, and a `transport` resolver that answers a
+ * DirectHost whatever the config holds. That is the correct answer for a public
+ * PaaS endpoint, and it is also what bounds the argv exception documented in
+ * exporter/sqlpackage.ts. `standardTransport` would read a `connectionMode` and SSH
+ * fields a stored config brings beside its schema, and put the connection string
+ * on the command line of a remote shell.
  */
 export const AzureSQLAdapter: DatabaseAdapter = {
     id: "azure-sql",
@@ -26,6 +28,7 @@ export const AzureSQLAdapter: DatabaseAdapter = {
     name: "Azure SQL Database",
     configSchema: AzureSQLSchema,
     credentials: { primary: "USERNAME_PASSWORD" },
+    transport: () => ({ kind: "direct" }),
     dump,
     dumpOne,
     restore,

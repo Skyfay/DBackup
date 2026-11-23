@@ -81,6 +81,129 @@ function safeNameSegment(name) {
     return replaced.length > 0 ? replaced : "_";
 }
 
+/**
+ * Whether a name read out of a backup or a kit is a plain file name: no separator of either kind,
+ * no NUL, not empty, not `.` or `..`. Mirrors plainFileNameProblem in src/lib/archive/dump-names.ts.
+ * Only such a name is joined onto a folder, so a tampered index never opens a file elsewhere.
+ */
+function isPlainFileName(name) {
+    return typeof name === "string" && name.length > 0 && name !== "." && name !== ".." && !/[/\\\u0000]/.test(name);
+}
+
+/**
+ * Why the path of a file line is no plain path below the folder of its source, or null when it is.
+ * The checks of links count the parts as written, while a join resolves a `..` inside them, so
+ * `a/../b` would be checked at one place and written at another. Such an index is refused whole.
+ * Mirrors entryPathProblem in src/lib/archive/index-file.ts.
+ */
+function entryPathProblem(entryPath) {
+    if (typeof entryPath !== "string" || entryPath === "") return "a file without a path";
+    if (entryPath.includes("\0")) return "a path with a NUL character";
+    if (entryPath.startsWith("/") || entryPath.startsWith("\\")) return "an absolute path";
+    if (entryPath.split("/").some((part) => part === "" || part === "." || part === "..")) return "a path with an empty, '.' or '..' part";
+    if (entryPath.split(/[\\/]/).some((part) => part === "." || part === "..")) return "a path with a '.' or '..' part";
+    return null;
+}
+
+/** Whether a link target is absolute on any system: `/x`, `\\server\x` or `C:\x`. */
+function isAbsoluteLinkTarget(target) {
+    return target.startsWith("/") || target.startsWith("\\") || /^[a-zA-Z]:/.test(target);
+}
+
+/**
+ * The parts of a path as this file system reads it: Windows splits at both `/` and `\`, every other
+ * system at `/` alone, where a backslash is a character of a name. A check that split at both on
+ * Linux would measure `a\b\c` three folders deep, while the link lies at one name in the top folder.
+ */
+function pathParts(entryPath) {
+    return process.platform === "win32" ? entryPath.split(/[\\/]/) : entryPath.split("/");
+}
+
+/**
+ * Whether the link at `linkPath`, relative to the folder of its source, points outside of that
+ * folder: absolute, empty, climbing above it, climbing back after a folder (`up/../x`), or running
+ * through a link of the same backup. Mirrors linkLeavesTarget in src/lib/archive/link-target.ts,
+ * where the reasons are written out.
+ */
+function linkLeavesTarget(linkPath, target, isLinkFolder) {
+    if (target.trim() === "" || isAbsoluteLinkTarget(target)) return true;
+    const parts = pathParts(linkPath).filter((part) => part !== "" && part !== ".");
+    const at = parts.slice(0, -1);
+    let afterFolder = false;
+    for (const part of pathParts(target)) {
+        if (part === "" || part === ".") continue;
+        if (part === "..") {
+            if (afterFolder || at.length === 0) return true;
+            at.pop();
+            continue;
+        }
+        afterFolder = true;
+        at.push(part);
+    }
+    return isLinkFolder(at.join("/"));
+}
+
+/** The folders of a path, without empty and `.` parts, compared without case. */
+function linkPathParts(entryPath) {
+    return pathParts(entryPath).filter((part) => part !== "" && part !== ".").map((part) => part.toLowerCase());
+}
+
+/**
+ * A test whether an entry lies below a symbolic link of the same backup, which a real folder never
+ * holds. Laid one after the other, `a -> /etc` and `a/cron.d/x` would reach past the output folder.
+ * Mirrors throughLinkOf in src/lib/archive/link-target.ts.
+ */
+function throughLinkOf(lines) {
+    const links = new Set();
+    for (const line of lines) {
+        if (line.lnk !== undefined) links.add(`${line.src}\0${linkPathParts(line.p).join("/")}`);
+    }
+    return (src, entryPath) => {
+        if (links.size === 0) return false;
+        const parts = linkPathParts(entryPath);
+        for (let depth = 1; depth < parts.length; depth++) {
+            if (links.has(`${src}\0${parts.slice(0, depth).join("/")}`)) return true;
+        }
+        return false;
+    };
+}
+
+/**
+ * Whether writing `target` would land outside of `root` on this disk. The checks above work on
+ * strings, and a symbolic link that an earlier run or anyone else left in the output folder is
+ * followed by every write below it. So the folders of the target that exist are resolved, and a
+ * link among them that leads out of the output folder, or to nowhere, refuses the write.
+ * `root` has to exist.
+ */
+function leavesRootOnDisk(root, target) {
+    const realRoot = fs.realpathSync(root);
+    let dir = path.dirname(path.resolve(target));
+    for (;;) {
+        let real;
+        try {
+            real = fs.realpathSync(dir);
+        } catch (error) {
+            if (!error || error.code !== "ENOENT") return true;
+            // A link to nowhere exists and still fails to resolve. A write would follow it.
+            let dangling = false;
+            try { fs.lstatSync(dir); dangling = true; } catch { /* a folder not made yet */ }
+            const parent = path.dirname(dir);
+            if (dangling || parent === dir) return true;
+            dir = parent;
+            continue;
+        }
+        const relative = path.relative(realRoot, real);
+        return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+    }
+}
+
+/** Removes a symbolic link at the place of a file about to be written, so the write never goes through it. */
+function dropLinkAt(target) {
+    let existing = null;
+    try { existing = fs.lstatSync(target); } catch { /* not there, which is the normal case */ }
+    if (existing && existing.isSymbolicLink()) fs.unlinkSync(target);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Crypto
 // ══════════════════════════════════════════════════════════════════════════════
@@ -168,6 +291,8 @@ function loadKeys() {
         const index = readJson(path.join(root, "keys", "keys.json"));
         if (index && Array.isArray(index.keys)) {
             for (const entry of index.keys) {
+                // A key is a file of the keys folder, never a path the index names elsewhere.
+                if (!isPlainFileName(entry.file)) continue;
                 const hex = readHexFile(path.join(root, "keys", entry.file));
                 if (hex) keys.push({ name: entry.name ?? entry.file, hex, profileId: entry.profileId });
             }
@@ -524,8 +649,24 @@ function openArchive(archivePath, hexKey) {
         if (parsed.k === "e") index.entries.set(entryKey(parsed.a, parsed.n), parsed);
         else if (parsed.k === "deps") index.deps = parsed.archives;
         else if (parsed.k === "db") index.databases.push(parsed);
-        else if (parsed.k === "d") index.directories.push(parsed);
-        else if (parsed.k === "f") index.files.push(parsed);
+        else if (parsed.k === "d") {
+            // The id of a source becomes one folder of the output, so it is one plain name.
+            if (!isPlainFileName(parsed.src)) {
+                fs.closeSync(fd);
+                throw new Error("The backup is damaged: its index names a source that is no plain folder name.");
+            }
+            index.directories.push(parsed);
+        }
+        else if (parsed.k === "f") {
+            // The checks of links measure a path from the folder of its source, which holds only
+            // when that folder lies directly below the output folder.
+            const problem = isPlainFileName(parsed.src) ? entryPathProblem(parsed.p) : "a source that is no plain folder name";
+            if (problem) {
+                fs.closeSync(fd);
+                throw new Error(`The backup is damaged: its index names ${problem}.`);
+            }
+            index.files.push(parsed);
+        }
     }
 
     return { fd, filePath, manifest, index, keys, chain: new Map() };
@@ -548,6 +689,8 @@ function openChain(archivePath, index, hexKey) {
     const missing = [];
 
     for (const name of index.deps) {
+        // The index names its archives, and a tampered one could name any file of this machine.
+        if (!isPlainFileName(name)) throw new Error(`The backup names an archive of its chain that is no plain file name: ${JSON.stringify(name)}`);
         const siblingPath = path.join(dir, name);
         if (!fs.existsSync(siblingPath)) {
             missing.push(name);
@@ -633,6 +776,7 @@ function createUnsealStream(key, noncePrefixHex, ordinal) {
 async function streamEntryToFile(target, entry, targetPath, expectedChecksum) {
     const partial = `${targetPath}.partial`;
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    dropLinkAt(partial);
 
     const hash = crypto.createHash("sha256");
     const stages = [fs.createReadStream(target.filePath, { start: entry.off, end: entry.off + entry.size - 1 })];
@@ -867,10 +1011,11 @@ async function unpackMultiDbTar(tarPath, outputDir, selection) {
         // Refuse anything that would escape the output directory.
         const target = path.resolve(outputDir, member.name);
         const root = path.resolve(outputDir);
-        if (target !== root && !target.startsWith(root + path.sep)) {
+        if (target === root || !target.startsWith(root + path.sep) || leavesRootOnDisk(root, target)) {
             console.error(`SKIPPED (unsafe path): ${member.name}`);
             continue;
         }
+        dropLinkAt(target);
 
         // Streamed, not buffered: a single dump in here can be tens of gigabytes.
         fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -1612,7 +1757,8 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
             const extension = safeNameSegment(DUMP_EXTENSIONS[db.format] || db.format);
             const target = path.resolve(outputDir, "databases", `${safeNameSegment(db.name)}.${extension}`);
             const root = path.resolve(outputDir);
-            if (!target.startsWith(root + path.sep)) {
+            fs.mkdirSync(root, { recursive: true });
+            if (!target.startsWith(root + path.sep) || leavesRootOnDisk(root, target)) {
                 console.error(`SKIPPED (unsafe name): ${db.name}`);
                 continue;
             }
@@ -1641,15 +1787,22 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
             // Refuse anything that would escape the output directory.
             const target = path.resolve(outputDir, file.src, file.p);
             const root = path.resolve(outputDir);
-            if (target !== root && !target.startsWith(root + path.sep)) {
+            if (!target.startsWith(root + path.sep)) {
                 console.error(`SKIPPED (unsafe path): ${file.p}`);
+                continue;
+            }
+            // A link that an earlier extraction left in this folder is on disk already, so the
+            // order of this run does not cover it. The file system is asked before each write.
+            fs.mkdirSync(root, { recursive: true });
+            if (leavesRootOnDisk(root, target)) {
+                console.error(`SKIPPED (a link in the output folder leads out of it): ${file.p}`);
                 continue;
             }
 
             // A symbolic link has no entry to resolve - its whole content is the target
             // string in the index.
             if (file.lnk !== undefined) {
-                pendingSymlinks.push({ target, linkTarget: file.lnk });
+                pendingSymlinks.push({ target, linkTarget: file.lnk, src: file.src, p: file.p });
                 continue;
             }
 
@@ -1664,6 +1817,7 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
                     mismatches++;
                 }
                 fs.mkdirSync(path.dirname(target), { recursive: true });
+                dropLinkAt(target);
                 fs.writeFileSync(target, content);
             } else {
                 // Everything else streams: a single file here can be tens of gigabytes,
@@ -1679,12 +1833,45 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
             reportProgress(extracted, total);
         }
 
+        // A link below another link of the backup, or one whose target leads out of the folder of
+        // its source, would let the next link or whoever follows it reach any file of this machine,
+        // so it is skipped and named, like DBackup's own restore does.
+        const throughLink = throughLinkOf(archive.index.files);
         for (const link of pendingSymlinks) {
+            if (throughLink(link.src, link.p)) {
+                console.error(`SKIPPED (inside another link of the backup): ${link.p}`);
+                continue;
+            }
+            if (linkLeavesTarget(link.p, link.linkTarget, (resolved) => throughLink(link.src, resolved))) {
+                console.error(`SKIPPED (link leads out of the output folder): ${link.p} -> ${link.linkTarget}`);
+                continue;
+            }
+            // Links laid earlier in this loop or by an earlier run are on disk now.
+            if (leavesRootOnDisk(path.resolve(outputDir), link.target)) {
+                console.error(`SKIPPED (a link in the output folder leads out of it): ${link.p}`);
+                continue;
+            }
             fs.mkdirSync(path.dirname(link.target), { recursive: true });
-            // Removed first: symlink() fails on an existing path. unlink takes the link
-            // itself, never what it points at, so re-running cannot delete real data.
-            try { fs.unlinkSync(link.target); } catch { /* not there, which is the normal case */ }
+            let existing = null;
+            try { existing = fs.lstatSync(link.target); } catch { /* not there, which is the normal case */ }
+            // A file or folder restored to the same path keeps its data, the index cannot be both.
+            if (existing && !existing.isSymbolicLink()) {
+                console.error(`SKIPPED (a file or folder was restored there): ${link.p}`);
+                continue;
+            }
+            // An earlier link is replaced. unlink takes the link itself, never what it points at.
+            if (existing) fs.unlinkSync(link.target);
             fs.symlinkSync(link.linkTarget, link.target);
+            // A second line beside the checks of the strings: where the link now points, resolved from
+            // the real folder it lies in, has to stay inside the output folder.
+            const realRoot = fs.realpathSync(path.resolve(outputDir));
+            const pointsAt = path.resolve(fs.realpathSync(path.dirname(link.target)), link.linkTarget);
+            const fromRoot = path.relative(realRoot, pointsAt);
+            if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot)) {
+                fs.unlinkSync(link.target);
+                console.error(`SKIPPED (link leads out of the output folder): ${link.p} -> ${link.linkTarget}`);
+                continue;
+            }
             extracted++;
             reportProgress(extracted, total);
         }
@@ -1808,4 +1995,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { fitRow, looksLikeBackupContent, defaultDecryptedName, keyFor };
+module.exports = { fitRow, looksLikeBackupContent, defaultDecryptedName, keyFor, entryPathProblem, openArchive };

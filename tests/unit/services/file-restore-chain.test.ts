@@ -19,6 +19,8 @@ const JOB_DIR = "plex/chain-2026-07-15";
 const prismaMock = {
     adapterConfig: { findUnique: vi.fn() },
     jobSource: { findUnique: vi.fn() },
+    // Whether the tenant of the destination shares it with customers.
+    connectionShare: { count: vi.fn().mockResolvedValue(0) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
@@ -187,7 +189,7 @@ beforeEach(async () => {
     onDisk = new Set();
     peakOnDisk = 0;
     prismaMock.adapterConfig.findUnique.mockResolvedValue({
-        id: "storage-1", type: "storage", adapterId: "plain", name: "Plain", config: "{}",
+        id: "storage-1", type: "storage", adapterId: "plain", name: "Plain", config: "{}", tenantId: "tenant-1",
     });
 });
 

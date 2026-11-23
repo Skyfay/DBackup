@@ -20,7 +20,9 @@ import { entryKey, type IndexDatabaseLine } from "@/lib/archive/types";
 import { ValidationError } from "@/lib/logging/errors";
 import type { KeyOverride } from "@/services/backup/key-resolution";
 import { downloadShape, resolveContents } from "./archive-selection";
-import { describeSelection, openArchiveForRestore, streamFileRestore, type FileRestoreInput, type FileRestorePlan } from "./file-restore";
+import { describeSelection, openArchiveForRestore, streamFileRestore, type FileRestoreInput, type FileRestorePlan, type OpenedArchive } from "./file-restore";
+import { reserveTempSpace } from "./temp-space";
+import { PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 
 export interface ArchiveDownload {
     stream: NodeJS.ReadableStream;
@@ -113,7 +115,7 @@ export async function openArchiveDownload(input: FileRestoreInput): Promise<Arch
         const entry = archive.index.entries.get(entryKey(undefined, database.n));
         if (!entry) throw new Error(`Archive index is inconsistent: database '${database.name}' has no entry`);
 
-        const content = await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey);
+        const content = await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey, database.s);
         const verified = verifyingStream(database.h);
         // The archive stays open for as long as the response reads from it, and is released
         // on every way the stream can end, including a client that disconnects midway.
@@ -167,24 +169,45 @@ function pickDatabase(databases: IndexDatabaseLine[], hasDirectories: boolean, n
  *
  * This is what a decrypted download of a seekable archive resolves to, including a wget link,
  * which needs the finished file on disk before it can send a Content-Length. A dump that fails
- * its checksum is deleted rather than left for the caller to serve.
+ * its checksum is deleted rather than left for the caller to serve. `localPath` is a new file in
+ * the private folder, see `privateTempPath`, since the dump is the data of the database, decrypted.
  */
 export async function writeDatabaseDump(
-    params: { storageConfigId: string; file: string; database?: string; keyOverride?: KeyOverride },
+    params: {
+        storageConfigId: string;
+        file: string;
+        database?: string;
+        keyOverride?: KeyOverride;
+        /** Throws for an archive the caller does not take, before anything is read out of it. */
+        accept?: (archive: OpenedArchive) => void;
+    },
     localPath: string
 ): Promise<{ fileName: string }> {
     const archive = await openArchiveForRestore(params.storageConfigId, params.file, params.keyOverride);
     try {
+        params.accept?.(archive);
         const database = pickDatabase(archive.index.databases, archive.index.directories.length > 0, params.database);
         const entry = archive.index.entries.get(entryKey(undefined, database.n));
         if (!entry) throw new Error(`Archive index is inconsistent: database '${database.name}' has no entry`);
+        // The dump is written whole before it is served, see `reserveTempSpace`. Once written it
+        // counts in the free space of the folder itself, so the promise ends with the write.
+        const space = await reserveTempSpace([database.s], 1, path.dirname(localPath));
 
         let digest: string | undefined;
-        await pipeline(
-            await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey),
-            hashingStream((d) => { digest = d; }),
-            createWriteStream(localPath)
-        );
+        try {
+            await pipeline(
+                await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey, database.s),
+                hashingStream((d) => { digest = d; }),
+                // A new file only DBackup reads, the callers name one in `privateTempDir`.
+                createWriteStream(localPath, { flags: "wx", mode: PRIVATE_FILE_MODE })
+            );
+        } catch (e: unknown) {
+            // A dump cut off by its declared size or a failed read leaves no half file behind.
+            await fs.unlink(localPath).catch(() => { });
+            throw e;
+        } finally {
+            space.release();
+        }
         if (database.h && digest !== database.h) {
             await fs.unlink(localPath).catch(() => { });
             throw new Error(`Database dump '${database.name}' does not match its recorded checksum - the archive is corrupt`);

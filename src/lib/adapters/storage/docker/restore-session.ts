@@ -70,7 +70,7 @@ export function openDockerRestoreSession(
     const helperFor = (volume: string): Promise<PreparedVolume> => {
         let pending = prepared.get(volume);
         if (!pending) {
-            pending = prepareVolumeForRestore(engine(), volume, helperImage, say);
+            pending = prepareVolumeForRestore(engine(), config, volume, helperImage, say);
             prepared.set(volume, pending);
             // Keeps the rejection for real awaiters without tripping Node's
             // unhandled-rejection warning while nothing is awaiting it yet.

@@ -61,7 +61,7 @@ function Section({ run, step, summary, now, speed, last }: { run: RunDetail; ste
                     <ProblemBadges errors={step.errors} warnings={step.warnings} />
                     {step.state === "running" && <LivePill />}
                 </div>
-                {summary?.text && <Told text={summary.text} tool={summary.tool} />}
+                {summary?.text && <Told text={summary.text} tool={summary.tool} file={summary.file} />}
                 {summary && summary.dumps.length > 0 && (
                     <Rows>{summary.dumps.map((dump) => <DumpRow key={dump.name} dump={dump} live={live} />)}</Rows>
                 )}

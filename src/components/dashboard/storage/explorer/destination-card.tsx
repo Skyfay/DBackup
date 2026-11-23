@@ -2,6 +2,7 @@
 
 import { kindNames } from "@/components/adapter/connection-columns";
 import { signedBytes } from "@/components/dashboard/widgets/storage-history-data";
+import { TenantLine } from "@/components/tenant/tenant-column";
 import { isPlainClick } from "@/components/ui/row-click";
 import { cn, formatBytes } from "@/lib/utils";
 import type { ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
@@ -17,13 +18,15 @@ interface DestinationCardProps {
     onPick: (destination: ExplorerDestination) => void;
     /** The menu, the same as at the end of a table row. */
     actions: React.ReactNode;
+    /** The tenant of the destination, a small line under its type in All tenants. */
+    tenantName?: string | null;
 }
 
 /**
  * One destination as a card, the view a phone gets: whether it answers, what it stores and how
  * that changed, and its alerts. A tap shows its details under the list.
  */
-export function DestinationCard({ destination, jobs, picked, onPick, actions }: DestinationCardProps) {
+export function DestinationCard({ destination, jobs, picked, onPick, actions, tenantName = null }: DestinationCardProps) {
     const share = limitShare(destination);
     const alerts = activeAlerts(destination);
     const jobCount = jobsOfDestination(destination.id, jobs).length;
@@ -47,6 +50,7 @@ export function DestinationCard({ destination, jobs, picked, onPick, actions }: 
                         {kindNames.get(destination.adapterId) ?? destination.adapterId}
                         {destination.airGapped && " · air-gapped"} · {count(jobCount, "job")}
                     </p>
+                    <TenantLine name={tenantName} className="mt-0.5" />
                 </div>
                 <AnswerText destination={destination} className="shrink-0" />
             </div>

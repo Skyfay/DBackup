@@ -105,6 +105,26 @@ describe("restoring a configuration onto a new DBackup", () => {
         expect(result.notes).toEqual(["1 job is paused so it does not back up unencrypted, its encryption key is not here: Shop nightly."]);
     });
 
+    it("pauses a job called like the folder of the configuration backup, which would write among its files", async () => {
+        const result = await importConfiguration(backup({
+            adapters: [adapter("db-1", "Shop", "database")],
+            jobs: [job({ name: "Config-Backups" })],
+        }), "OVERWRITE");
+
+        expect(firstCall(prismaMock.job.upsert)).toMatchObject({ name: "Config-Backups", enabled: false });
+        expect(result.notes).toEqual(["1 job is paused until it is renamed, its name is the folder of the configuration backup: Config-Backups."]);
+    });
+
+    it("pauses a job whose name leads out of its own folder, which would write beside it or into the root", async () => {
+        const result = await importConfiguration(backup({
+            adapters: [adapter("db-1", "Shop", "database")],
+            jobs: [job({ name: "shop/../nightly" })],
+        }), "OVERWRITE");
+
+        expect(firstCall(prismaMock.job.upsert)).toMatchObject({ name: "shop/../nightly", enabled: false });
+        expect(result.notes).toEqual(["1 job is paused until it is renamed, its name holds a . or .. folder or a folder that starts with a hyphen: shop/../nightly."]);
+    });
+
     it("names the jobs that lose a naming template or a schedule preset the file does not hold", async () => {
         const result = await importConfiguration(backup({
             adapters: [adapter("db-1", "Shop", "database")],
@@ -164,6 +184,46 @@ describe("restoring a configuration onto a new DBackup", () => {
 
         expect(prismaMock.apiKey.upsert).not.toHaveBeenCalled();
         expect(result.notes).toEqual(["1 API key was left out, since the user it belongs to is not here."]);
+    });
+
+    it("gives a group of a file from before the tenants the rights on the tenant settings a group of the same rights got with the update", async () => {
+        await importConfiguration(backup({
+            groups: [{ id: "g-ops", name: "Ops", permissions: '["settings:read","settings:write","jobs:write"]' }],
+        }), "OVERWRITE");
+
+        expect(JSON.parse(firstCall(prismaMock.group.upsert).permissions as string)).toEqual(
+            ["settings:read", "settings:write", "jobs:write", "tenant-settings:read", "tenant-settings:write"]
+        );
+    });
+
+    it("brings a group of the name of a group the platform makes for the tenants in under a name of its own", async () => {
+        prismaMock.group.findFirst.mockResolvedValueOnce({ id: "g-client", name: "Client", fullAccess: false, templateId: "tpl-1" } as never);
+        prismaMock.group.create.mockResolvedValueOnce({ id: "g-new" } as never);
+
+        const result = await importConfiguration(backup({
+            groups: [{ id: "g-file", name: "Client", permissions: '["jobs:read"]' }],
+        }), "OVERWRITE");
+
+        expect(prismaMock.group.update).not.toHaveBeenCalled();
+        expect(prismaMock.group.create).toHaveBeenCalledWith({ data: { name: "Client (imported)", permissions: '["jobs:read"]' }, select: { id: true } });
+        expect(result.notes).toEqual(["The group Client of the file came in as Client (imported), since Client is a group the platform makes for its tenants."]);
+    });
+
+    it("leaves out a sign-in provider a tenant holds here, and brings one of the platform back as the platform's", async () => {
+        prismaMock.ssoProvider.findUnique.mockImplementation((async ({ where }: { where: { providerId?: string; id?: string } }) =>
+            where.providerId === "acme-entra" ? { id: "sso-acme", tenantId: "acme" } : null) as never);
+
+        const result = await importConfiguration(backup({
+            ssoProviders: [
+                { id: "sso-1", providerId: "acme-entra", name: "Acme Entra", issuer: "https://login.example", domain: "acme.ch", clientId: "id", clientSecret: "secret", defaultGroupId: null },
+                { id: "sso-2", providerId: "authentik", name: "Authentik", issuer: "https://auth.example", domain: null, clientId: "id", clientSecret: "secret", defaultGroupId: null },
+            ],
+        }), "OVERWRITE");
+
+        expect(prismaMock.ssoProvider.update).not.toHaveBeenCalled();
+        expect(prismaMock.ssoProvider.upsert).toHaveBeenCalledTimes(1);
+        expect(firstCall(prismaMock.ssoProvider.upsert)).toMatchObject({ providerId: "authentik", tenantId: null });
+        expect(result.notes).toEqual(["The sign-in provider Acme Entra of the file was left out, since a tenant has a provider of the same name here."]);
     });
 
     it("changes nothing and says nothing when every link is here, like a restore onto the same DBackup", async () => {

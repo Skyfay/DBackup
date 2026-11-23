@@ -1,21 +1,53 @@
 import { Minimatch } from "minimatch";
+import { ValidationError } from "@/lib/logging/errors";
 import { stripTrailingSlashes } from "@/lib/paths";
+import { excludePatternProblem, isPlainPattern, matchPlainPattern } from "./exclude-pattern-rules";
 
 /**
  * Compiled patterns keyed by their source string, since a source's exclude list is matched
  * against every file it walks - a tree with 100k entries otherwise recompiles the same handful
  * of globs 100k times over. Unbounded, but bounded in practice by how many distinct pattern
- * strings ever appear across a process's lifetime, which is a handful per job.
+ * strings ever appear across a process's lifetime, which is a handful per job. Emptied once it
+ * holds more than any honest set of jobs fills, so patterns nobody uses twice do not pile up.
  */
 const compiled = new Map<string, Minimatch>();
+const MAX_COMPILED = 5000;
 
+/**
+ * The compiled form of a pattern that is not plain. Only a pattern in a shape with a small cost
+ * gets one, see `excludePatternProblem`. A save refuses any other and a run checks its patterns
+ * before it reads, so this throws only for a caller that skipped both.
+ */
 function getCompiled(pattern: string): Minimatch {
     let mm = compiled.get(pattern);
     if (!mm) {
+        const problem = excludePatternProblem(pattern);
+        if (problem) throw new ValidationError(problem);
+        if (compiled.size >= MAX_COMPILED) compiled.clear();
         mm = new Minimatch(pattern, { dot: true, matchBase: true });
         compiled.set(pattern, mm);
     }
     return mm;
+}
+
+/** The last part of a path that is not empty, the name a slash-free pattern is matched against. */
+function baseName(relativePath: string): string {
+    let end = relativePath.length;
+    while (end > 0 && relativePath[end - 1] === "/") end--;
+    return relativePath.slice(relativePath.lastIndexOf("/", end - 1) + 1, end);
+}
+
+/**
+ * One pattern against one path. A plain pattern, the usual kind, is matched here in linear time
+ * and never becomes a regular expression that backtracks. The names `.` and `..` and an empty one
+ * keep the rules of the glob library, which no wildcard matches.
+ */
+function matchOne(relativePath: string, pattern: string): boolean {
+    if (isPlainPattern(pattern)) {
+        const name = baseName(relativePath);
+        if (name !== "" && name !== "." && name !== "..") return matchPlainPattern(name, pattern);
+    }
+    return getCompiled(pattern).match(relativePath);
 }
 
 /**
@@ -33,9 +65,12 @@ export function matchesAnyExcludePattern(relativePath: string, patterns?: string
     return patterns.some((pattern) => matchesExcludePattern(relativePath, pattern));
 }
 
-/** Whether one pattern matches one path. Same rules as above, for callers attributing a match. */
+/**
+ * Whether one pattern matches one path. Same rules as above, for callers attributing a match.
+ * Throws a ValidationError for a pattern `excludePatternProblem` refuses.
+ */
 export function matchesExcludePattern(relativePath: string, pattern: string): boolean {
-    return pattern.trim().length > 0 && getCompiled(pattern).match(relativePath);
+    return pattern.trim().length > 0 && matchOne(relativePath, pattern);
 }
 
 /** A stand-in path segment no real file is named, used to ask a pattern about hypothetical contents. */
@@ -76,10 +111,9 @@ export function canPruneDirectory(relativeDirPath: string, patterns?: string[]):
 
     return patterns.find((pattern) => {
         if (pattern.trim().length === 0) return false;
-        const mm = getCompiled(pattern);
         for (let depth = 1; depth <= PROBE_DEPTH; depth++) {
             const probe = `${base}/${Array<string>(depth).fill(PROBE_SEGMENT).join("/")}`;
-            if (!mm.match(probe)) return false;
+            if (!matchOne(probe, pattern)) return false;
         }
         return true;
     });

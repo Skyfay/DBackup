@@ -19,9 +19,13 @@ g.downloadTokenStore = undefined;
 g.downloadTokenCleanupStarted = undefined;
 
 // Dynamic import ensures the module runs AFTER fake timers are installed.
-const { generateDownloadToken, markTokenUsed, getTokenStoreSize } = await import(
+const { generateLinkToken, markTokenUsed, getTokenStoreSize } = await import(
   "@/lib/auth/download-tokens"
 );
+
+/** A public link, a token like any other for the cleanup. */
+const link = (storageId: string, file: string) =>
+  generateLinkToken({ tenantId: "tenant-1", storageId, file, userId: "user-1", decrypt: true }).token;
 
 afterAll(() => {
   vi.useRealTimers();
@@ -39,7 +43,7 @@ describe("Module initialization guards (hot-reload protection)", () => {
     const mod = await import("@/lib/auth/download-tokens");
 
     // The module must use the existing store (else branch of store guard).
-    mod.generateDownloadToken("hot-reload-storage", "/hot.sql");
+    mod.generateLinkToken({ tenantId: "tenant-1", storageId: "hot-reload-storage", file: "/hot.sql", userId: "user-1", decrypt: true });
     expect(existingStore.size).toBe(1);
 
     // Cleanup: remove the token we just added.
@@ -53,7 +57,7 @@ describe("Download Token Cleanup (via setInterval)", () => {
     vi.setSystemTime(start);
 
     const sizeBefore = getTokenStoreSize();
-    generateDownloadToken("storage", "/expired.sql");
+    link("storage", "/expired.sql");
     expect(getTokenStoreSize()).toBe(sizeBefore + 1);
 
     // Advance past the 5-minute token TTL and then one full cleanup interval.
@@ -67,7 +71,7 @@ describe("Download Token Cleanup (via setInterval)", () => {
     vi.setSystemTime(start);
 
     const sizeBefore = getTokenStoreSize();
-    const token = generateDownloadToken("storage", "/used.sql");
+    const token = link("storage", "/used.sql");
     markTokenUsed(token);
 
     vi.advanceTimersByTime(2 * 60 * 1000 + 1);
@@ -83,7 +87,7 @@ describe("Download Token Cleanup (via setInterval)", () => {
     vi.setSystemTime(start);
 
     const sizeBefore = getTokenStoreSize();
-    generateDownloadToken("storage", "/valid.sql");
+    link("storage", "/valid.sql");
 
     // Advance by exactly one cleanup interval (1 min). Token expires in 5 min,
     // so it must survive.

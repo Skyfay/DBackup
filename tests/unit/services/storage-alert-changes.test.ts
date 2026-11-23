@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { BULK_ROW_FAILED } from "@/lib/core/bulk";
 
 const mocks = vi.hoisted(() => ({
     known: [] as { id: string; name: string }[],
@@ -38,13 +39,16 @@ describe("changing the alerts of several destinations", () => {
     });
 
     it("saves every destination on its own, so one that fails or is gone leaves the others saved", async () => {
-        const result = await applyAlertChanges(["nas", "r2", "broken", "gone"], { storageLimit: { enabled: true, bytes: 25 * 1024 ** 3 } });
+        const { result, names } = await applyAlertChanges(["nas", "r2", "broken", "gone"], { storageLimit: { enabled: true, bytes: 25 * 1024 ** 3 } });
 
         expect(result.succeeded).toEqual(["nas", "r2"]);
         expect(result.failed).toEqual([
-            { id: "broken", name: "Broken", error: "disk full" },
+            // The words of the file system stay in the log, a refusal written for the user is shown.
+            { id: "broken", name: "Broken", error: BULK_ROW_FAILED },
             { id: "gone", name: undefined, error: "This destination does not exist anymore" },
         ]);
+        // The audit log names the destinations that took the change.
+        expect(names).toEqual(["NAS Backups", "Cloudflare R2"]);
         expect(mocks.saved.get("r2")).toEqual(config({ usageSpikeEnabled: false, missingBackupEnabled: false, storageLimitEnabled: true, storageLimitBytes: 25 * 1024 ** 3 }));
     });
 });

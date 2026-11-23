@@ -31,6 +31,7 @@ vi.mock('@/lib/notifications/events', () => ({
 }));
 vi.mock('@/lib/auth/permissions', () => ({
     PERMISSIONS: { SYSTEM: { ADMIN: 'system.admin' } },
+    AVAILABLE_PERMISSIONS: [{ id: 'system.admin', label: 'Admin', category: 'System' }],
 }));
 
 // Dynamic-import mocks (used inside runTask() switch branches)
@@ -40,6 +41,7 @@ vi.mock('@/lib/runner/config-runner', () => ({
 vi.mock('@/services/backup/integrity-service', () => ({
     integrityService: {
         runFullIntegrityCheck: vi.fn().mockResolvedValue({ totalFiles: 5, passed: 5, failed: 0, skipped: 0 }),
+        tenantsToCheck: vi.fn().mockResolvedValue(['default']),
     },
 }));
 vi.mock('@/lib/runner/system-task-runner', () => ({
@@ -256,14 +258,15 @@ describe('SystemTaskService', () => {
             expect(updateService.checkForUpdates).toHaveBeenCalledTimes(1);
         });
 
-        it('calls prisma.group.updateMany for SYNC_PERMISSIONS', async () => {
+        it('gives the full access groups every permission for SYNC_PERMISSIONS, whatever they are named', async () => {
             prismaMock.group.updateMany.mockResolvedValue({ count: 1 });
 
             await service.runTask(SYSTEM_TASKS.SYNC_PERMISSIONS);
 
-            expect(prismaMock.group.updateMany).toHaveBeenCalledWith(
-                expect.objectContaining({ where: { name: 'SuperAdmin' } })
-            );
+            expect(prismaMock.group.updateMany).toHaveBeenCalledWith({
+                where: { fullAccess: true },
+                data: { permissions: JSON.stringify(['system.admin']) },
+            });
         });
 
         it('calls runConfigBackup for CONFIG_BACKUP', async () => {
@@ -279,7 +282,8 @@ describe('SystemTaskService', () => {
 
             await service.runTask(SYSTEM_TASKS.INTEGRITY_CHECK);
 
-            expect(integrityService.runFullIntegrityCheck).toHaveBeenCalledTimes(1);
+            // The check goes on in the background once the run is handed back.
+            await vi.waitFor(() => expect(integrityService.runFullIntegrityCheck).toHaveBeenCalledTimes(1));
         });
 
         it('keeps the plan and every copy an integrity check checked in the metadata of its run', async () => {
@@ -325,11 +329,12 @@ describe('SystemTaskService', () => {
                 test: vi.fn().mockResolvedValue({ success: false, message: 'refused' })
             } as any);
             vi.mocked(resolveAdapterConfig).mockResolvedValue({} as any);
-            prismaMock.adapterConfig.update.mockResolvedValue({} as any);
+            prismaMock.adapterConfig.findUnique.mockResolvedValue({ name: 'TestDB', metadata: '{}' } as any);
+            prismaMock.adapterConfig.updateMany.mockResolvedValue({ count: 1 } as any);
 
             await service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS);
 
-            expect(prismaMock.adapterConfig.update).toHaveBeenCalledWith(expect.objectContaining({
+            expect(prismaMock.adapterConfig.updateMany).toHaveBeenCalledWith(expect.objectContaining({
                 data: expect.objectContaining({ metadata: expect.stringContaining('Unreachable') }),
             }));
         });
@@ -344,13 +349,36 @@ describe('SystemTaskService', () => {
                 test: vi.fn().mockResolvedValue({ success: true, version: '8.0.31' })
             } as any);
             vi.mocked(resolveAdapterConfig).mockResolvedValue({} as any);
-            prismaMock.adapterConfig.update.mockResolvedValue({} as any);
+            prismaMock.adapterConfig.findUnique.mockResolvedValue({ name: 'TestDB', metadata: '{}' } as any);
+            prismaMock.adapterConfig.updateMany.mockResolvedValue({ count: 1 } as any);
 
             await service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS);
 
-            expect(prismaMock.adapterConfig.update).toHaveBeenCalledWith(expect.objectContaining({
+            expect(prismaMock.adapterConfig.updateMany).toHaveBeenCalledWith(expect.objectContaining({
                 data: expect.objectContaining({ metadata: expect.stringContaining('8.0.31') }),
             }));
+        });
+
+        it('keeps the SSH host key the test of a source pinned while it ran', async () => {
+            const { registry: reg } = await import('@/lib/core/registry');
+            const { resolveAdapterConfig } = await import('@/lib/adapters/config-resolver');
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: 'src1', name: 'TestDB', adapterId: 'mysql', type: 'database', metadata: '{}' }
+            ] as any);
+            vi.mocked(reg.get).mockReturnValue({
+                test: vi.fn().mockResolvedValue({ success: true, version: '8.0.31' })
+            } as any);
+            vi.mocked(resolveAdapterConfig).mockResolvedValue({} as any);
+            // The first login of the test pinned the key, after the task read its sources.
+            const pinned = JSON.stringify({ sshHostKeys: [{ host: 'db', port: 22, type: 'ssh-ed25519', key: 'a2V5' }] });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue({ name: 'TestDB', metadata: pinned } as any);
+            prismaMock.adapterConfig.updateMany.mockResolvedValue({ count: 1 } as any);
+
+            await service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS);
+
+            const written = JSON.parse((prismaMock.adapterConfig.updateMany.mock.calls[0][0] as any).data.metadata);
+            expect(written).toMatchObject({ engineVersion: '8.0.31', sshHostKeys: [expect.objectContaining({ key: 'a2V5' })] });
+            expect(prismaMock.adapterConfig.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'src1', metadata: pinned } }));
         });
 
         it('skips source when adapter has no test() method for UPDATE_DB_VERSIONS', async () => {
@@ -361,7 +389,7 @@ describe('SystemTaskService', () => {
             vi.mocked(reg.get).mockReturnValue({ /* no test fn */ } as any);
 
             await expect(service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS)).resolves.toBeUndefined();
-            expect(prismaMock.adapterConfig.update).not.toHaveBeenCalled();
+            expect(prismaMock.adapterConfig.updateMany).not.toHaveBeenCalled();
         });
 
         it('skips source when adapter is not found for UPDATE_DB_VERSIONS', async () => {
@@ -384,7 +412,7 @@ describe('SystemTaskService', () => {
             vi.mocked(resolveAdapterConfig).mockRejectedValue(new Error('decrypt error'));
 
             await expect(service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS)).resolves.toBeUndefined();
-            expect(prismaMock.adapterConfig.update).not.toHaveBeenCalled();
+            expect(prismaMock.adapterConfig.updateMany).not.toHaveBeenCalled();
         });
 
         it('calls notifyUpdateAvailable when update is available', async () => {
@@ -484,11 +512,12 @@ describe('SystemTaskService', () => {
                 test: vi.fn().mockResolvedValue({ success: true }) // no version field
             } as any);
             vi.mocked(resolveAdapterConfig).mockResolvedValue({} as any);
-            prismaMock.adapterConfig.update.mockResolvedValue({} as any);
+            prismaMock.adapterConfig.findUnique.mockResolvedValue({ name: 'TestDB', metadata: '{}' } as any);
+            prismaMock.adapterConfig.updateMany.mockResolvedValue({ count: 1 } as any);
 
             await service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS);
 
-            expect(prismaMock.adapterConfig.update).toHaveBeenCalledWith(expect.objectContaining({
+            expect(prismaMock.adapterConfig.updateMany).toHaveBeenCalledWith(expect.objectContaining({
                 data: expect.objectContaining({ metadata: expect.stringContaining('Unreachable') }),
             }));
         });
@@ -530,6 +559,33 @@ describe('SystemTaskService', () => {
             it('runs once a month and is on by default', () => {
                 expect(DEFAULT_TASK_CONFIG[SYSTEM_TASKS.OPTIMIZE_DATABASE]).toMatchObject({ interval: '0 5 1 * *', enabled: true, runOnStartup: false });
             });
+        });
+
+        it('skips a start while the same task still runs, like a health check that takes longer than its minute', async () => {
+            const { healthCheckService } = await import('@/services/system/healthcheck-service');
+            vi.mocked(healthCheckService.performHealthCheck).mockClear();
+            let finish: () => void = () => {};
+            vi.mocked(healthCheckService.performHealthCheck).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+
+            const first = service.runTask(SYSTEM_TASKS.HEALTH_CHECK);
+            // The schedule starts it again while the first run is still checking.
+            await service.runTask(SYSTEM_TASKS.HEALTH_CHECK);
+            await vi.waitFor(() => expect(healthCheckService.performHealthCheck).toHaveBeenCalledTimes(1));
+            expect(service.isRunning(SYSTEM_TASKS.HEALTH_CHECK)).toBe(true);
+
+            finish();
+            await first;
+            expect(service.isRunning(SYSTEM_TASKS.HEALTH_CHECK)).toBe(false);
+            await service.runTask(SYSTEM_TASKS.HEALTH_CHECK);
+            expect(healthCheckService.performHealthCheck).toHaveBeenCalledTimes(2);
+        });
+
+        it('lets the task start again when it could not record its start', async () => {
+            prismaMock.systemSetting.upsert.mockRejectedValueOnce(new Error('database is locked'));
+
+            await expect(service.runTask(SYSTEM_TASKS.HEALTH_CHECK)).rejects.toThrow('database is locked');
+
+            expect(service.isRunning(SYSTEM_TASKS.HEALTH_CHECK)).toBe(false);
         });
 
         it('records lastRunAt timestamp when runTask is called', async () => {
@@ -642,7 +698,7 @@ describe('SystemTaskService', () => {
             await expect(service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS)).resolves.toBeUndefined();
         });
 
-        it('logs when no SuperAdmin group is found during SYNC_PERMISSIONS', async () => {
+        it('runs without error when no full access group exists during SYNC_PERMISSIONS', async () => {
             prismaMock.group.updateMany.mockResolvedValue({ count: 0 });
 
             await service.runTask(SYSTEM_TASKS.SYNC_PERMISSIONS);
@@ -776,12 +832,13 @@ describe('SystemTaskService', () => {
                 test: vi.fn().mockResolvedValue({ success: true, version: '7.2.0' })
             } as any);
             vi.mocked(resolveAdapterConfig).mockResolvedValue({} as any);
-            prismaMock.adapterConfig.update.mockResolvedValue({} as any);
+            prismaMock.adapterConfig.findUnique.mockResolvedValue({ name: 'Redis', metadata: '{}' } as any);
+            prismaMock.adapterConfig.updateMany.mockResolvedValue({ count: 1 } as any);
             vi.mocked(recordVersionIfChanged).mockRejectedValue(new Error('db down'));
 
             await expect(service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS)).resolves.toBeUndefined();
-            // adapterConfig.update for the metadata version write still happened
-            expect(prismaMock.adapterConfig.update).toHaveBeenCalled();
+            // The metadata version write still happened
+            expect(prismaMock.adapterConfig.updateMany).toHaveBeenCalled();
         });
     });
 });

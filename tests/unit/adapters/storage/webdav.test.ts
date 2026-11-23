@@ -1,4 +1,7 @@
+import { Readable } from "stream";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { FileTooLargeError, SIDECAR_READ_LIMIT } from "@/lib/adapters/storage/common/read-limit";
+import { ListingTooLargeError } from "@/lib/adapters/storage/common/listing-limits";
 import { WebDAVAdapter } from "@/lib/adapters/storage/webdav";
 
 // --- Hoisted mocks ---
@@ -19,6 +22,11 @@ const { mockClient, mockPipeline } = vi.hoisted(() => ({
 
 vi.mock("webdav", () => ({
     createClient: vi.fn(() => mockClient),
+}));
+// The capped PROPFIND has its own suite, webdav-listing.test.ts. Here it answers what the
+// client lists, so these tests keep speaking in entries rather than XML.
+vi.mock("@/lib/adapters/storage/webdav-listing", () => ({
+    listDavFolder: (client: { getDirectoryContents: (dir: string) => unknown }, _url: string, dir: string) => client.getDirectoryContents(dir),
 }));
 
 vi.mock("fs/promises", () => {
@@ -151,19 +159,34 @@ describe("WebDAVAdapter", () => {
 
     describe("read()", () => {
         it("returns file content as string", async () => {
-            mockClient.getFileContents.mockResolvedValue('{"checksum":"abc"}');
+            mockClient.createReadStream.mockReturnValue(Readable.from([Buffer.from('{"checksum":"abc"}')]));
 
             const result = await WebDAVAdapter.read!(config, "Job/backup.sql.meta.json");
 
             expect(result).toBe('{"checksum":"abc"}');
         });
 
-        it("returns null when getFileContents throws", async () => {
-            mockClient.getFileContents.mockRejectedValue(new Error("404 Not Found"));
+        it("returns null when the server answers an error", async () => {
+            mockClient.createReadStream.mockReturnValue(new Readable({ read() { this.destroy(new Error("404 Not Found")); } }));
 
             const result = await WebDAVAdapter.read!(config, "Job/missing.meta.json");
 
             expect(result).toBeNull();
+        });
+
+        it("stops a body past the limit of the read with an error of its own", async () => {
+            let pushed = 0;
+            const endless = new Readable({
+                read() {
+                    pushed++;
+                    this.push(Buffer.alloc(1024 * 1024));
+                },
+            });
+            mockClient.createReadStream.mockReturnValue(endless);
+
+            await expect(WebDAVAdapter.read!(config, "Job/huge.meta.json")).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(pushed * 1024 * 1024).toBeLessThanOrEqual(SIDECAR_READ_LIMIT + 2 * 1024 * 1024);
+            expect(endless.destroyed).toBe(true);
         });
     });
 
@@ -229,6 +252,33 @@ describe("WebDAVAdapter", () => {
             mockClient.getDirectoryContents.mockRejectedValue(Object.assign(new Error("Invalid response: 404 Not Found"), { status: 404 }));
 
             await expect(WebDAVAdapter.list(config, "Job")).resolves.toEqual([]);
+        });
+    });
+
+    describe("list() of a server a customer owns", () => {
+        const folder = (filename: string) => ({ type: "directory", filename, basename: filename.split("/").pop(), size: 0, lastmod: "2026-01-01" });
+        const file = (filename: string) => ({ type: "file", filename, basename: filename.split("/").pop(), size: 1, lastmod: "2026-01-01" });
+
+        it("ends on a folder that lists itself or one above it as a child", async () => {
+            // Every folder answers with itself, its parent, the root and one real subfolder.
+            mockClient.getDirectoryContents.mockImplementation(async (dir: string) => {
+                if (dir === "/backups/Job/sub" || dir === "/backups/Job/sub/") return [folder("/backups/Job/sub/"), folder("/backups/Job"), folder("/"), file("/backups/Job/sub/b.sql")];
+                return [folder("/backups/Job/"), folder("/backups"), folder("/backups/Job/sub"), file("/backups/Job/a.sql")];
+            });
+
+            const result = await WebDAVAdapter.list(config, "Job");
+
+            expect(result.map((f) => f.path).sort()).toEqual(["Job/a.sql", "Job/sub/b.sql"]);
+            expect(mockClient.getDirectoryContents).toHaveBeenCalledTimes(2);
+        });
+
+        it("ends an endless tree of folders as it walks, since folders pass the guard too", async () => {
+            // Every folder holds one more folder and never a file, so only a guard that counts and
+            // measures folders stops the walk.
+            mockClient.getDirectoryContents.mockImplementation(async (dir: string) => [folder(`${dir.replace(/\/$/, "")}/${"x".repeat(8000)}`)]);
+
+            await expect(WebDAVAdapter.list(config, "Job")).rejects.toBeInstanceOf(ListingTooLargeError);
+            expect(mockClient.getDirectoryContents.mock.calls.length).toBeLessThanOrEqual(5);
         });
     });
 

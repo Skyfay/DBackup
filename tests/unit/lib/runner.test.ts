@@ -4,6 +4,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/prisma', () => ({
     default: {
+        // The tenant filter of the real client finds only the jobs of the tenant that runs.
+        job: {
+            findFirst: vi.fn(),
+        },
         execution: {
             create: vi.fn(),
             updateMany: vi.fn(),
@@ -33,7 +37,8 @@ vi.mock('@/lib/logging/logger', () => ({
     },
 }));
 
-vi.mock('@/lib/logging/errors', () => ({
+vi.mock('@/lib/logging/errors', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@/lib/logging/errors')>()),
     wrapError: vi.fn((e: unknown) => (e instanceof Error ? e : new Error(String(e)))),
 }));
 
@@ -80,6 +85,7 @@ import { stepInitialize } from '@/lib/runner/steps/01-initialize';
 import { stepExecuteDump } from '@/lib/runner/steps/02-dump';
 import { stepCleanup, stepFinalize } from '@/lib/runner/steps/04-completion';
 import { runJob, performExecution } from '@/lib/runner';
+import { NotFoundError } from '@/lib/logging/errors';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -112,6 +118,16 @@ const mockExecution = {
 describe('runJob()', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(prisma.job.findFirst).mockResolvedValue({ id: 'job-1' } as any);
+    });
+
+    it('refuses a job the tenant filter does not find, one of another tenant included, and queues nothing', async () => {
+        vi.mocked(prisma.job.findFirst).mockResolvedValue(null);
+
+        await expect(runJob('job-of-another-tenant')).rejects.toBeInstanceOf(NotFoundError);
+        expect(prisma.job.findFirst).toHaveBeenCalledWith({ where: { id: 'job-of-another-tenant' }, select: { id: true } });
+        expect(prisma.execution.create).not.toHaveBeenCalled();
+        expect(processQueue).not.toHaveBeenCalled();
     });
 
     it('creates an execution and returns executionId', async () => {

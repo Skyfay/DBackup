@@ -16,8 +16,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn(async () => mocks.context()),
-    checkPermissionWithContext: vi.fn((ctx: { permissions: string[]; isSuperAdmin: boolean }, permission: string) => {
-        if (!ctx.isSuperAdmin && !ctx.permissions.includes(permission)) throw new PermissionError(permission);
+    checkPermissionWithContext: vi.fn((ctx: { permissions: string[]; isPlatformAdmin: boolean }, permission: string) => {
+        if (!ctx.isPlatformAdmin && !ctx.permissions.includes(permission)) throw new PermissionError(permission);
     }),
 }));
 vi.mock("@/services/config/restore-flow", () => ({
@@ -27,7 +27,7 @@ vi.mock("@/services/config/restore-flow", () => ({
     hasNoAccountYet: () => mocks.noAccountYet(),
     keyOverride: (keyHex?: string, profileId?: string) => (keyHex ? { rawKeyHex: keyHex } : profileId ? { profileId } : undefined),
 }));
-vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.audit(...args) } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
@@ -39,9 +39,11 @@ const setup = await import("@/app/api/setup/restore/route");
 const setupApply = await import("@/app/api/setup/restore/apply/route");
 
 const BASE = "https://dbackup.test/api";
-const SUPER_ADMIN = { userId: "root", permissions: [], isSuperAdmin: true, authMethod: "session" };
-const SETTINGS_ADMIN = { userId: "lena", permissions: ["settings:write"], isSuperAdmin: false, authMethod: "session" };
-const API_KEY = { userId: "root", permissions: ["settings:write"], isSuperAdmin: false, authMethod: "apikey", apiKeyId: "key-1" };
+const PLATFORM_ADMIN = { userId: "root", permissions: [], isPlatformAdmin: true, authMethod: "session", tenantId: "default" };
+/** Holds the settings by the full access role in the home tenant, but is no platform admin. */
+const SETTINGS_ADMIN = { userId: "lena", permissions: ["settings:write"], isPlatformAdmin: false, authMethod: "session", tenantId: "default" };
+/** A key of a platform admin never acts as one. */
+const API_KEY = { userId: "root", permissions: ["settings:write"], isPlatformAdmin: false, authMethod: "apikey", apiKeyId: "key-1", tenantId: "default" };
 const PREVIEW = { kind: "database", version: "3.4.0", createdAt: "2026-09-29T03:00:00.000Z", counts: { connections: 3, jobs: 2, templates: 5, users: 2, runs: 0 }, otherKeys: false };
 
 function form(fields: Record<string, string> = {}) {
@@ -62,8 +64,9 @@ beforeEach(() => {
 });
 
 describe("the restore routes in Settings", () => {
-    it("are for a signed-in SuperAdmin only, never an API key, since a restore could make anyone a SuperAdmin", async () => {
-        for (const ctx of [SETTINGS_ADMIN, API_KEY]) {
+    it("are for a signed-in platform admin only, never an API key, since a restore could make anyone a platform admin", async () => {
+        // A key never acts as a platform admin, and the routes refuse it even if one claimed to.
+        for (const ctx of [SETTINGS_ADMIN, API_KEY, { ...API_KEY, isPlatformAdmin: true }]) {
             mocks.context.mockReturnValue(ctx);
             expect((await upload.POST(postForm("/settings/config-backup/restore", form()))).status).toBe(403);
             expect((await apply.POST(postJson("/settings/config-backup/restore/apply", { token: "t-1" }))).status).toBe(403);
@@ -78,12 +81,16 @@ describe("the restore routes in Settings", () => {
         mocks.context.mockReturnValue(null);
         expect((await upload.POST(postForm("/settings/config-backup/restore", form()))).status).toBe(401);
 
-        mocks.context.mockReturnValue({ userId: "max", permissions: [], isSuperAdmin: false, authMethod: "session" });
-        await expect(apply.POST(postJson("/settings/config-backup/restore/apply", { token: "t-1" }))).rejects.toBeInstanceOf(PermissionError);
+        // A refused permission answers 403, it used to escape as a 500.
+        mocks.context.mockReturnValue({ userId: "max", permissions: [], isPlatformAdmin: false, authMethod: "session", tenantId: "default" });
+        expect((await apply.POST(postJson("/settings/config-backup/restore/apply", { token: "t-1" }))).status).toBe(403);
+        expect((await upload.POST(postForm("/settings/config-backup/restore", form()))).status).toBe(403);
+        expect((await destination.POST(postJson("/settings/config-backup/restore/destination", { destinationId: "nas", file: "f" }))).status).toBe(403);
+        expect(mocks.apply).not.toHaveBeenCalled();
     });
 
     it("refuse an upload the middleware would cut off, before reading it", async () => {
-        mocks.context.mockReturnValue(SUPER_ADMIN);
+        mocks.context.mockReturnValue(PLATFORM_ADMIN);
         const request = new NextRequest(`${BASE}/settings/config-backup/restore`, { method: "POST", body: "x", headers: { "content-length": String(CONFIG_UPLOAD_MAX_BYTES + 1) } });
 
         const response = await upload.POST(request);
@@ -94,7 +101,7 @@ describe("the restore routes in Settings", () => {
     });
 
     it("check an upload with the key from the recovery dialog and answer with what it holds", async () => {
-        mocks.context.mockReturnValue(SUPER_ADMIN);
+        mocks.context.mockReturnValue(PLATFORM_ADMIN);
 
         const response = await upload.POST(postForm("/settings/config-backup/restore", form({ encryptionKeyHex: "ab12" })));
 
@@ -103,7 +110,7 @@ describe("the restore routes in Settings", () => {
     });
 
     it("ask for the key when the file needs one nobody gave", async () => {
-        mocks.context.mockReturnValue(SUPER_ADMIN);
+        mocks.context.mockReturnValue(PLATFORM_ADMIN);
         mocks.checkUpload.mockRejectedValue(new EncryptionKeyRequiredError("No key opens this file", "profile-1"));
 
         const response = await upload.POST(postForm("/settings/config-backup/restore", form()));
@@ -113,7 +120,7 @@ describe("the restore routes in Settings", () => {
     });
 
     it("answer a file that is no backup with its reason", async () => {
-        mocks.context.mockReturnValue(SUPER_ADMIN);
+        mocks.context.mockReturnValue(PLATFORM_ADMIN);
         mocks.checkUpload.mockRejectedValue(new ValidationError("The backup comes from a newer DBackup, v9.0.0. Update this one first, then restore it."));
 
         const response = await upload.POST(postForm("/settings/config-backup/restore", form()));
@@ -123,7 +130,7 @@ describe("the restore routes in Settings", () => {
     });
 
     it("check a backup at a destination on the server, with a key of the Vault", async () => {
-        mocks.context.mockReturnValue(SUPER_ADMIN);
+        mocks.context.mockReturnValue(PLATFORM_ADMIN);
 
         const response = await destination.POST(postJson("/settings/config-backup/restore/destination", { destinationId: "nas", file: "config-backups/config_backup.db.gz.enc", profileId: "key-1" }));
 
@@ -131,18 +138,31 @@ describe("the restore routes in Settings", () => {
         expect(mocks.checkStored).toHaveBeenCalledWith("nas", "config-backups/config_backup.db.gz.enc", { profileId: "key-1" }, { userId: "root" });
     });
 
+    it.each(["../other/config_backup.db.gz.enc", "/etc/config_backup.db.gz.enc", "config-backups/%2e%2e/%2e%2e/x.enc"])(
+        "answer 400 for the path %s that leaves the destination, before anything is read",
+        async (file) => {
+            mocks.context.mockReturnValue(PLATFORM_ADMIN);
+
+            const response = await destination.POST(postJson("/settings/config-backup/restore/destination", { destinationId: "nas", file, profileId: "key-1" }));
+
+            expect(response.status).toBe(400);
+            expect(mocks.checkStored).not.toHaveBeenCalled();
+        }
+    );
+
     it("restore a checked copy, write the audit log and say DBackup restarts", async () => {
-        mocks.context.mockReturnValue(SUPER_ADMIN);
+        mocks.context.mockReturnValue({ ...PLATFORM_ADMIN, tenantId: "acme" });
 
         const response = await apply.POST(postJson("/settings/config-backup/restore/apply", { token: "t-1" }));
 
         expect(await response.json()).toEqual({ success: true, data: { restarting: true } });
         expect(mocks.apply).toHaveBeenCalledWith("t-1", { userId: "root" });
-        expect(mocks.audit).toHaveBeenCalledWith(SUPER_ADMIN, "RESTORE", "SYSTEM", { action: "config_restore", file: "config_backup.db.gz.enc", kind: "database" });
+        // Into the log of the home tenant, whichever tenant the admin has open.
+        expect(mocks.audit).toHaveBeenCalledWith("root", "RESTORE", "SYSTEM", { action: "config_restore", file: "config_backup.db.gz.enc", kind: "database" }, undefined, { tenantId: "default", apiKeyId: null });
     });
 
     it("hand back what a file of an older version could not bring back", async () => {
-        mocks.context.mockReturnValue(SUPER_ADMIN);
+        mocks.context.mockReturnValue(PLATFORM_ADMIN);
         mocks.apply.mockResolvedValue({ kind: "json", fileName: "config_backup.json.gz.enc", notes: ["1 job is paused"] });
 
         const response = await apply.POST(postJson("/settings/config-backup/restore/apply", { token: "t-1" }));

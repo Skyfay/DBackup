@@ -13,17 +13,20 @@ export interface TabAttention {
     note: string;
 }
 
-/** "NAS", "NAS and S3", "NAS and 2 more". */
-export function namesFor(names: string[]): string {
-    if (names.length <= 1) return names[0] ?? "";
-    if (names.length === 2) return `${names[0]} and ${names[1]}`;
-    return `${names[0]} and ${names.length - 1} more`;
+/**
+ * "NAS", "NAS and S3", "NAS and 2 more". `total` counts them when only the first names are at hand,
+ * like the ones a paged list gets from the server.
+ */
+export function namesFor(names: string[], total = names.length): string {
+    if (total <= 1) return names[0] ?? "";
+    if (total === 2 && names.length >= 2) return `${names[0]} and ${names[1]}`;
+    return `${names[0]} and ${total - 1} more`;
 }
 
 /** An attention naming who it is about, with the verb for one or for more, or none without names. */
-export function attentionOf(tone: AttentionTone, names: string[], one: string, many: string): TabAttention | undefined {
-    if (names.length === 0) return undefined;
-    return { tone, note: `${namesFor(names)} ${names.length === 1 ? one : many}` };
+export function attentionOf(tone: AttentionTone, names: string[], one: string, many: string, total = names.length): TabAttention | undefined {
+    if (total === 0 || names.length === 0) return undefined;
+    return { tone, note: `${namesFor(names, total)} ${total === 1 ? one : many}` };
 }
 
 /** Several reasons of one list as one dot: red when any is, their notes as sentences, the red ones first. */

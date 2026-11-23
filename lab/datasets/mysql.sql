@@ -44,6 +44,11 @@ CREATE PROCEDURE mark_paid(IN order_id INT)
 BEGIN
     UPDATE orders SET paid = TRUE WHERE id = order_id;
 END //
+CREATE FUNCTION shipping_cost(weight_grams INT) RETURNS DECIMAL(10,2) DETERMINISTIC NO SQL
+    COMMENT 'Versand für ein Gewicht in Gramm'
+BEGIN
+    RETURN 4.90 + weight_grams / 1000;
+END //
 CREATE TRIGGER orders_amount_check BEFORE INSERT ON orders FOR EACH ROW
 BEGIN
     IF NEW.amount < 0 THEN SET NEW.amount = 0; END IF;

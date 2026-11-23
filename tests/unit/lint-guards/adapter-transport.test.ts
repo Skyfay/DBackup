@@ -106,6 +106,12 @@ const ADAPTER_RULES: Rule[] = [
             "connection-summary.ts":
                 "Not an adapter. It writes the address shown in the connection tables, which names the jump host of an "
                 + "SSH connection, and decides no transport.",
+            "host-local.ts":
+                "Not an adapter. It decides whether a tenant may add a connection that runs on the server DBackup runs on, "
+                + "and decides no transport. The adapter pickers load it in the browser, where the resolvers and ssh2 cannot go.",
+            "dialed-hosts.ts":
+                "Not an adapter. It names the hosts DBackup dials for a config, the SSH host alone in SSH mode, for the "
+                + "local network check of a tenant, and decides no transport. It reads the fields the resolvers read.",
         },
         reason: "Transport decisions belong in a TransportResolver, not in adapter bodies.",
     },
@@ -118,7 +124,8 @@ const ADAPTER_RULES: Rule[] = [
                 "tunnel so SSH mode cannot use the driver. A real capability difference, not a transport fork.",
             "database/mysql/args.ts":
                 "MySQL only forces TCP in direct mode. Over SSH the client is local to the server and the " +
-                "socket path is the documented setup (docs/user-guide/sources/mysql.md).",
+                "socket path is the documented setup (docs/user-guide/sources/mysql.md). The same check makes a " +
+                "restore fail closed when the client beside DBackup cannot be locked down (`runsBesideDBackup`).",
         },
         reason: "A kind check is a transport fork wearing a new hat. Use a host primitive instead.",
     },

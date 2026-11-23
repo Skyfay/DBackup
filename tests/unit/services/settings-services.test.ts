@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
 import { ValidationError } from "@/lib/logging/errors";
+import { explicitScope, runAsTenant } from "@/lib/tenant/context";
 
 const mocks = vi.hoisted(() => ({
     emailLoginDisabled: vi.fn(),
@@ -97,6 +98,23 @@ describe("configuration backup settings", () => {
 
     it("refuses a schedule the scheduler cannot read", async () => {
         await expect(saveConfigBackupSettings({ ...CONFIG, schedule: "at three" })).rejects.toMatchObject({ field: "schedule" });
+    });
+
+    it("looks for its destination and key in the home tenant, whichever tenant the admin works in", async () => {
+        // The file holds the key of every login, so it never goes to a customer's destination or key.
+        const scopes: unknown[] = [];
+        prismaMock.adapterConfig.findUnique.mockImplementation((async () => {
+            scopes.push(explicitScope());
+            return { type: "storage", storageRole: "DESTINATION" };
+        }) as never);
+        prismaMock.encryptionProfile.findUnique.mockImplementation((async () => {
+            scopes.push(explicitScope());
+            return { id: "key-1" };
+        }) as never);
+
+        await runAsTenant("acme", () => saveConfigBackupSettings(CONFIG));
+
+        expect(scopes).toEqual([{ kind: "tenant", tenantId: "default" }, { kind: "tenant", tenantId: "default" }]);
     });
 
     it("saves its switch and schedule through the system task that follows them", async () => {

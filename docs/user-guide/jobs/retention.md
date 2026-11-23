@@ -213,7 +213,7 @@ Retention is skipped for any destination where the upload failed. This prevents 
 
 ### Which Backups Count
 
-Retention only removes backups the job made itself, known by the job id in their `.meta.json` sidecar. A job named like a deleted one writes into the same folder, and the backups the deleted job left there stay until you delete them in the [Backups](/user-guide/features/backups#backups-of-a-deleted-job). The run log names them. A backup without a sidecar counts as the job's own, like before DBackup recorded the job.
+Retention only removes backups the job made itself, known by the job id in their `.meta.json` sidecar. A job named like a deleted one writes into the same folder, and the backups the deleted job left there stay until you delete them in the [Backups](/user-guide/features/backups#backups-of-a-deleted-job). The run log names them. A file without a sidecar in a folder whose other backups have one is not counted and not deleted, so a file restored or copied there never pushes a backup out. The run log says how many such files it left alone. A chain folder that holds one is kept whole.
 
 A renamed job writes into a folder with its new name. Retention follows it into the folder of its old name and judges the backups there together with the new ones, so the policy keeps covering every backup the job made. DBackup finds those folders in its list of the destination, and only backups whose sidecar names the job count there. The run log says how many it found in each folder.
 

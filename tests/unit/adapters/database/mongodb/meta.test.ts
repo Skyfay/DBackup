@@ -105,6 +105,24 @@ describe("ShellMongoMeta", () => {
         expect(new ShellMongoMeta(config as never, shellHost("")).checkWritable()).toBeNull();
     });
 
+    it("keeps the password out of the argv of mongosh, in a file of mode 0600 the script loads", async () => {
+        const host = shellHost('["shop"]');
+        await new ShellMongoMeta(config as never, host).listDatabaseNames();
+        const versionHost = createFakeHost({ kind: "ssh", onExec: () => ({ stdout: "7.0.5\n" }) });
+        await new ShellMongoMeta(config as never, versionHost).serverVersion();
+
+        for (const fake of [host, versionHost]) {
+            const argv = fake.calls.exec[0];
+            expect(argv.join(" ")).not.toContain("secret");
+            expect(argv).toContain("--nodb");
+            const [file] = fake.calls.tempFiles;
+            expect(file.mode).toBe(0o600);
+            expect(file.content).toBe('db = connect("mongodb://root:secret@mongo.internal:27017/?authSource=admin&directConnection=true");\n');
+            expect(scriptOf(argv).startsWith(`load(${JSON.stringify(file.path)});`)).toBe(true);
+            expect(fake.calls.removed).toContain(file.path);
+        }
+    });
+
     it("resolves the mongosh binary once and reuses it", async () => {
         const host = shellHost("[]");
         const meta = new ShellMongoMeta(config as never, host);

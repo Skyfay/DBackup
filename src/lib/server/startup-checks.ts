@@ -103,7 +103,7 @@ export async function validateOidcAutoRedirect(): Promise<void> {
     try {
         const provider = await prisma.ssoProvider.findUnique({
             where: { providerId },
-            select: { providerId: true, name: true, enabled: true },
+            select: { providerId: true, name: true, enabled: true, tenantId: true },
         });
 
         if (!provider) {
@@ -119,6 +119,17 @@ export async function validateOidcAutoRedirect(): Promise<void> {
             log.error(
                 "OIDC_AUTO_REDIRECT names a disabled SSO provider - automatic redirect is disabled. " +
                 "Enable the provider under Users > SSO / OIDC or clear the variable.",
+                { providerId },
+            );
+            return;
+        }
+
+        // The login page belongs to the platform. A provider of a tenant is never a button there,
+        // so it is no target of the redirect either.
+        if (provider.tenantId) {
+            log.error(
+                "OIDC_AUTO_REDIRECT names a provider of a tenant - automatic redirect is disabled. " +
+                "Only a provider of the platform can be the target, a tenant's provider is reached by the email domain.",
                 { providerId },
             );
             return;

@@ -7,30 +7,36 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import type { SaveResult } from "@/lib/settings/save-part";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { PLATFORM_LOG, type SaveResult } from "@/services/system/settings-save";
 import type { SystemNotificationConfig } from "@/lib/notifications/types";
 import { auditService } from "@/services/audit-service";
 import { notificationSettingsChanges } from "@/services/notifications/notification-settings-audit";
 import { MAX_REMINDER_HOURS, saveDefaultChannels, saveEventSettings, sendEventTest } from "@/services/notifications/notification-settings-service";
 import { SETTINGS_AREAS } from "@/services/system/settings-audit";
+import { getEventDefinition } from "@/lib/notifications/events";
 
 const log = logger.child({ action: "notification-settings" });
 
 const patchSchema = z.object({
     enabled: z.boolean().optional(),
-    channels: z.array(z.string().min(1)).nullable().optional(),
+    channels: z.array(z.string().min(1).max(200)).max(100).nullable().optional(),
     notifyUser: z.enum(["none", "also", "only"]).optional(),
     // 0 turns the reminder off, null keeps the default of the event.
     reminderHours: z.number().int().min(0).max(MAX_REMINDER_HOURS).nullable().optional(),
 });
 
-/** Writes what a save changed and answers the part, or hands back why it was refused. */
+/**
+ * Writes what a save changed into the log of the platform and answers the part, or hands back why
+ * it was refused. The channels are connections of the home tenant, so their names are read there.
+ */
 async function saved(userId: string, save: () => Promise<{ before: SystemNotificationConfig; after: SystemNotificationConfig }>): Promise<SaveResult> {
     try {
         const { before, after } = await save();
-        const changes = await notificationSettingsChanges(before, after);
+        const changes = await runAsTenant(HOME_TENANT_ID, () => notificationSettingsChanges(before, after));
         if (changes.length > 0) {
-            await auditService.log(userId, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.NOTIFICATIONS, changes });
+            await auditService.log(userId, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.NOTIFICATIONS, changes }, undefined, PLATFORM_LOG);
         }
         revalidatePath("/dashboard/settings");
         return { success: true };
@@ -45,7 +51,7 @@ async function saved(userId: string, save: () => Promise<{ before: SystemNotific
 export async function saveNotificationEventsAction(eventIds: string[], patch: z.infer<typeof patchSchema>): Promise<SaveResult> {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
-    const ids = z.array(z.string().min(1)).min(1).max(100).safeParse(eventIds);
+    const ids = z.array(z.string().min(1).max(100)).min(1).max(100).safeParse(eventIds);
     const parsed = patchSchema.safeParse(patch);
     if (!ids.success) return { success: false, error: "Pick at least one event" };
     if (!parsed.success) return { success: false, error: parsed.error.issues[0].message, field: String(parsed.error.issues[0].path[0] ?? "") };
@@ -56,19 +62,22 @@ export async function saveNotificationEventsAction(eventIds: string[], patch: z.
 export async function saveDefaultChannelsAction(channelIds: string[]): Promise<SaveResult> {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
-    const parsed = z.array(z.string().min(1)).max(100).safeParse(channelIds);
+    const parsed = z.array(z.string().min(1).max(200)).max(100).safeParse(channelIds);
     if (!parsed.success) return { success: false, error: "Invalid channels" };
     return saved(user.id, () => saveDefaultChannels(parsed.data));
 }
 
 /** Sends an example of an event to where it goes now, and says how many channels took it. */
 export async function sendTestNotificationAction(eventId: string): Promise<{ success: boolean; message?: string; error?: string }> {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
-    const parsed = z.string().min(1).safeParse(eventId);
+    const parsed = z.string().min(1).max(100).safeParse(eventId);
     if (!parsed.success) return { success: false, error: "Unknown notification event" };
     try {
         const { sent, failed } = await sendEventTest(parsed.data);
+        await auditService.log(user.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, {
+            name: getEventDefinition(parsed.data)?.name ?? parsed.data, action: "notification_test", event: parsed.data, sent, failed,
+        }, undefined, PLATFORM_LOG);
         const channels = (count: number) => (count === 1 ? "1 channel" : `${count} channels`);
         return { success: true, message: failed > 0 ? `Sent to ${channels(sent)}, ${channels(failed)} did not take it` : `Sent to ${channels(sent)}` };
     } catch (error: unknown) {

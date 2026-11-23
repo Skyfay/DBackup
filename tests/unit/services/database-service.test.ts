@@ -43,6 +43,11 @@ vi.mock("@/lib/temp-dir", () => ({
     getTempDir: () => "/tmp",
     getTempPath: (name: string) => `/tmp/${name}`,
 }));
+const restrictFile = vi.fn();
+vi.mock("@/lib/private-temp-dir", () => ({
+    privateTempPath: async (name: string) => `/tmp/dbackup-private-abc/${name}`,
+    restrictFile: (...a: unknown[]) => restrictFile(...a),
+}));
 
 const processQueue = vi.fn();
 vi.mock("@/lib/execution/queue-manager", () => ({ processQueue: (...a: unknown[]) => processQueue(...a) }));
@@ -52,6 +57,7 @@ vi.mock("@/lib/logging/logger", () => ({
 }));
 
 const { getDatabaseInfo, vacuumDatabase, createDatabaseSnapshot } = await import("@/services/system/database-service");
+const { explicitScope } = await import("@/lib/tenant/context");
 const { beginDatabaseMaintenance, endDatabaseMaintenance, isDatabaseMaintenanceActive, DATABASE_BUSY } = await import(
     "@/lib/server/database-maintenance"
 );
@@ -182,14 +188,16 @@ describe("Database service", () => {
     });
 
     describe("snapshot for download", () => {
-        it("writes a consistent copy to a temp file with VACUUM INTO", async () => {
+        it("writes a consistent copy to a private temp file with VACUUM INTO", async () => {
             executeRaw.mockResolvedValue(0);
 
             const snapshot = await createDatabaseSnapshot();
 
             const [, target] = executeRaw.mock.calls[0];
-            expect(target).toMatch(/^\/tmp\/dbackup-database-\d+-[0-9a-f-]+\.db$/);
+            expect(target).toMatch(/^\/tmp\/dbackup-private-abc\/dbackup-database-\d+-[0-9a-f-]+\.db$/);
             expect(snapshot.tempFile).toBe(target);
+            // The copy holds every secret of the instance, so only DBackup reads it.
+            expect(restrictFile).toHaveBeenCalledWith(target);
             expect(snapshot.sizeBytes).toBe(600 * PAGE_SIZE);
             expect(snapshot.fileName).toMatch(/^dbackup-database_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.db$/);
             expect(isDatabaseMaintenanceActive()).toBe(false);
@@ -209,6 +217,16 @@ describe("Database service", () => {
 
             await expect(createDatabaseSnapshot()).rejects.toMatchObject({ code: DATABASE_BUSY, message: expect.stringMatching(/1 run is in progress/) });
             expect(executeRaw).not.toHaveBeenCalled();
+        });
+
+        it("sees the running backup of a customer while the admin works in another tenant", async () => {
+            // A request only counts the runs of its own tenant, the system scope those of every tenant.
+            executionCount.mockImplementation(async () => (explicitScope()?.kind === "system" ? 1 : 0));
+
+            await expect(createDatabaseSnapshot()).rejects.toMatchObject({ code: DATABASE_BUSY });
+            await expect(vacuumDatabase()).rejects.toMatchObject({ code: DATABASE_BUSY });
+            expect(executeRaw).not.toHaveBeenCalled();
+            expect(executeRawUnsafe).not.toHaveBeenCalled();
         });
     });
 });

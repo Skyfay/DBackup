@@ -66,10 +66,13 @@ function setupMinimalImport() {
   prismaMock.group.upsert.mockResolvedValue({} as any);
   prismaMock.group.update.mockResolvedValue({} as any);
   prismaMock.user.findUnique.mockResolvedValue(null);
+  // An account here that a user of the file matches works in the home tenant alone.
+  prismaMock.user.findMany.mockResolvedValue([{ platformRole: null, platformGroupId: null, memberships: [{ tenantId: 'default' }] }] as any);
   prismaMock.user.upsert.mockResolvedValue({} as any);
   prismaMock.user.update.mockResolvedValue({} as any);
   prismaMock.account.upsert.mockResolvedValue({} as any);
   prismaMock.apiKey.upsert.mockResolvedValue({} as any);
+  prismaMock.credentialProfile.findFirst.mockResolvedValue(null);
   prismaMock.credentialProfile.findUnique.mockResolvedValue(null);
   prismaMock.credentialProfile.upsert.mockResolvedValue({} as any);
   prismaMock.credentialProfile.update.mockResolvedValue({} as any);
@@ -98,7 +101,7 @@ describe('import.ts - uncovered branches', () => {
     } as any);
 
     const backup = makeBackup({
-      groups: [{ id: 'g1', name: 'Admin', permissions: [], createdAt: new Date(), updatedAt: new Date() }],
+      groups: [{ id: 'g1', name: 'Admin', permissions: '[]', createdAt: new Date(), updatedAt: new Date() }],
       users: [{ id: 'backup-user-id', email: 'shared@example.com', groupId: null, accounts: [] }],
     });
 
@@ -306,20 +309,25 @@ describe('import.ts - uncovered branches', () => {
     );
   });
 
-  it('merges group, remaps user groupId, and remaps auditLog userId via userIdMap (lines 223-227, 243, 365)', async () => {
-    // Group merge: existing group with same name but different ID
-    prismaMock.group.findUnique.mockResolvedValueOnce({
+  it('merges group, turns the remapped user groupId into a membership in the home tenant, and remaps auditLog userId via userIdMap', async () => {
+    // Group merge: existing group with same name but different ID, found by name in the home
+    // tenant, then whether the id of the file is the group with every permission here (it is no
+    // group here), then the check that the remapped group exists
+    prismaMock.group.findFirst.mockResolvedValueOnce({
       id: 'db-group-id',
       name: 'Admins',
       permissions: [],
     } as any);
+    prismaMock.group.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'db-group-id' } as any);
 
     // User email lookup: existing user with same email but different ID. The auditLog userId
     // needs no lookup, the restore knows the user it just wrote.
     prismaMock.user.findUnique.mockResolvedValueOnce({ id: 'db-user-id', email: 'admin@example.com' } as any);
 
     const backup = makeBackup({
-      groups: [{ id: 'backup-group-id', name: 'Admins', permissions: [], createdAt: new Date(), updatedAt: new Date() }],
+      groups: [{ id: 'backup-group-id', name: 'Admins', permissions: '[]', createdAt: new Date(), updatedAt: new Date() }],
       users: [{
         id: 'backup-user-id',
         email: 'admin@example.com',
@@ -344,13 +352,67 @@ describe('import.ts - uncovered branches', () => {
     expect(prismaMock.group.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'db-group-id' } }),
     );
-    // User was updated with remapped groupId (line 243)
+    // User was merged by email, and the group of the file is no field of the user any more
     expect(prismaMock.user.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'db-user-id' } }),
     );
+    for (const [call] of (prismaMock.user.update as any).mock.calls) expect(call.data).not.toHaveProperty('groupId');
+    // The remapped group became the membership of the merged user in the home tenant
+    expect(prismaMock.tenantMembership.upsert).toHaveBeenCalledWith({
+      where: { userId_tenantId: { userId: 'db-user-id', tenantId: 'default' } },
+      create: { userId: 'db-user-id', tenantId: 'default', groupId: 'db-group-id' },
+      update: { groupId: 'db-group-id' },
+    });
+    // A member of an ordinary group stays no platform admin
+    expect(prismaMock.user.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ platformRole: 'ADMIN' }) }));
     // AuditLog was upserted with remapped userId (line 365)
     const auditCall = (prismaMock.auditLog.upsert as any).mock.calls[0][0];
     expect(auditCall.create.userId).toBe('db-user-id');
+  });
+
+  it('turns the SuperAdmin group of a file into the full access group here and makes its members platform admins', async () => {
+    prismaMock.group.findFirst.mockResolvedValueOnce({ id: 'db-full-access' } as any);
+    prismaMock.group.findUnique.mockResolvedValueOnce({ id: 'db-full-access' } as any); // the remapped group exists
+
+    const backup = makeBackup({
+      groups: [{ id: 'backup-super', name: 'SuperAdmin', permissions: '[]', createdAt: new Date(), updatedAt: new Date() }],
+      users: [{ id: 'u-root', email: 'root@example.com', groupId: 'backup-super', accounts: [] }],
+    });
+
+    await importConfiguration(backup as any, 'OVERWRITE', { settings: true, adapters: true, jobs: true, users: true, sso: true, profiles: true, statistics: true });
+
+    // No group by the old name is written, the one with every permission takes its place
+    expect(prismaMock.group.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.group.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { fullAccess: true } }));
+    expect(prismaMock.tenantMembership.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: { userId: 'u-root', tenantId: 'default', groupId: 'db-full-access' },
+    }));
+    expect(prismaMock.user.update).toHaveBeenCalledWith({ where: { id: 'u-root' }, data: { platformRole: 'ADMIN', platformGroupId: null } });
+  });
+
+  it('keeps an ordinary group of a file apart from the group with every permission that shares its name', async () => {
+    // The file's Admin finds the full access Admin here by name, no group by its id, then a free
+    // name for itself, then the check that the group its member goes into exists.
+    prismaMock.group.findFirst
+      .mockResolvedValueOnce({ id: 'db-full-access', name: 'Admin', permissions: '[]', fullAccess: true } as any)
+      .mockResolvedValueOnce(null);
+    prismaMock.group.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'db-imported' } as any);
+    prismaMock.group.create.mockResolvedValueOnce({ id: 'db-imported' } as any);
+
+    const backup = makeBackup({
+      groups: [{ id: 'backup-admin', name: 'Admin', permissions: '["jobs:read"]', createdAt: new Date(), updatedAt: new Date() }],
+      users: [{ id: 'u-lena', email: 'lena@example.com', groupId: 'backup-admin', accounts: [] }],
+    });
+
+    const { notes } = await importConfiguration(backup as any, 'OVERWRITE', { settings: true, adapters: true, jobs: true, users: true, sso: true, profiles: true, statistics: true });
+
+    expect(prismaMock.group.update).not.toHaveBeenCalled();
+    expect(prismaMock.group.create).toHaveBeenCalledWith({ data: { name: 'Admin (imported)', permissions: '["jobs:read"]' }, select: { id: true } });
+    expect(prismaMock.tenantMembership.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: { userId: 'u-lena', tenantId: 'default', groupId: 'db-imported' },
+    }));
+    expect(prismaMock.user.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ platformRole: 'ADMIN' }) }));
+    expect(notes).toContain('The group Admin of the file came in as Admin (imported), since Admin holds every permission here.');
   });
 
   it('restores job destinations and job notifications with adapter ID remapping (lines 182-205)', async () => {
@@ -519,6 +581,22 @@ describe('import.ts - uncovered branches', () => {
     expect(prismaMock.execution.upsert).not.toHaveBeenCalled();
   });
 
+  it('gives an SSO provider of an older file the scopes DBackup asks for, and keeps a list set by hand', async () => {
+    const backup = makeBackup({
+      ssoProviders: [
+        { id: 'sso-old', providerId: 'google', clientId: null, clientSecret: null, oidcConfig: JSON.stringify({ clientId: 'g', scope: 'openid email' }), name: 'Google', domain: 'example.com' },
+        { id: 'sso-own', providerId: 'okta', clientId: null, clientSecret: null, oidcConfig: JSON.stringify({ clientId: 'o', scopes: ['openid', 'groups'] }), name: 'Okta', domain: 'okta.com' },
+      ],
+    });
+
+    await importConfiguration(backup as any, 'OVERWRITE');
+
+    const written = prismaMock.ssoProvider.upsert.mock.calls.map(([args]: any) => JSON.parse(args.create.oidcConfig));
+    expect(written[0].scopes).toEqual(['openid', 'profile', 'email']);
+    expect(written[0]).not.toHaveProperty('scope');
+    expect(written[1].scopes).toEqual(['openid', 'groups']);
+  });
+
   it('re-encrypts SSO oidcConfig fields - clientId present but no clientSecret (lines 309-310 false branch)', async () => {
     const backup = makeBackup({
       ssoProviders: [{
@@ -682,7 +760,7 @@ describe('import.ts - credential profile branches', () => {
   });
 
   it('upserts credential profile when no name collision exists', async () => {
-    // findUnique returns null for name check (from setupMinimalImport default)
+    // findFirst returns null for the name check, names are unique per tenant (from setupMinimalImport default)
     const backup = makeBackup({
       credentialProfiles: [
         { id: 'cp1', name: 'SSH Key', type: 'ssh', data: 'plain-secret', description: null, createdAt: new Date(), updatedAt: new Date() },
@@ -710,10 +788,9 @@ describe('import.ts - credential profile branches', () => {
   });
 
   it('merges credential profile by name collision and builds credentialIdMap for adapter remapping', async () => {
-    // Name lookup: existing profile with same name but different ID
-    prismaMock.credentialProfile.findUnique
-      .mockResolvedValueOnce({ id: 'db-cp-id', name: 'SSH Key' } as any) // name lookup
-      .mockResolvedValue({ id: 'db-cp-id' } as any); // adapter FK existence checks
+    // Name lookup: existing profile with same name but different ID, by findFirst since a name is unique per tenant
+    prismaMock.credentialProfile.findFirst.mockResolvedValueOnce({ id: 'db-cp-id', name: 'SSH Key' } as any);
+    prismaMock.credentialProfile.findUnique.mockResolvedValue({ id: 'db-cp-id' } as any); // adapter FK existence checks
 
     const backup = makeBackup({
       credentialProfiles: [

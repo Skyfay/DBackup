@@ -119,14 +119,44 @@ describe("downloadVolume", () => {
         ]);
     });
 
+    it("names an entry it cannot store as the log shows a name, never with its control characters", async () => {
+        const result = await collect(engineWith([
+            { path: "dev/evil\nINFO forged line", type: "block-device" },
+        ]));
+
+        expect(result.failures).toEqual([
+            { path: "dev/evil\\nINFO forged line", error: expect.stringContaining("unsupported entry type") },
+        ]);
+    });
+
+    it("fails a volume that lists a name longer than any file system allows", async () => {
+        await expect(collect(engineWith([
+            { path: "ok.txt", content: "a" },
+            { path: "x".repeat(40 * 1024), content: "b" },
+        ]))).rejects.toThrow(/longer than the 32768 any file system allows/);
+    });
+
     it("refuses a member name that would write outside the collection directory", async () => {
         // Member names come from the volume, so a crafted one is the same class of threat as
         // a crafted archive index.
         const result = await collect(engineWith([{ path: "../escaped.txt", content: "bad" }]));
 
         expect(result.entries).toEqual([]);
-        expect(result.failures[0].error).toMatch(/escapes the collection directory/);
+        expect(result.failures[0].error).toMatch(/refused, the name has a '\.\.' part/);
         await expect(fs.access(path.join(path.dirname(workDir), "escaped.txt"))).rejects.toThrow();
+    });
+
+    it("refuses such a member name for a link and an unchanged file too", async () => {
+        const result = await collect(
+            engineWith([
+                { path: "../link-out", type: "symlink", linkname: "/etc" },
+                { path: "sub/../../same.txt", content: "a" },
+            ]),
+            { shouldDownload: () => false },
+        );
+
+        expect(result.entries).toEqual([]);
+        expect(result.failures.map((f) => f.path)).toEqual(["../link-out", "sub/../../same.txt"]);
     });
 
     it("skips excluded files without counting them as failures", async () => {

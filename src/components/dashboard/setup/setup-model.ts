@@ -10,6 +10,8 @@ export interface SetupEntry {
     name: string;
     /** The adapter of a connection, like "mysql". A key has none. */
     adapterId?: string;
+    /** A destination another tenant shares that takes only encrypted backups, so the job needs a key. */
+    encryptedOnly?: boolean;
 }
 
 export interface SetupJob extends SetupEntry {
@@ -66,9 +68,31 @@ const STEPS: SetupStep[] = [
     { id: "job", title: "Backup job", question: "When does it run, and what goes in?", note: "The job ties the parts above together", todo: "When it runs and what goes in", icon: CalendarClock },
 ];
 
-/** The steps this user can do. Encryption and notifications need the right to create them. */
-export function setupSteps({ canCreateVault, canCreateNotification }: { canCreateVault: boolean; canCreateNotification: boolean }): SetupStep[] {
-    return STEPS.filter((step) => (step.id !== "encryption" || canCreateVault) && (step.id !== "notification" || canCreateNotification));
+interface StepRights {
+    canCreateVault: boolean;
+    canCreateNotification: boolean;
+    /** The destination takes only encrypted backups, see `encryptionRequired`. */
+    encryptionRequired?: boolean;
+}
+
+/**
+ * The steps this user can do. Encryption and notifications need the right to create them. A
+ * destination that takes only encrypted backups makes Encryption required, also without the right
+ * to create a key: the part then offers the keys of the Vault, which the job form offers to
+ * whoever writes jobs as well.
+ */
+export function setupSteps({ canCreateVault, canCreateNotification, encryptionRequired = false }: StepRights): SetupStep[] {
+    return STEPS.flatMap((step) => {
+        if (step.id === "notification" && !canCreateNotification) return [];
+        if (step.id !== "encryption") return [step];
+        if (encryptionRequired) return [{ ...step, optional: false, todo: "A key, the destination takes only encrypted backups" }];
+        return canCreateVault ? [step] : [];
+    });
+}
+
+/** Whether the destination picked so far takes only encrypted backups, which makes a key required. */
+export function encryptionRequired(state: SetupState): boolean {
+    return state.destination?.encryptedOnly === true;
 }
 
 /** A connection as the rail and the summary name it, "Shop · MySQL". */

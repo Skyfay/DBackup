@@ -108,6 +108,8 @@ This file is published on the docs site for people who run DBackup. AI tooling i
 
 Code that ships in the repository still counts even when its purpose is to keep the assistant honest. A lint guard under `tests/` changes the build for every contributor and belongs in `### 🧪 Tests`.
 
+A beta adds nothing to this. The changelog lists releases, and its block says what changed since the last release, so a bug that only a beta ever had gets no entry, and a feature a beta changed keeps one entry that describes it as released. The notes of the beta on GitHub come from the same fragments.
+
 ## Entry format
 
 ```

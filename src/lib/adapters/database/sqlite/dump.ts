@@ -3,6 +3,7 @@ import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import fs from "fs/promises";
 import { getDatabases } from "./connection";
+import { ownDataRefusal } from "@/lib/adapters/own-data";
 
 /**
  * SQLite backup via the sqlite3 `.backup` dot command, which takes a consistent
@@ -28,6 +29,10 @@ export const dump: DatabaseAdapter["dump"] = async (config, destinationPath, hos
         if (!host) {
             throw new Error("SQLite adapter requires an execution host. Call it through withHost().");
         }
+
+        // No run reads the own database of DBackup, also through a link that points there by now.
+        const ownData = await ownDataRefusal("sqlite", config as Record<string, unknown>);
+        if (ownData) throw new Error(ownData);
 
         const dbPath = config.path as string;
         const binary = await host.which((config.sqliteBinaryPath as string) || "sqlite3");

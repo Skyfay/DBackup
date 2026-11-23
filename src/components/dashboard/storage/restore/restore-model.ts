@@ -40,10 +40,41 @@ export interface DbRow {
     outcome: DbOutcome;
     /** Bytes of the database of that name on the server now. */
     thereSize: number | null;
+    /**
+     * The customer who holds the database of its name on a shared server now, null for whoever
+     * may not see who. Left out for a database no customer holds.
+     */
+    customer?: string | null;
+}
+
+/** What the restore page knows of the databases customers hold on the server: the name of each, null for a customer not named to the viewer. */
+export type CustomerHolders = ReadonlyMap<string, string | null>;
+
+const holderName = (holders: CustomerHolders, name: string): { customer?: string | null } =>
+    holders.has(name) ? { customer: holders.get(name) ?? null } : {};
+
+/** What the page says of the databases among the rows a customer holds, null for none: "Acme holds it", "2 of them are held by Acme, Globex". */
+export function customerNote(rows: DbRow[]): string | null {
+    const held = rows.filter((row) => row.customer !== undefined);
+    if (held.length === 0) return null;
+    const named = [...new Set(held.map((row) => row.customer).filter((name): name is string => !!name))].sort((a, b) => a.localeCompare(b));
+    if (rows.length === 1) return named.length > 0 ? `${named[0]} holds it` : "A customer holds it";
+    const who = held.every((row) => row.customer) ? named.join(", ") : "customers";
+    return `${held.length} of them ${held.length === 1 ? "is" : "are"} held by ${who}`;
+}
+
+/** The customers among the rows, by name, for whoever may see them, else none. */
+export function customerNames(rows: DbRow[]): string[] {
+    return [...new Set(rows.map((row) => row.customer).filter((name): name is string => !!name))].sort((a, b) => a.localeCompare(b));
+}
+
+/** The databases a restore writes over that customers hold now, which the confirmation asks about. */
+export function customerOverwrites(rows: DbRow[]): DbRow[] {
+    return rows.filter((row) => row.picked && row.source !== null && row.customer !== undefined);
 }
 
 /** The rows of the list: every database of the backup, then the ones only the server has. */
-export function buildDbRows(choices: DbChoice[], server: ServerDatabase[], sizes: Map<string, number>, unverified: boolean): DbRow[] {
+export function buildDbRows(choices: DbChoice[], server: ServerDatabase[], sizes: Map<string, number>, unverified: boolean, holders: CustomerHolders = new Map()): DbRow[] {
     const byName = new Map(server.map((database) => [database.name, database]));
     const rows: DbRow[] = choices.map((choice) => {
         const there = byName.get(choice.targetName);
@@ -56,6 +87,7 @@ export function buildDbRows(choices: DbChoice[], server: ServerDatabase[], sizes
             target: choice.targetName,
             outcome,
             thereSize: there?.sizeInBytes ?? null,
+            ...holderName(holders, choice.targetName),
         };
     });
     const touched = new Set(choices.filter((choice) => choice.selected).map((choice) => choice.targetName));
@@ -70,6 +102,7 @@ export function buildDbRows(choices: DbChoice[], server: ServerDatabase[], sizes
             target: database.name,
             outcome: "stays",
             thereSize: database.sizeInBytes ?? null,
+            ...holderName(holders, database.name),
         }));
     return [...rows, ...staying];
 }

@@ -10,6 +10,25 @@ import type { PostgresConfig } from "@/lib/adapters/definitions";
 
 type AnyPostgresConfig = PostgresConfig & { user?: string; password?: string };
 
+/**
+ * A database name for `-d`, as libpq reads it word for word. libpq takes a `-d` value that holds
+ * an `=` or starts with `postgres://` or `postgresql://` as a whole connection string, whose host,
+ * port and login replace those of the connection, so a name from a job, a restore or the table
+ * browser could otherwise lead to another server. A `dbname='...'` keyword value is always a name.
+ */
+export function dbArg(name: string): string {
+    return `dbname='${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+}
+
+/**
+ * A value as an SQL string literal. The `E''` form reads a backslash as an escape whatever
+ * `standard_conforming_strings` says, so doubling the backslashes and the quotes keeps every
+ * character of the value inside the literal on any server.
+ */
+export function sqlLiteral(value: string): string {
+    return `E'${value.replace(/\\/g, "\\\\").replace(/'/g, "''")}'`;
+}
+
 /** Connection flags shared by psql, pg_dump and pg_restore. */
 export function buildConnectionArgs(
     config: AnyPostgresConfig,
@@ -30,6 +49,18 @@ export function buildConnectionArgs(
  */
 export function pgEnv(password?: string): Record<string, string | undefined> {
     return password ? { PGPASSWORD: password } : {};
+}
+
+/**
+ * The environment of a query of the catalog that runs inside a database someone else may own, like
+ * the database of a customer on a server shared with customers, with the login of the provider.
+ * Its owner sets the search_path of the database and makes functions and operators of their own,
+ * which an unqualified name in the query would pick and run as that login. The options of the
+ * connection outrank the settings of the database, so the search path holds the catalog alone,
+ * with the temporary schema last.
+ */
+export function catalogEnv(password?: string): Record<string, string | undefined> {
+    return { ...pgEnv(password), PGOPTIONS: "-c search_path=pg_catalog,pg_temp" };
 }
 
 /**

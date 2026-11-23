@@ -7,7 +7,7 @@ import { NumberStepper } from "@/components/ui/number-stepper";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { GeneralSettings } from "@/services/system/settings-types";
 import { Field, PartFrame, SaveBar, useSettingsFrame, usePartSave, usePartValues } from "./settings-frame";
-import { STUCK_CHOICES, changesOf, minutesText, withSaved, zoneExample } from "./settings-values";
+import { MAX_RUN_CHOICES, STUCK_CHOICES, changesOf, minutesText, withSaved, zoneExample } from "./settings-values";
 import { TimezoneField } from "./timezone-field";
 
 export const MAX_RUNS = 10;
@@ -18,6 +18,7 @@ export const GENERAL_FIELDS = {
     timezone: { label: "Time zone" },
     maxConcurrentJobs: { label: "Runs at the same time" },
     stuckTimeoutMinutes: { label: "Fail a run that stops reporting after", show: minutesText },
+    maxRunMinutes: { label: "Fail a run that takes longer than", show: (minutes: number) => (minutes === 0 ? "No limit" : minutesText(minutes)) },
     checkForUpdates: { label: "Look for new versions" },
     showQuickSetup: { label: "Show Quick Setup in the sidebar" },
 } as const;
@@ -77,9 +78,26 @@ export function GeneralPart({ saved }: { saved: GeneralSettings }) {
                                     </Select>
                                 )}
                             </Field>
+                            <Field label="Fail a run that takes longer than" setting="general.max-run">
+                                {(id) => (
+                                    <Select value={String(values.maxRunMinutes)} onValueChange={(minutes) => set("maxRunMinutes", Number(minutes))} disabled={readOnly}>
+                                        <SelectTrigger id={id} className="w-full sm:w-56">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {withSaved(MAX_RUN_CHOICES, values.maxRunMinutes).map((minutes) => (
+                                                <SelectItem key={minutes} value={String(minutes)}>
+                                                    {minutes === 0 ? "No limit" : minutesText(minutes)}
+                                                    {minutes === 1440 ? " (default)" : ""}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                            </Field>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                            Backups wait for a free run. A running restore or integrity check takes one too, and so does a run that stopped reporting until it fails. The system task Stuck run watchdog follows this time, Never turns it off.
+                            Backups wait for a free run, and a run that stopped reporting holds its run until it fails. A backup that still reports but takes longer than the longest a run may take fails as well, so a slow source cannot hold the runs of everyone else. A restore or an integrity check takes no run and is never cut short for its length. The system task Stuck run watchdog follows both times, Never and No limit turn them off.
                         </p>
                     </div>
 

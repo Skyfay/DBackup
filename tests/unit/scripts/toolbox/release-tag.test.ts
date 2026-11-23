@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TAG, releaseHeading, remoteTag, tagMessage } from "../../../../scripts/toolbox/release-tag.mjs";
+import { TAG, betaTagMessage, releaseHeading, remoteTag, tagMessage } from "../../../../scripts/toolbox/release-tag.mjs";
 
 const CHANGELOG = [
     "# Changelog",
@@ -38,9 +38,14 @@ describe("the tag of a release", () => {
         expect(releaseHeading("## v4.1.0-beta - Preview\n*Release: In Progress*\n", "4.1.0")).toBeNull();
     });
 
+    it("names the release a beta previews in the message of its tag", () => {
+        expect(betaTagMessage("4.1.0-beta.2")).toBe("v4.1.0-beta.2 - Beta of v4.1.0");
+    });
+
     it("accepts release tags only", () => {
         expect(TAG.test("v4.0.1")).toBe(true);
         expect(TAG.test("v4.1.0-beta")).toBe(true);
+        expect(TAG.test("v4.1.0-beta.1")).toBe(true);
         expect(TAG.test("4.0.1")).toBe(false);
         expect(TAG.test("v4.0.1; rm -rf /")).toBe(false);
     });

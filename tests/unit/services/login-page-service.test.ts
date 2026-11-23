@@ -10,7 +10,7 @@ vi.mock("@/lib/auth/env-flags", () => ({
 }));
 vi.mock("@/services/system/login-image-service", () => ({ getLoginPicture: () => mocks.picture() }));
 
-const { getLoginPageModel, loginAdapters } = await import("@/services/auth/login-page-service");
+const { findDomainProvider, getLoginPageModel, loginAdapters } = await import("@/services/auth/login-page-service");
 
 const authentik = { id: "p1", providerId: "authentik", name: "Authentik", adapterId: "authentik", domain: "example.ch", allowProvisioning: false, issuer: "https://auth.example.ch/application/o/dbackup/" };
 
@@ -19,6 +19,7 @@ describe("what the login page shows", () => {
         vi.clearAllMocks();
         prismaMock.user.count.mockResolvedValue(2);
         prismaMock.ssoProvider.findMany.mockResolvedValue([authentik] as never);
+        prismaMock.ssoProvider.count.mockResolvedValue(0);
         prismaMock.systemSetting.findUnique.mockResolvedValue(null);
         prismaMock.systemSetting.findMany.mockResolvedValue([]);
         mocks.redirect.mockReturnValue(undefined);
@@ -79,5 +80,43 @@ describe("what the login page shows", () => {
         expect(adapters.storage).toContain("s3-aws");
         expect(adapters.notifications).toContain("discord");
         expect(prismaMock.adapterConfig.findMany).not.toHaveBeenCalled();
+    });
+
+    describe("providers of tenants", () => {
+        const entra = { providerId: "entra-acme", name: "Acme Entra ID", adapterId: "generic", domain: "Acme.CH", allowProvisioning: true };
+
+        it("shows only the providers of the platform as buttons, and of tenants only whether one claims a domain", async () => {
+            prismaMock.ssoProvider.count.mockResolvedValue(2);
+
+            const model = await getLoginPageModel();
+
+            const query = prismaMock.ssoProvider.findMany.mock.calls[0][0] as { where: Record<string, unknown> };
+            expect(query.where).toEqual({ enabled: true, tenantId: null });
+            expect(prismaMock.ssoProvider.count).toHaveBeenCalledWith({ where: { enabled: true, tenantId: { not: null }, domain: { not: null } } });
+            expect(model.domainRouting).toBe(true);
+            // Nothing of a tenant reaches the public page, neither its name nor its domain.
+            expect(JSON.stringify(model)).not.toContain("acme");
+        });
+
+        it("routes the domain of an email to the provider of its tenant, without naming the tenant", async () => {
+            prismaMock.ssoProvider.findMany.mockResolvedValue([entra] as never);
+
+            expect(await findDomainProvider(" ACME.ch ")).toEqual({ providerId: "entra-acme", name: "Acme Entra ID", adapterId: "generic", domain: "acme.ch", allowProvisioning: true });
+
+            const query = prismaMock.ssoProvider.findMany.mock.calls[0][0] as { where: Record<string, unknown>; select: Record<string, boolean> };
+            expect(query.where).toEqual({ enabled: true, domain: { not: null } });
+            expect(Object.keys(query.select).sort()).toEqual(["adapterId", "allowProvisioning", "domain", "name", "providerId"]);
+        });
+
+        it("answers nothing for a domain no provider claims, and does not look for one that is no domain", async () => {
+            prismaMock.ssoProvider.findMany.mockResolvedValue([entra] as never);
+            expect(await findDomainProvider("globex.ch")).toBeNull();
+            expect(await findDomainProvider("acme.ch.evil")).toBeNull();
+
+            prismaMock.ssoProvider.findMany.mockClear();
+            expect(await findDomainProvider("lena@acme.ch")).toBeNull();
+            expect(await findDomainProvider("")).toBeNull();
+            expect(prismaMock.ssoProvider.findMany).not.toHaveBeenCalled();
+        });
     });
 });

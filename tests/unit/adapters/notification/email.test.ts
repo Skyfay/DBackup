@@ -89,6 +89,32 @@ describe("Email Adapter", () => {
     });
   });
 
+  describe("the login of a channel set to STARTTLS", () => {
+    const optionsOf = async (secure: string) => {
+      vi.mocked((nodemailer as any).createTransport).mockClear();
+      await EmailAdapter.send({ ...baseConfig, secure }, "Backup finished");
+      return vi.mocked((nodemailer as any).createTransport).mock.calls[0][0];
+    };
+
+    it("never goes out in clear to a server that offers no STARTTLS, in a send and in a test", async () => {
+      expect(await optionsOf("starttls")).toMatchObject({ secure: false, requireTLS: true });
+
+      vi.mocked((nodemailer as any).createTransport).mockClear();
+      await EmailAdapter.test!(baseConfig);
+      expect(vi.mocked((nodemailer as any).createTransport).mock.calls[0][0]).toMatchObject({ secure: false, requireTLS: true });
+    });
+
+    it("leaves the two other settings as they are, SSL/TLS from the first byte and None in clear", async () => {
+      const ssl = await optionsOf("ssl");
+      expect(ssl.secure).toBe(true);
+      expect(ssl.requireTLS).toBeUndefined();
+
+      const none = await optionsOf("none");
+      expect(none).toMatchObject({ secure: false, ignoreTLS: true });
+      expect(none.requireTLS).toBeUndefined();
+    });
+  });
+
   describe("the test mail", () => {
     it("sends the test mail in the template of every notification", async () => {
       await EmailAdapter.test!(baseConfig);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { ConnectionStep, type ConnectionStepId } from "./connection-step";
@@ -9,7 +9,7 @@ import { EncryptionStep } from "./encryption-step";
 import type { ExistingEntry } from "./existing-list";
 import { JobStep } from "./job-step";
 import type { JobDraft } from "./job-values";
-import { EMPTY_SETUP, NOTIFY_ON, entryLabel, scheduleName, setupSteps, type SetupEntry, type SetupState, type SetupStep, type SetupStepId } from "./setup-model";
+import { EMPTY_SETUP, NOTIFY_ON, encryptionRequired, entryLabel, scheduleName, setupSteps, type SetupEntry, type SetupState, type SetupStep, type SetupStepId } from "./setup-model";
 import { SetupPreview } from "./setup-preview";
 import { DoneSection, TodoSection } from "./setup-sections";
 
@@ -62,10 +62,16 @@ interface SetupWizardProps {
  * to keep up.
  */
 export function SetupWizard({ canCreateVault, canCreateNotification, canRunJob, canOpenVault, keys: vaultKeys }: SetupWizardProps) {
-    const steps = useMemo(() => setupSteps({ canCreateVault, canCreateNotification }), [canCreateVault, canCreateNotification]);
+    const [state, setState] = useState<SetupState>(EMPTY_SETUP);
+    // A destination that takes only encrypted backups makes the Encryption part required, also
+    // for someone who may only pick a key.
+    const stepsFor = useCallback(
+        (of: SetupState) => setupSteps({ canCreateVault, canCreateNotification, encryptionRequired: encryptionRequired(of) }),
+        [canCreateVault, canCreateNotification],
+    );
+    const steps = useMemo(() => stepsFor(state), [stepsFor, state]);
     const [current, setCurrent] = useState<SetupStepId | null>(steps[0].id);
     const [reached, setReached] = useState(0);
-    const [state, setState] = useState<SetupState>(EMPTY_SETUP);
     const [keys, setKeys] = useState(vaultKeys);
     const [jobDraft, setJobDraft] = useState<JobDraft | null>(null);
     const schedulerTimezone = useSchedulerTimezone();
@@ -80,20 +86,27 @@ export function SetupWizard({ canCreateVault, canCreateNotification, canRunJob, 
         activeRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, [current]);
 
-    const open = (target: number) => {
-        setCurrent(target < steps.length ? steps[target].id : null);
+    const open = (target: number, list: SetupStep[] = steps) => {
+        setCurrent(target < list.length ? list[target].id : null);
         setReached((furthest) => Math.max(furthest, target));
     };
 
-    /** Keeps what a part made, or that it was skipped, and opens the first part still empty. */
+    /**
+     * Keeps what a part made, or that it was skipped, and opens the first part still empty. A
+     * destination can make Encryption required, which a skip before no longer passes, or leave it
+     * out again, which takes its key along.
+     */
     const finish = (id: Exclude<SetupStepId, "job">, entry: SetupEntry | null) => {
         const next: SetupState = {
             ...state,
             [id]: entry,
             skipped: entry ? state.skipped.filter((skipped) => skipped !== id) : [...state.skipped.filter((skipped) => skipped !== id), id],
         };
+        if (encryptionRequired(next)) next.skipped = next.skipped.filter((skipped) => skipped !== "encryption");
+        const nextSteps = stepsFor(next);
+        if (!nextSteps.some((step) => step.id === "encryption")) next.encryption = null;
         setState(next);
-        open(firstOpen(steps, next));
+        open(firstOpen(nextSteps, next), nextSteps);
     };
 
     const renderOpen = (step: SetupStep, number: number) => {
@@ -103,6 +116,8 @@ export function SetupWizard({ canCreateVault, canCreateNotification, canRunJob, 
                     number={number}
                     step={step}
                     keys={keys}
+                    canCreate={canCreateVault}
+                    requiredBy={encryptionRequired(state) ? state.destination?.name ?? null : null}
                     picked={state.encryption}
                     onSkip={() => finish("encryption", null)}
                     onDone={(entry) => {

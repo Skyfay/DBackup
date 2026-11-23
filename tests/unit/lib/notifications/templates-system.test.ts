@@ -208,5 +208,21 @@ describe("the system", () => {
     expect(payload.title).toBe("2 backups failed the integrity check");
     expect(payload.problem?.raw).toBe("S3: a.sql.gz\nNAS: b.sql.gz");
     expect(stat(payload, "Skipped")).toBe("1");
+    expect(field(payload, "Other tenants")).toBeUndefined();
+  });
+
+  it("names the other tenants of a failed integrity check by how many of their copies failed, never by a file", () => {
+    const payload = renderTemplate({
+      eventType: NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE,
+      data: {
+        totalFiles: 12, failed: 3, passed: 9, skipped: 0, triggerType: "Scheduler",
+        errors: [],
+        tenants: [{ tenant: "Acme", failed: 2, totalFiles: 5 }, { tenant: "Globex", failed: 1, totalFiles: 4 }],
+      },
+    });
+
+    expect(field(payload, "Other tenants")).toBe("Acme: 2 of 5, Globex: 1 of 4");
+    expect(payload.problem).toBeUndefined();
+    expect(payload.details).toEqual(expect.arrayContaining([{ name: "Other tenants", value: "Acme: 2 of 5, Globex: 1 of 4" }]));
   });
 });

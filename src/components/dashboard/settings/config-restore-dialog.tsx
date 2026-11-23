@@ -43,7 +43,7 @@ interface Answer<T> {
 
 type Step = "file" | "check" | "restarting";
 
-/** The size of the files in a form, to refuse one the middleware would cut off before it is sent. */
+/** The size of the files in a form, to refuse one the proxy would cut off before it is sent. */
 function filesSize(formData: FormData): number {
     return ["backupFile", "metaFile"].reduce((sum, key) => {
         const file = formData.get(key);
@@ -251,6 +251,7 @@ export function ConfigRestoreDialog({ open, onOpenChange }: ConfigRestoreDialogP
                     if (!next) pending.current = null;
                 }}
                 profileIdHint={keyDialog.profileId}
+                platformKeys
                 onConfirm={(result) => void withKey(result)}
                 loading={busy}
                 error={keyDialog.error}

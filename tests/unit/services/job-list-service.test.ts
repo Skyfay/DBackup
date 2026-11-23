@@ -5,7 +5,16 @@ vi.mock("@/services/jobs/job-overview", () => ({
     getJobOverviews: vi.fn(async (jobs: { id: string }[]) => new Map(jobs.map((job) => [job.id, { status: "Success", runs: [], lastRun: null, error: null, live: null, nextRunAt: null }]))),
 }));
 
+/** Acme Hosting shares its USB rotation, an air-gapped destination, with Globex. */
+const provided = vi.hoisted(() => ({
+    providedTo: vi.fn(async (tenantId: string, _filter: unknown) => tenantId === "globex"
+        ? [{ id: "acme-usb", name: "Acme USB rotation", type: "storage", storageRole: "DESTINATION", metadata: JSON.stringify({ airGapped: true }), lastStatus: "OFFLINE" }]
+        : []),
+}));
+vi.mock("@/services/sharing/provided", () => provided);
+
 import { getJobList, getJobRunHistory } from "@/services/jobs/job-list-service";
+import { runAsTenant } from "@/lib/tenant/context";
 
 const connectionSelect = { select: { id: true, name: true, adapterId: true, lastStatus: true } };
 
@@ -60,6 +69,24 @@ describe("job list", () => {
         const [job] = await getJobList();
 
         expect(job.destinations.map((destination) => destination.config.lastStatus)).toEqual(["AWAY", "OFFLINE"]);
+    });
+
+    it("shows an air-gapped destination another tenant shares as away too, which the customer's scope does not find", async () => {
+        prismaMock.job.findMany.mockResolvedValue([
+            {
+                id: "globex-shop",
+                name: "Shop",
+                tenantId: "globex",
+                createdAt: new Date("2026-03-12T10:00:00Z"),
+                sources: [],
+                destinations: [{ configId: "acme-usb", priority: 0, config: { id: "acme-usb", name: "Acme USB rotation", adapterId: "local-filesystem", lastStatus: "OFFLINE" } }],
+            },
+        ] as never);
+
+        const [job] = await runAsTenant("globex", () => getJobList());
+
+        expect(job.destinations[0].config.lastStatus).toBe("AWAY");
+        expect(provided.providedTo).toHaveBeenCalledWith("globex", { kind: "destination" });
     });
 });
 

@@ -203,6 +203,55 @@ describe("openStorageArchiveSource", () => {
         expect(await countOwn()).toBe(before);
     });
 
+    it("downloads the archive once when reads that run side by side all fail their range", async () => {
+        const { archivePath, size } = await buildArchive(false);
+        const calls = { rangeAttempts: 0, downloads: 0 };
+        const ownPrefix = `archive-fetch-${process.pid}-`;
+        const countOwn = async () => (await fs.readdir(os.tmpdir())).filter((f) => f.startsWith(ownPrefix)).length;
+        const before = await countOwn();
+
+        const managed = await openStorageArchiveSource(brokenRangeAdapter(archivePath, calls), {} as never, "backup.tar", size);
+        const reads = await Promise.all(Array.from({ length: 8 }, (_, i) => managed.source.read(i * 512, i * 512 + 511).then(readAll)));
+
+        expect(reads.every((bytes) => bytes.length === 512)).toBe(true);
+        expect(calls.rangeAttempts).toBe(8);
+        expect(calls.downloads).toBe(1);
+
+        await managed.dispose();
+        expect(await countOwn()).toBe(before);
+    });
+
+    it("promises the fallback copy its temporary space and gives it back on dispose", async () => {
+        const { archivePath, size } = await buildArchive(false);
+        const { promisedTempSpace } = await import("@/services/restore/temp-space");
+        const before = promisedTempSpace();
+
+        let promisedDuringDownload = -1;
+        const adapter = brokenRangeAdapter(archivePath, { rangeAttempts: 0, downloads: 0 });
+        const download = adapter.download;
+        adapter.download = (async (...args: Parameters<StorageAdapter["download"]>) => {
+            promisedDuringDownload = promisedTempSpace();
+            return download(...args);
+        }) as StorageAdapter["download"];
+
+        const managed = await openStorageArchiveSource(adapter, {} as never, "backup.tar", size);
+        await readArchiveManifest(managed.source);
+        expect(promisedDuringDownload).toBe(before + size);
+
+        await managed.dispose();
+        expect(promisedTempSpace()).toBe(before);
+    });
+
+    it("refuses the fallback copy when the temporary folder has no room for it", async () => {
+        const { archivePath } = await buildArchive(false);
+        const calls = { rangeAttempts: 0, downloads: 0 };
+        const managed = await openStorageArchiveSource(brokenRangeAdapter(archivePath, calls), {} as never, "backup.tar", Number.MAX_SAFE_INTEGER);
+
+        await expect(managed.source.read(0, 511)).rejects.toThrow(/temporary space/);
+        expect(calls.downloads).toBe(0);
+        await managed.dispose();
+    });
+
     it("produces byte-identical results on both paths", async () => {
         const { archivePath, size } = await buildArchive(false);
         const ranged = await openStorageArchiveSource(

@@ -93,7 +93,7 @@ describe("openArchiveEntry - an upstream failure rejects instead of crashing", (
         const manifest = { version: 2, encryption: undefined } as unknown as ArchiveManifest;
         const entry = { n: 1, off: 0, size: 1000, comp: "GZIP" } as unknown as IndexEntryLine;
 
-        const stream = await openArchiveEntry(failingSource(), manifest, entry);
+        const stream = await openArchiveEntry(failingSource(), manifest, entry, undefined, 4096);
 
         await expect(readAll(stream)).rejects.toThrow(/source read failed|incorrect header|unexpected end/i);
     });

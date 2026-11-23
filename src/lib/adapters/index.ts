@@ -17,9 +17,13 @@ import { SMBAdapter } from "./storage/smb";
 import { WebDAVAdapter } from "./storage/webdav";
 import { FTPAdapter } from "./storage/ftp";
 import { RsyncAdapter } from "./storage/rsync";
+import { withPinnedRsyncHost } from "./storage/rsync-pin";
+import { withRsyncHostKey } from "./storage/rsync-host-key";
+import { withPinnedDatabaseHost } from "./database/common/pinned-host";
 import { GoogleDriveAdapter } from "./storage/google-drive";
 import { DropboxAdapter } from "./storage/dropbox";
 import { OneDriveAdapter } from "./storage/onedrive";
+import { withCheckedDownloads } from "./storage/common/downloaded-file";
 import { DiscordAdapter } from "./notification/discord";
 import { SlackAdapter } from "./notification/slack";
 import { TeamsAdapter } from "./notification/teams";
@@ -41,31 +45,36 @@ export function registerAdapters() {
 
     // Pre-detect binary commands asynchronously (non-blocking)
 
-    registry.register(MySQLAdapter);
-    registry.register(MariaDBAdapter);
-    registry.register(PostgresAdapter);
-    registry.register(MongoDBAdapter);
+    // The client tools of a tenant that blocks the local network dial the checked address of their
+    // host, see `pinned-host.ts`. SQL Server pins in its pool, see `mssql/connector.ts`,
+    // and Azure SQL there and for SqlPackage, see `azure-sql/exporter/pinned-server.ts`.
+    registry.register(withPinnedDatabaseHost(MySQLAdapter));
+    registry.register(withPinnedDatabaseHost(MariaDBAdapter));
+    registry.register(withPinnedDatabaseHost(PostgresAdapter));
+    registry.register(withPinnedDatabaseHost(MongoDBAdapter));
     registry.register(SQLiteAdapter);
     registry.register(MSSQLAdapter);
     registry.register(AzureSQLAdapter);
-    registry.register(RedisAdapter);
-    registry.register(ValkeyAdapter);
-    registry.register(FirebirdAdapter);
+    registry.register(withPinnedDatabaseHost(RedisAdapter));
+    registry.register(withPinnedDatabaseHost(ValkeyAdapter));
+    registry.register(withPinnedDatabaseHost(FirebirdAdapter));
 
-    registry.register(LocalFileSystemAdapter);
-    registry.register(DockerVolumeAdapter);
-    registry.register(S3GenericAdapter);
-    registry.register(S3AWSAdapter);
-    registry.register(S3R2Adapter);
-    registry.register(S3HetznerAdapter);
-    registry.register(SFTPAdapter);
-    registry.register(SMBAdapter);
-    registry.register(WebDAVAdapter);
-    registry.register(FTPAdapter);
-    registry.register(RsyncAdapter);
-    registry.register(GoogleDriveAdapter);
-    registry.register(DropboxAdapter);
-    registry.register(OneDriveAdapter);
+    // Every storage adapter is registered with its downloads checked, so a download that leaves a
+    // link or anything else than a regular file fails, see `downloaded-file.ts`.
+    registry.register(withCheckedDownloads(LocalFileSystemAdapter));
+    registry.register(withCheckedDownloads(DockerVolumeAdapter));
+    registry.register(withCheckedDownloads(S3GenericAdapter));
+    registry.register(withCheckedDownloads(S3AWSAdapter));
+    registry.register(withCheckedDownloads(S3R2Adapter));
+    registry.register(withCheckedDownloads(S3HetznerAdapter));
+    registry.register(withCheckedDownloads(SFTPAdapter));
+    registry.register(withCheckedDownloads(SMBAdapter));
+    registry.register(withCheckedDownloads(WebDAVAdapter));
+    registry.register(withCheckedDownloads(FTPAdapter));
+    registry.register(withCheckedDownloads(withPinnedRsyncHost(withRsyncHostKey(RsyncAdapter))));
+    registry.register(withCheckedDownloads(GoogleDriveAdapter));
+    registry.register(withCheckedDownloads(DropboxAdapter));
+    registry.register(withCheckedDownloads(OneDriveAdapter));
 
     registry.register(DiscordAdapter);
     registry.register(SlackAdapter);

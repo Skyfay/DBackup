@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { jobService } from "@/services/jobs/job-service";
@@ -6,10 +7,12 @@ import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } 
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { PERMANENT_DELETE_REFUSED } from "@/lib/core/delete-mode";
 import { auditService } from "@/services/audit-service";
+import { changedNames, jobNames } from "@/services/audit/record-names";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { summarizeBulkResult, BULK_REQUEST_LIMIT } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage, PermissionError } from "@/lib/logging/errors";
+import { PermissionError, wrapError } from "@/lib/logging/errors";
+import { serviceRefusal } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "jobs/bulk" });
 
@@ -35,7 +38,7 @@ const LABELS = {
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -51,6 +54,8 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, error: PERMANENT_DELETE_REFUSED }, { status: 403 });
         }
 
+        // Read first, a deleted job is gone afterwards.
+        const names = await jobNames(ids);
         const result = action === "delete"
             ? await jobService.deleteJobs(ids, { permanently, by: ctx.userId })
             : await jobService.setJobsEnabled(ids, action === "enable");
@@ -67,6 +72,7 @@ export async function POST(req: NextRequest) {
                 requested: ids.length,
                 succeeded: result.succeeded.length,
                 failed: result.failed.length,
+                names: changedNames(result.succeeded, names),
                 ...(action === "delete" && permanently ? { permanently: true } : {}),
             }
         );
@@ -82,9 +88,11 @@ export async function POST(req: NextRequest) {
         if (error instanceof PermissionError) {
             return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
         }
+        const refused = serviceRefusal(error);
+        if (refused) return refused;
         log.error("Bulk job action failed", {}, wrapError(error));
         return NextResponse.json(
-            { success: false, error: getErrorMessage(error) || "Bulk action failed" },
+            { success: false, error: "The bulk action failed. The log of DBackup has the details." },
             { status: 500 }
         );
     }

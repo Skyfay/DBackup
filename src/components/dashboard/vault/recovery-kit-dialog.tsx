@@ -17,10 +17,15 @@ import { count, keyUse } from "./vault-format";
 /** From this many keys on the list gets a search. */
 const SEARCH_FROM = 7;
 
+/** Every key goes into a kit when nothing locks one. */
+const OPEN = () => null;
+
 interface RecoveryKitDialogProps {
     keys: VaultKey[];
     /** The keys ticked when it opens, every key when left out. */
     picked?: string[];
+    /** Why a key may not go into a kit of the viewer, like the key of the configuration backup. */
+    locked?: (key: VaultKey) => string | null;
     onClose: () => void;
     /** After the kit was downloaded, with the keys it held. */
     onDownloaded: (ids: string[]) => void;
@@ -31,8 +36,8 @@ interface RecoveryKitDialogProps {
  * kit finds the right one by itself and one kit with every key is the useful default. Unticking is
  * there for a kit that only opens what its holder should see.
  */
-export function RecoveryKitDialog({ keys, picked, onClose, onDownloaded }: RecoveryKitDialogProps) {
-    const [selected, setSelected] = useState<Set<string>>(() => new Set(picked ?? keys.map((key) => key.id)));
+export function RecoveryKitDialog({ keys, picked, locked = OPEN, onClose, onDownloaded }: RecoveryKitDialogProps) {
+    const [selected, setSelected] = useState<Set<string>>(() => new Set((picked ?? keys.map((key) => key.id)).filter((id) => !keys.some((key) => key.id === id && locked(key)))));
     const [search, setSearch] = useState("");
     const [pending, setPending] = useState(false);
 
@@ -40,7 +45,8 @@ export function RecoveryKitDialog({ keys, picked, onClose, onDownloaded }: Recov
         const needle = search.trim().toLowerCase();
         return needle ? keys.filter((key) => key.name.toLowerCase().includes(needle)) : keys;
     }, [keys, search]);
-    const allShown = shown.length > 0 && shown.every((key) => selected.has(key.id));
+    const pickable = shown.filter((key) => !locked(key));
+    const allShown = pickable.length > 0 && pickable.every((key) => selected.has(key.id));
     const someShown = shown.some((key) => selected.has(key.id));
 
     const toggle = (id: string) =>
@@ -53,7 +59,7 @@ export function RecoveryKitDialog({ keys, picked, onClose, onDownloaded }: Recov
     const toggleShown = () =>
         setSelected((current) => {
             const next = new Set(current);
-            for (const key of shown) {
+            for (const key of pickable) {
                 if (allShown) next.delete(key.id);
                 else next.add(key.id);
             }
@@ -91,20 +97,27 @@ export function RecoveryKitDialog({ keys, picked, onClose, onDownloaded }: Recov
                         </label>
                         <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-[min(18rem,calc(95dvh-22rem))]">
                             <ul className="divide-y">
-                                {shown.map((key) => (
-                                    <li key={key.id}>
-                                        <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/50">
-                                            <Checkbox checked={selected.has(key.id)} onCheckedChange={() => toggle(key.id)} aria-label={key.name} />
-                                            <KeyTile size="sm" />
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block truncate text-sm font-medium">{key.name}</span>
-                                                <span className={cn("block truncate text-xs", key.kit ? "text-muted-foreground" : "text-warning")}>
-                                                    {keyUse(key)} · {key.kit ? "in a kit" : "never in a kit"}
+                                {shown.map((key) => {
+                                    const reason = locked(key);
+                                    return (
+                                        <li key={key.id}>
+                                            <label className={cn("flex items-center gap-3 px-3 py-2.5", reason ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-muted/50")}>
+                                                <Checkbox checked={selected.has(key.id)} disabled={!!reason} onCheckedChange={() => toggle(key.id)} aria-label={key.name} />
+                                                <KeyTile size="sm" />
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block truncate text-sm font-medium">{key.name}</span>
+                                                    {reason ? (
+                                                        <span className="block text-xs text-muted-foreground">{reason}</span>
+                                                    ) : (
+                                                        <span className={cn("block truncate text-xs", key.kit ? "text-muted-foreground" : "text-warning")}>
+                                                            {keyUse(key)} · {key.kit ? "in a kit" : "never in a kit"}
+                                                        </span>
+                                                    )}
                                                 </span>
-                                            </span>
-                                        </label>
-                                    </li>
-                                ))}
+                                            </label>
+                                        </li>
+                                    );
+                                })}
                                 {shown.length === 0 && <li className="px-3 py-4 text-center text-sm text-muted-foreground">No key by that name.</li>}
                             </ul>
                         </ScrollArea>

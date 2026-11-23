@@ -31,14 +31,43 @@ export interface UserGroupRef {
     name: string;
 }
 
+/** The group an account holds in one tenant, for the list of every account in All tenants. */
+export interface UserTenantRole {
+    tenantId: string;
+    group: UserGroupRef;
+}
+
 export interface UserRow {
     id: string;
     name: string;
     email: string;
     image: string | null;
     createdAt: string;
+    /** Their group in the tenant the list is for. Null in All tenants, where `tenants` says it per tenant. */
     group: UserGroupRef | null;
+    /** In All tenants: every tenant the account works in with its group there. Absent inside a tenant. */
+    tenants?: UserTenantRole[];
+    /** A platform admin, who sees every tenant. Only a platform admin changes their account. */
     superAdmin: boolean;
+    /** On the list of every account: the platform group, none for a platform admin or someone without one. Absent inside a tenant. */
+    platformGroup?: UserGroupRef | null;
+    /** Holds a platform group, which needs no group in a tenant to see something. Absent without one. */
+    withPlatformGroup?: boolean;
+    /**
+     * Works in another tenant as well. Their account belongs to all of them, so only a platform
+     * admin changes it, while their group here stays the admins' of this tenant to change.
+     */
+    elsewhere: boolean;
+    /**
+     * Works in a tenant the platform group of the viewer does not reach, so their right to manage
+     * the accounts of the platform does not change it. Only for someone of a platform group of some tenants.
+     */
+    beyondReach?: boolean;
+    /**
+     * Holds, in one of its tenants, a group that may do more than the viewer may there, so the
+     * viewer changes neither the account nor how it signs in. Absent otherwise.
+     */
+    groupBeyond?: boolean;
     methods: SignInMethod[];
     secondFactor: SecondFactor;
     lastSignIn: UserSignIn | null;
@@ -53,15 +82,20 @@ export interface UserRow {
 export interface UsersGroup {
     id: string;
     name: string;
+    /** The tenant it belongs to, on the list of every account, where each tenant offers its own groups. */
+    tenantId?: string;
+    /** Its members in the tenant the list is for. */
     members: number;
     permissions: string[];
+    /** The group with every permission (`fullAccess`). */
     superAdmin: boolean;
 }
 
 export interface UsersStats {
     users: number;
+    /** In a group of the tenant, or in All tenants in some tenant. */
     inGroup: number;
-    /** Names, for the numbers above the list. */
+    /** Names, for the numbers above the list. In All tenants the accounts of no tenant. */
     withoutGroup: string[];
     /** Users with a password and no second factor. */
     passwordOnly: string[];
@@ -79,10 +113,41 @@ export interface UsersModel {
     users: UserRow[];
     groups: UsersGroup[];
     stats: UsersStats;
-    /** A SuperAdmin may give the SuperAdmin group and set the password of another SuperAdmin. */
-    viewerSuperAdmin: boolean;
+    /** The viewer is a platform admin, who may give every group and change every account. */
+    viewerPlatformAdmin: boolean;
     /** The rules of Settings > Passwords, which Generate and the ticks under a new password follow. */
     passwordPolicy: PasswordPolicy;
+    /** The home tenant, the only one where an account may stay without a group. */
+    homeTenant: boolean;
+    /**
+     * Every account of the instance once, for Users & Groups of the Platform. Each row names its
+     * tenants with the group in each, and none has a group of its own. The groups are the ones of
+     * every tenant, each with its tenant.
+     */
+    allTenants: boolean;
+    /**
+     * On the list of every account, the tenants whose members the viewer looks after, those their
+     * platform group reaches. Null or left out for every tenant, like for a platform admin.
+     */
+    managedTenants?: string[] | null;
+    /**
+     * On the list of every account, the groups the viewer may give and take, each in its tenant:
+     * those of a tenant they look after that may do no more than they may there. Null or left out
+     * for every group, like for a platform admin.
+     */
+    givableGroups?: string[] | null;
+    /**
+     * On the list of every account, the tenants New user may make an account in: those the
+     * viewer's right to manage the accounts of the platform reaches, and those where they may
+     * manage the users. Null or left out for every tenant, like for a platform admin.
+     */
+    newUserTenants?: string[] | null;
+    /**
+     * On the list of every account, the groups New user may give, each in its tenant: those of a
+     * tenant of `newUserTenants` that may do no more than the viewer may there. Null or left out
+     * for every group, like for a platform admin.
+     */
+    newUserGroups?: string[] | null;
 }
 
 export interface UserSession {

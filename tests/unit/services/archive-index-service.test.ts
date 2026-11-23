@@ -4,18 +4,27 @@ import { deriveArchiveKeys } from "@/lib/crypto/kdf";
 import { serializeIndex } from "@/lib/archive/index-file";
 import { EncryptionKeyRequiredError } from "@/lib/logging/errors";
 import type { BackupMetadata } from "@/lib/core/interfaces";
+import type { IndexLine } from "@/lib/archive/types";
 
-vi.mock("@/lib/prisma", () => ({
-    default: { adapterConfig: { findUnique: vi.fn() }, jobSource: { findUnique: vi.fn() } },
+const prismaMock = vi.hoisted(() => ({
+    adapterConfig: { findUnique: vi.fn() },
+    jobSource: { findUnique: vi.fn() },
+    // No run of History wrote these backups unless a test says so, see `recorded-encryption.ts`.
+    execution: { findMany: vi.fn() },
+    job: { findUnique: vi.fn() },
 }));
+vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 vi.mock("@/lib/core/registry", () => ({ registry: { get: vi.fn() } }));
 vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: async (c: unknown) => c }));
 vi.mock("@/services/backup/encryption-service", () => ({
     getProfileMasterKey: vi.fn(),
     getEncryptionProfiles: vi.fn(),
 }));
+const openDestination = vi.hoisted(() => vi.fn());
+vi.mock("@/services/sharing/destination-access", () => ({ openDestination: (...args: unknown[]) => openDestination(...args) }));
 
 const { ArchiveIndexService } = await import("@/services/backup/archive-index-service");
+const { createParseBudget } = await import("@/services/backup/index-parse-budget");
 const encryptionService = await import("@/services/backup/encryption-service");
 
 const getProfileMasterKey = encryptionService.getProfileMasterKey as ReturnType<typeof vi.fn>;
@@ -56,12 +65,17 @@ async function sealedIndex(masterKey: Buffer): Promise<Buffer> {
     );
 }
 
-function makeService(sidecar: () => Promise<Buffer | null>) {
-    const service = new ArchiveIndexService();
-    const fetchSidecar = vi.fn(sidecar);
+function makeService(sidecar: (file: string) => Promise<Buffer | null>, maxCachedTextBytes?: number, parsing?: ConstructorParameters<typeof ArchiveIndexService>[1]) {
+    const service = new ArchiveIndexService(maxCachedTextBytes, parsing);
+    const fetchSidecar = vi.fn((_configId: string, file: string) => sidecar(file));
     vi.spyOn(service, "fetchSidecar").mockImplementation(fetchSidecar);
     return { service, fetchSidecar };
 }
+
+beforeEach(() => {
+    prismaMock.execution.findMany.mockResolvedValue([]);
+    prismaMock.job.findUnique.mockResolvedValue(null);
+});
 
 describe("ArchiveIndexService.load", () => {
     beforeEach(() => vi.clearAllMocks());
@@ -103,6 +117,20 @@ describe("ArchiveIndexService.load", () => {
         const error = await service.load("dest-1", "FileBackup/inc-001.tar", META).catch((e: unknown) => e);
 
         expect(error).toBeInstanceOf(EncryptionKeyRequiredError);
+        expect((error as EncryptionKeyRequiredError).profileId).toBe(PROFILE_ID);
+    });
+
+    it("asks for a key again when the picked key is not in the Vault, unknown or of another tenant", async () => {
+        // It fell through to reading the archive as an older format, which answered 500 with
+        // "Cannot read properties of undefined (reading 'map')".
+        getProfileMasterKey.mockRejectedValue(new Error("Encryption profile not found: foreign"));
+        const bytes = await sealedIndex(MASTER_KEY);
+        const { service } = makeService(async () => bytes);
+
+        const error = await service.summarize("dest-1", "FileBackup/inc-001.tar", META, { profileId: "foreign" }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(EncryptionKeyRequiredError);
+        expect((error as EncryptionKeyRequiredError).message).toBe("The key picked to open this backup is not in the Vault.");
         expect((error as EncryptionKeyRequiredError).profileId).toBe(PROFILE_ID);
     });
 
@@ -160,5 +188,170 @@ describe("ArchiveIndexService.load", () => {
 
         // A result reached with a one-off key is not the answer a plain caller asked for.
         expect(fetchSidecar).toHaveBeenCalledTimes(2);
+    });
+
+    it("drops the index of a deleted or replaced backup in the view of every tenant", async () => {
+        const { runAsTenant } = await import("@/lib/tenant/context");
+        getProfileMasterKey.mockResolvedValue(MASTER_KEY);
+        const bytes = await sealedIndex(MASTER_KEY);
+        const { service, fetchSidecar } = makeService(async () => bytes);
+        const loadAs = (tenantId: string) => runAsTenant(tenantId, () => service.load("dest-1", "FileBackup/inc-001.tar", META));
+
+        await loadAs("acme");
+        await loadAs("globex");
+        service.invalidate("dest-1", "FileBackup/inc-001.tar");
+        await loadAs("acme");
+        await loadAs("globex");
+
+        expect(fetchSidecar).toHaveBeenCalledTimes(4);
+    });
+});
+
+describe("ArchiveIndexService cache bound", () => {
+    const PLAIN_META: BackupMetadata = { ...META, archive: { formatVersion: 2, indexFile: ".index", encrypted: false } };
+
+    /** An unencrypted index of a header and `files` file lines, with the NDJSON it inflates to. */
+    async function plainIndex(files: number): Promise<{ bytes: Buffer; text: number }> {
+        const lines: IndexLine[] = [
+            { k: "h", v: 2, createdAt: "2026-07-25T20:10:37.652Z", archive: "x.tar" },
+            ...Array.from({ length: files }, (_, i): IndexLine => ({ k: "f", src: "s", p: `dir/file-${i}.txt`, s: 1, m: "", n: i + 1 })),
+        ];
+        const text = lines.reduce((sum, line) => sum + JSON.stringify(line).length + 1, 0);
+        return { bytes: await serializeIndex(lines), text };
+    }
+
+    it("lets the oldest index go once the cached indexes hold more than the cap", async () => {
+        const { bytes, text } = await plainIndex(100);
+        const { service, fetchSidecar } = makeService(async () => bytes, Math.floor(text * 1.5));
+
+        await service.load("dest-1", "a.tar", PLAIN_META);
+        await service.load("dest-1", "b.tar", PLAIN_META);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await service.load("dest-1", "b.tar", PLAIN_META);
+        expect(fetchSidecar).toHaveBeenCalledTimes(2);
+
+        await service.load("dest-1", "a.tar", PLAIN_META);
+        expect(fetchSidecar).toHaveBeenCalledTimes(3);
+        expect(fetchSidecar.mock.calls.map((call) => call[1])).toEqual(["a.tar", "b.tar", "a.tar"]);
+    });
+
+    it("hands an index larger than the cap to the callers waiting for it and keeps none of it", async () => {
+        const { bytes, text } = await plainIndex(100);
+        const { service, fetchSidecar } = makeService(async () => bytes, text - 1);
+
+        const together = await Promise.all([
+            service.load("dest-1", "a.tar", PLAIN_META),
+            service.load("dest-1", "a.tar", PLAIN_META),
+        ]);
+        expect(together.map((index) => index?.files.length)).toEqual([100, 100]);
+        expect(fetchSidecar).toHaveBeenCalledOnce();
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await service.load("dest-1", "a.tar", PLAIN_META);
+        expect(fetchSidecar).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps indexes within the cap as before", async () => {
+        const { bytes, text } = await plainIndex(100);
+        const { service, fetchSidecar } = makeService(async () => bytes, text * 3);
+
+        for (const file of ["a.tar", "b.tar", "a.tar", "b.tar"]) await service.load("dest-1", file, PLAIN_META);
+
+        expect(fetchSidecar).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe("ArchiveIndexService.fetchSidecar", () => {
+    it("reads the sidecar in the view of the tenant the path is in, which for a shared restore is not the tenant that runs", async () => {
+        const download = vi.fn(async () => false);
+        openDestination.mockResolvedValue({ adapter: { download }, config: {} });
+
+        await new ArchiveIndexService().fetchSidecar("dest-1", "FileBackup/inc-001.tar", ".index", "msp");
+
+        expect(openDestination).toHaveBeenCalledWith("dest-1", "msp");
+        expect(download).toHaveBeenCalledWith({}, "FileBackup/inc-001.tar.index", expect.any(String));
+    });
+
+    // `indexFile` comes from the `.meta.json`, which whoever writes the destination chose. Joined into
+    // the temp name, `/../../app/data/dbackup.db` would make the download write there and the cleanup delete it.
+    it.each(["/../../../app/data/dbackup.db", "/../../other-job/x.tar.index", ".idx"])(
+        "never downloads or deletes anything for the index name %s the backup gives",
+        async (suffix) => {
+            const download = vi.fn(async () => true);
+            openDestination.mockResolvedValue({ adapter: { download }, config: {} });
+
+            await expect(new ArchiveIndexService().fetchSidecar("dest-1", "FileBackup/inc-001.tar", suffix)).resolves.toBeNull();
+
+            expect(download).not.toHaveBeenCalled();
+        }
+    );
+
+    it("downloads into a temp file named by the service, never by the backup", async () => {
+        const download = vi.fn(async () => false);
+        openDestination.mockResolvedValue({ adapter: { download }, config: {} });
+
+        await new ArchiveIndexService().fetchSidecar("dest-1", "FileBackup/inc-001.tar", ".index");
+
+        const local = String((download.mock.calls[0] as unknown[])[2]);
+        expect(local).toMatch(/archive-index-\d+-[0-9a-f-]{36}\.index$/);
+    });
+});
+
+describe("the plain index of a backup whose run encrypted it", () => {
+    const PLAIN_META: BackupMetadata = { ...META, archive: { formatVersion: 2, indexFile: ".index", encrypted: false } };
+
+    beforeEach(() => {
+        prismaMock.execution.findMany.mockResolvedValue([{
+            id: "run-1",
+            metadata: JSON.stringify({
+                archive: { formatVersion: 2, indexFile: ".index", encrypted: true, profileId: PROFILE_ID },
+                destinations: [{ configId: "dest-1", path: "FileBackup/inc-001.tar", status: "success" }],
+            }),
+        }]);
+    });
+
+    it("is refused instead of listed, since the sidecars beside it were swapped at the destination", async () => {
+        const plain = await serializeIndex([{ k: "h", v: 2, createdAt: "2026-07-25T20:10:37.652Z", archive: "inc-001.tar" }]);
+        const { service } = makeService(async () => plain);
+
+        await expect(service.load("dest-1", "FileBackup/inc-001.tar", PLAIN_META)).rejects.toThrow(/written encrypted, but the file at the destination is not encrypted/);
+        // A plain index of another destination, which no run encrypted, is read as before.
+        await expect(service.load("dest-2", "FileBackup/inc-001.tar", PLAIN_META)).resolves.not.toBeNull();
+    });
+});
+
+describe("ArchiveIndexService parses in flight", () => {
+    const PLAIN_META: BackupMetadata = { ...META, archive: { formatVersion: 2, indexFile: ".index", encrypted: false } };
+
+    it("never parses more indexes at once than the budget holds, also for loads with a key override", async () => {
+        const bytes = await serializeIndex([
+            { k: "h", v: 2, createdAt: "2026-07-25T20:10:37.652Z", archive: "x.tar" },
+            { k: "f", src: "s", p: "dir/a.txt", s: 1, m: "", n: 1 },
+        ]);
+        // Room for one index of this stored size at a time.
+        const budget = createParseBudget(1);
+        let running = 0;
+        let most = 0;
+        const counted: NonNullable<ConstructorParameters<typeof ArchiveIndexService>[1]> = (stored, parse) => budget(stored, async () => {
+            running++;
+            most = Math.max(most, running);
+            try {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                return await parse();
+            } finally {
+                running--;
+            }
+        });
+        const { service, fetchSidecar } = makeService(async () => bytes, undefined, counted);
+
+        // An override skips the cache, so each of these starts a parse of its own.
+        const loaded = await Promise.all([
+            ...Array.from({ length: 4 }, () => service.load("dest-1", "a.tar", PLAIN_META, { profileId: "x" })),
+            service.load("dest-1", "b.tar", PLAIN_META),
+        ]);
+
+        expect(loaded.map((index) => index?.files.length)).toEqual([1, 1, 1, 1, 1]);
+        expect(fetchSidecar).toHaveBeenCalledTimes(5);
+        expect(most).toBe(1);
     });
 });

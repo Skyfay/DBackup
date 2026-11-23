@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { shellEscape, buildRemoteCommand } from "@/lib/transport/ssh-escape";
+import { shellEscape, buildRemoteCommand, renderEnvFile } from "@/lib/transport/ssh-escape";
 
 const execFileAsync = promisify(execFile);
 
@@ -61,26 +65,9 @@ describe("buildRemoteCommand", () => {
             .toBe("'mysqldump' '--user' 'root'");
     });
 
-    it("puts environment values in an export prefix, never in argv", () => {
-        const command = buildRemoteCommand(["mysqldump", "-h", "db"], {
-            env: { MYSQL_PWD: "s3cr3t" },
-        });
-
-        expect(command).toBe("export MYSQL_PWD='s3cr3t'; 'mysqldump' '-h' 'db'");
-        // The secret must not be reachable through the remote process list.
-        expect(command.slice(command.indexOf("'mysqldump'"))).not.toContain("s3cr3t");
-    });
-
-    it("skips undefined and empty environment values", () => {
-        const command = buildRemoteCommand(["psql"], {
-            env: { PGPASSWORD: undefined, PGUSER: "", PGHOST: "db" },
-        });
-        expect(command).toBe("export PGHOST='db'; 'psql'");
-    });
-
-    it("rejects an environment name that is not a valid shell identifier", () => {
-        expect(() => buildRemoteCommand(["true"], { env: { "A;rm -rf /": "x" } }))
-            .toThrow(/Invalid environment variable name/);
+    it("sources the environment file and removes it before the command runs", () => {
+        const command = buildRemoteCommand(["mysqldump", "-h", "db"], { envFile: "/tmp/dbackup_x.env" });
+        expect(command).toBe(". '/tmp/dbackup_x.env' && rm -f '/tmp/dbackup_x.env' && 'mysqldump' '-h' 'db'");
     });
 
     it("guards the command with cd so it cannot run in the wrong directory", () => {
@@ -93,12 +80,70 @@ describe("buildRemoteCommand", () => {
             .toBe("'mysql' < '/tmp/dump.sql'");
     });
 
-    it("orders exports, then cd, then the command", () => {
+    it("orders the environment file, then cd, then the command", () => {
         expect(buildRemoteCommand(["mysql"], {
-            env: { MYSQL_PWD: "pw" },
+            envFile: "/tmp/e.env",
             cwd: "/tmp",
             stdinFile: "/tmp/in.sql",
-        })).toBe("export MYSQL_PWD='pw'; cd '/tmp' && 'mysql' < '/tmp/in.sql'");
+        })).toBe(". '/tmp/e.env' && rm -f '/tmp/e.env' && cd '/tmp' && 'mysql' < '/tmp/in.sql'");
+    });
+});
+
+describe("buildRemoteCommand with inline values", () => {
+    // The last resort of a target where no environment file could be written, see `SshHost.writeEnvFile`.
+    it("exports them in front of the command, before cd, and prefers a file when there is one", () => {
+        expect(buildRemoteCommand(["mysql"], { inlineEnv: { MYSQL_PWD: "s3cr3t", EMPTY: "" }, cwd: "/srv" }))
+            .toBe("export MYSQL_PWD='s3cr3t'; cd '/srv' && 'mysql'");
+        expect(buildRemoteCommand(["mysql"], { inlineEnv: { MYSQL_PWD: "s3cr3t" }, envFile: "/tmp/e.env" }))
+            .toBe(". '/tmp/e.env' && rm -f '/tmp/e.env' && 'mysql'");
+        expect(buildRemoteCommand(["mysql"], { inlineEnv: { MYSQL_PWD: undefined } })).toBe("'mysql'");
+    });
+
+    it("hands a hostile value with a newline to the command unchanged through a real shell", async () => {
+        const secret = "a'b $(id) `id` \"q\" \\ ; | & *\nline2";
+        const command = buildRemoteCommand(["sh", "-c", 'printf %s "$SECRET"'], { inlineEnv: { SECRET: secret } });
+        const { stdout } = await execFileAsync("/bin/sh", ["-c", command]);
+        expect(stdout).toBe(secret);
+    });
+});
+
+describe("renderEnvFile", () => {
+    it("renders one export line per value", () => {
+        expect(renderEnvFile({ PGPASSWORD: "s3cr3t", PGHOST: "db" }))
+            .toBe("export PGPASSWORD='s3cr3t'\nexport PGHOST='db'\n");
+    });
+
+    it("skips undefined and empty values and returns null when nothing is left", () => {
+        expect(renderEnvFile({ PGPASSWORD: undefined, PGUSER: "", PGHOST: "db" })).toBe("export PGHOST='db'\n");
+        expect(renderEnvFile({ PGPASSWORD: undefined, PGUSER: "" })).toBeNull();
+        expect(renderEnvFile(undefined)).toBeNull();
+    });
+
+    it("rejects an environment name that is not a valid shell identifier", () => {
+        expect(() => renderEnvFile({ "A;rm -rf /": "x" })).toThrow(/Invalid environment variable name/);
+    });
+
+    it("hands hostile values to the command unchanged through a real shell, and the file is gone", async () => {
+        const dir = await mkdtemp(join(os.tmpdir(), "env-file-"));
+        const envFile = join(dir, "e.env");
+        const secret = "a'b $(id) `id` \"q\" \\ ; | & *\nline2";
+        try {
+            await writeFile(envFile, renderEnvFile({ SECRET: secret }) ?? "", { mode: 0o600 });
+            const command = buildRemoteCommand(["sh", "-c", 'printf %s "$SECRET"'], { envFile });
+
+            expect(command).not.toContain("a'b");
+            const { stdout } = await execFileAsync("/bin/sh", ["-c", command]);
+            expect(stdout).toBe(secret);
+            expect(existsSync(envFile)).toBe(false);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("does not run the command when the environment file is missing", async () => {
+        const command = buildRemoteCommand(["echo", "ran"], { envFile: "/nonexistent/dbackup.env" });
+        const result = await execFileAsync("/bin/sh", ["-c", command]).catch((error: { code: number; stdout: string }) => error);
+        expect(result.stdout).not.toContain("ran");
     });
 });
 

@@ -17,7 +17,7 @@ import {
     getAuthLimiter,
     getApiLimiter,
     getMutationLimiter,
-    applyExternalConfig,
+    applyRateLimitConfig,
     type RateLimitConfig,
 } from "@/lib/rate-limit";
 
@@ -69,7 +69,7 @@ describe("getAuthLimiter / getApiLimiter / getMutationLimiter", () => {
     });
 });
 
-describe("applyExternalConfig", () => {
+describe("applyRateLimitConfig", () => {
     const newConfig: RateLimitConfig = {
         auth: { points: 10, duration: 120 },
         api: { points: 200, duration: 30 },
@@ -78,7 +78,7 @@ describe("applyExternalConfig", () => {
 
     beforeEach(() => {
         // Reset to defaults before each test
-        applyExternalConfig({
+        applyRateLimitConfig({
             auth: { ...RATE_LIMIT_DEFAULTS.auth },
             api: { ...RATE_LIMIT_DEFAULTS.api },
             mutation: { ...RATE_LIMIT_DEFAULTS.mutation },
@@ -87,7 +87,7 @@ describe("applyExternalConfig", () => {
 
     it("rebuilds auth limiter with new points/duration", () => {
         const before = getAuthLimiter();
-        applyExternalConfig(newConfig);
+        applyRateLimitConfig(newConfig);
         const after = getAuthLimiter();
         expect(after).not.toBe(before);
         expect(after.points).toBe(10);
@@ -95,7 +95,7 @@ describe("applyExternalConfig", () => {
 
     it("rebuilds api limiter with new points/duration", () => {
         const before = getApiLimiter();
-        applyExternalConfig(newConfig);
+        applyRateLimitConfig(newConfig);
         const after = getApiLimiter();
         expect(after).not.toBe(before);
         expect(after.points).toBe(200);
@@ -103,7 +103,7 @@ describe("applyExternalConfig", () => {
 
     it("rebuilds mutation limiter with new points/duration", () => {
         const before = getMutationLimiter();
-        applyExternalConfig(newConfig);
+        applyRateLimitConfig(newConfig);
         const after = getMutationLimiter();
         expect(after).not.toBe(before);
         expect(after.points).toBe(50);
@@ -114,7 +114,7 @@ describe("applyExternalConfig", () => {
         await auth.consume("203.0.113.7");
 
         // The middleware applies the same config every 30 seconds.
-        applyExternalConfig({ ...newConfig, auth: { ...RATE_LIMIT_DEFAULTS.auth } });
+        applyRateLimitConfig({ ...newConfig, auth: { ...RATE_LIMIT_DEFAULTS.auth } });
 
         expect(getAuthLimiter()).toBe(auth);
         expect((await auth.get("203.0.113.7"))?.consumedPoints).toBe(1);

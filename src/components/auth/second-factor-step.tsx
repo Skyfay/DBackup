@@ -12,7 +12,6 @@ import { logger } from "@/lib/logging/logger";
 import { formatTwoFactorCode } from "@/lib/utils";
 import { LoginHeading, LoginNote, OrDivider, PasskeyButton } from "./login-parts";
 import { codeError, type AuthError, type LoginProblem } from "./login-problems";
-import { AFTER_SIGN_IN } from "@/lib/auth/sign-in-target";
 
 const log = logger.child({ component: "second-factor-step" });
 
@@ -20,6 +19,8 @@ interface SecondFactorStepProps {
     email: string;
     /** The second factors better-auth named after the password, null when it named none. */
     factors: string[] | null;
+    /** Where the browser goes once the second factor signed in, `AFTER_SIGN_IN` or the page asked for. */
+    target: string;
     onBack: () => void;
     onPasskey: () => void;
     passkeyBusy: boolean;
@@ -74,7 +75,7 @@ export function SecondFactorStep(props: SecondFactorStepProps) {
 }
 
 /** The code of the authenticator app, a backup code, or a passkey instead. */
-function CodeFactor({ email, onBack, onPasskey, passkeyBusy, problem }: SecondFactorStepProps) {
+function CodeFactor({ email, target, onBack, onPasskey, passkeyBusy, problem }: SecondFactorStepProps) {
     const router = useRouter();
     const codeId = useId();
     const [backup, setBackup] = useState(false);
@@ -88,7 +89,7 @@ function CodeFactor({ email, onBack, onPasskey, passkeyBusy, problem }: SecondFa
         setBusy(true);
         setError(null);
         const fetchOptions = {
-            onSuccess: () => router.push(AFTER_SIGN_IN),
+            onSuccess: () => router.push(target),
             onError: (context: { error: AuthError }) => {
                 setError(codeError(context.error, backup));
                 setBusy(false);

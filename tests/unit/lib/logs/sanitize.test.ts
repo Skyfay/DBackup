@@ -49,6 +49,28 @@ describe('sanitizeLogs', () => {
         expect(result[0].message).toContain('[CREDENTIALS REDACTED]');
     });
 
+    it('redacts the userinfo of mssql, http(s), smb and amqp URIs', () => {
+        const uris = [
+            'mssql://sa:Str0ng!@db:1433/shop',
+            'sqlserver://sa:Str0ng!@db',
+            'https://deploy:ghp_token1@git.example.com/repo.git',
+            'http://admin:pw-1@nas.local:5000/webdav',
+            'smb://WORKGROUP;backup:sh4re@nas/backups',
+            'amqp://guest:rabb1t@mq:5672/vhost',
+            'amqps://guest:rabb1t@mq:5671',
+        ];
+        for (const uri of uris) {
+            const result = sanitizeLogs([makeEntry({ message: `Failed: ${uri}` })]);
+            expect(result[0].message).toContain('[CREDENTIALS REDACTED]@');
+            for (const secret of ['Str0ng!', 'ghp_token1', 'pw-1', 'sh4re', 'rabb1t']) expect(result[0].message).not.toContain(secret);
+        }
+    });
+
+    it('leaves a web address without a login as it is, also with an @ in its path', () => {
+        const result = sanitizeLogs([makeEntry({ message: 'See https://github.com/@skyfay and https://example.com/a?b=c@d' })]);
+        expect(result[0].message).toBe('See https://github.com/@skyfay and https://example.com/a?b=c@d');
+    });
+
     it('redacts credentials in details field', () => {
         const result = sanitizeLogs([makeEntry({ details: 'sftp://user:secret@host/path' })]);
         expect(result[0].details).not.toContain('secret');

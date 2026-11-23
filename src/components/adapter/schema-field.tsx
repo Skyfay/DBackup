@@ -94,7 +94,8 @@ export function SchemaField({
     // When editing, the API redacts stored secrets (the value is never sent).
     // `secretStatus[fieldKey]` tells us a value IS stored, so show a "leave blank
     // to keep" hint instead of an empty-looking field. Submitting it blank keeps
-    // the existing secret (server-side mergeSecrets); typing replaces it.
+    // the existing secret (server-side mergeStoredSecrets), typing replaces it. Once the
+    // host, port or SSH host changes, the server refuses a blank one and the person types it again.
     const secretStatus = useSecretStatus();
     const hasStoredSecret = secretStatus[fieldKey] === true;
     const placeholder = hasStoredSecret ? "•••••••• saved, leave blank to keep" : rawPlaceholder;

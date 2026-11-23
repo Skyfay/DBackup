@@ -35,7 +35,7 @@ function failuresOf(result: TrashRestoreResult, names: Map<string, string>): Bul
 
 /**
  * What was deleted lately, of the kinds the viewer may change: keys, saved logins, connections, jobs
- * and users, each until Data retention lets go of it. Someone who may change the settings restores
+ * and users, each until Data retention lets go of it. Someone who may change the tenant settings restores
  * one under its own name, and gives another one when someone took it meanwhile, or deletes it for
  * good. Someone who may only read the settings sees the list without its buttons.
  */
@@ -93,7 +93,7 @@ export function RecentlyDeletedPart({ rows }: { rows: TrashRow[] }) {
         onPurge: setPurging,
     }), [restore]);
 
-    const columns = useMemo(() => trashColumns((row) => (readOnly ? null : (
+    const columns = useMemo(() => trashColumns((row) => readOnly ? null : (
         <>
             <Button variant="outline" size="sm" onClick={() => handlers.onRestore(row)}>
                 <ArchiveRestore />
@@ -101,7 +101,7 @@ export function RecentlyDeletedPart({ rows }: { rows: TrashRow[] }) {
             </Button>
             <BackupRowMenu name={row.name} groups={trashActions(row, handlers)} />
         </>
-    ))), [handlers, readOnly]);
+    )), [handlers, readOnly]);
 
     const bulkActions = useMemo<BulkAction<TrashRow>[]>(() => readOnly ? [] : [
         {
@@ -137,9 +137,11 @@ export function RecentlyDeletedPart({ rows }: { rows: TrashRow[] }) {
                 const result = await purgeDeletedAction(selected.map((row) => row.id));
                 if (!result.success) throw new Error(result.error);
                 const gone = new Set(result.data.purged);
+                // A row refused with a reason, like an account whose group may do more than the viewer, says why.
+                const reasons = new Map(result.data.failed.map((row) => [row.id, row.error]));
                 return {
                     succeeded: result.data.purged,
-                    failed: selected.filter((row) => !gone.has(row.id)).map((row) => ({ id: row.id, name: row.name, error: "It is not in Recently deleted any more." })),
+                    failed: selected.filter((row) => !gone.has(row.id)).map((row) => ({ id: row.id, name: row.name, error: reasons.get(row.id) ?? "It is not in Recently deleted any more." })),
                 };
             },
         },
@@ -184,7 +186,7 @@ export function RecentlyDeletedPart({ rows }: { rows: TrashRow[] }) {
                 />
             )}
             <p className="px-4 py-4 text-xs text-muted-foreground md:px-6">
-                Only the kinds you may change show here: keys with the right to change the Vault, saved logins with the right to delete them, users with the right to change users, and so on. Restoring and deleting for good need the right to change the settings as well.
+                Only the kinds you may change show here: keys with the right to change the Vault, saved logins with the right to delete them, users with the right to change users, and so on. Restoring and deleting for good need the right to change the tenant settings as well.
             </p>
 
             {conflict && (

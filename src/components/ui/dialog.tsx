@@ -6,6 +6,7 @@ import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { toneAttribute, type Tone } from "@/components/ui/tone"
+import { ignoringToasts } from "@/components/ui/outside-toasts"
 
 function Dialog({
   ...props
@@ -53,6 +54,7 @@ function DialogContent({
   showCloseButton = true,
   tone,
   onSubmit,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -70,6 +72,8 @@ function DialogContent({
           className
         )}
         {...props}
+        // A click on a toast, like its Open the run, leaves the dialog open.
+        onInteractOutside={ignoringToasts(onInteractOutside)}
         onSubmit={(event) => {
           onSubmit?.(event)
           // React passes a submit on through the portal to the form the dialog was opened from,

@@ -10,6 +10,9 @@ vi.mock('@/services/restore/pipeline', () => ({ runRestorePipeline: (...args: un
 
 const { RestoreService } = await import('@/services/restore/restore-service');
 
+/** A platform admin with a session, who may restore into any target. */
+const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session" } as const;
+
 describe('RestoreService database mapping', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -24,7 +27,7 @@ describe('RestoreService database mapping', () => {
             file: 'jobs/nightly.tar',
             targetSourceId: 'source-1',
             databaseMapping: { shop: 'shop_copy' },
-        });
+        }, PLATFORM_ADMIN);
 
         const expected = [{ originalName: 'shop', targetName: 'shop_copy', selected: true }];
         expect(preflightMock.mock.calls[0][0].databaseMapping).toEqual(expected);
@@ -36,7 +39,7 @@ describe('RestoreService database mapping', () => {
             storageConfigId: 'storage-1',
             file: 'jobs/nightly.tar',
             databaseMapping: 'shop' as never,
-        })).rejects.toThrow(/databaseMapping/);
+        }, PLATFORM_ADMIN)).rejects.toThrow(/databaseMapping/);
 
         expect(preflightMock).not.toHaveBeenCalled();
         expect(prismaMock.execution.create).not.toHaveBeenCalled();

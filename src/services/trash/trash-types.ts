@@ -26,6 +26,18 @@ export interface TrashRow {
     deletedByName: string | null;
     /** When Clean old data removes it for good. */
     expiresAt: string;
+    /** The tenant whose Recently deleted keeps it, where it is restored. An account of one tenant waits there, any other account in the home tenant. */
+    tenantId: string;
+}
+
+/**
+ * Recently deleted as a part of the settings, of Settings with one tenant and of the tenant
+ * settings with more: what the viewer may restore, and whether they may restore and delete for
+ * good, which needs `TRASH_ADMIN_PERMISSION`.
+ */
+export interface TrashPart {
+    rows: TrashRow[];
+    canManage: boolean;
 }
 
 /** What a restore of several deleted records did, one list per outcome. */

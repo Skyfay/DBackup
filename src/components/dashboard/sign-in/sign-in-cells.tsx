@@ -1,10 +1,11 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Globe, LogIn, Mail } from "lucide-react";
 import { countWord } from "@/components/dashboard/groups/group-cells";
 import { UserAvatar } from "@/components/dashboard/users/user-cells";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { ProviderTile } from "@/components/oidc/provider-logo";
+import { TenantTileMark } from "@/components/tenant/tenant-pick";
 import { Badge } from "@/components/ui/badge";
 import { DateDisplay } from "@/components/utils/date-display";
 import { cn } from "@/lib/utils";
@@ -93,14 +94,26 @@ function GroupName({ name }: { name: string }) {
     return <span className="inline-flex h-5.5 max-w-40 items-center truncate rounded-md border px-2 text-xs font-medium" title={name}>{name}</span>;
 }
 
-/** What happens to someone new: added to a group, added without one in amber, or not added. */
-export function NewPeopleCell({ provider }: { provider: Pick<SsoProviderRow, "allowProvisioning" | "group"> }) {
-    if (!provider.allowProvisioning) return <span className="text-sm text-muted-foreground">Not added</span>;
+/**
+ * What happens to someone new: added to a group, added without one in amber, or not added. With
+ * more than one tenant it names the tenant they land in, like Acme GmbH as Viewer.
+ */
+export function NewPeopleCell({ provider, withTenant = false }: { provider: Pick<SsoProviderRow, "allowProvisioning" | "group" | "landsIn">; withTenant?: boolean }) {
+    if (!provider.allowProvisioning) return <span className="text-sm text-muted-foreground">{withTenant ? "Not added, an account first" : "Not added"}</span>;
     if (!provider.group) {
         return (
             <span className="flex min-w-0 items-center gap-1.5 text-sm text-warning" title="They sign in, but see and do nothing until someone picks a group">
                 <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="truncate">Added without a group</span>
+                <span className="truncate">{withTenant ? `Added to ${provider.landsIn.name} without a group` : "Added without a group"}</span>
+            </span>
+        );
+    }
+    if (withTenant) {
+        return (
+            <span className="flex min-w-0 items-center gap-2 text-sm">
+                <span className="min-w-0 truncate" title={provider.landsIn.name}>{provider.landsIn.name}</span>
+                <span className="shrink-0 text-muted-foreground">as</span>
+                <GroupName name={provider.group.name} />
             </span>
         );
     }
@@ -108,6 +121,49 @@ export function NewPeopleCell({ provider }: { provider: Pick<SsoProviderRow, "al
         <span className="flex min-w-0 items-center gap-2 text-sm">
             <span className="shrink-0">Added to</span>
             <GroupName name={provider.group.name} />
+        </span>
+    );
+}
+
+/** The platform, or the tenant that brings a provider, as a small tag with its mark. */
+export function BelongsTo({ tenant, className }: { tenant: SsoProviderRow["tenant"]; className?: string }) {
+    if (!tenant) {
+        return (
+            <span className={cn("inline-flex h-6 max-w-48 items-center gap-1.5 rounded-md border bg-muted/50 px-2 text-xs font-medium", className)}>
+                <Globe className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                Platform
+            </span>
+        );
+    }
+    return (
+        <span className={cn("inline-flex h-6 max-w-48 min-w-0 items-center gap-1.5 rounded-md border bg-muted/50 pr-2 pl-0.5 text-xs font-medium", className)} title={tenant.name}>
+            <TenantTileMark name={tenant.name} className="size-5 rounded-sm border-0 bg-background text-[9px]" />
+            <span className="truncate">{tenant.name}</span>
+        </span>
+    );
+}
+
+/** The email domain that reaches a provider, in mono like an ID. */
+export function DomainCell({ domain }: { domain: string | null }) {
+    return domain
+        ? <span className="block max-w-44 truncate font-mono text-xs" title={domain}>{domain}</span>
+        : <span className="text-sm text-muted-foreground">-</span>;
+}
+
+/** How the login page reaches a provider: a button for one of the platform, the email for one of a tenant. */
+export function LoginPageCell({ provider }: { provider: Pick<SsoProviderRow, "tenant"> }) {
+    if (provider.tenant) {
+        return (
+            <span className="flex items-center gap-1.5 text-sm whitespace-nowrap text-muted-foreground">
+                <Mail className="size-3.5 shrink-0" aria-hidden="true" />
+                By the email
+            </span>
+        );
+    }
+    return (
+        <span className="inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-xs font-medium whitespace-nowrap">
+            <LogIn className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            Button
         </span>
     );
 }

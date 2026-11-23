@@ -91,6 +91,14 @@ services:
     ports: ["33390:3306"]
     volumes: [mysql-9:/var/lib/mysql]
     healthcheck: *mysql-health
+  mysql-26:
+    image: mysql:26
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *mysql-env
+    ports: ["33326:3306"]
+    volumes: [mysql-26:/var/lib/mysql]
+    healthcheck: *mysql-health
 
   # ── MariaDB ─────────────────────────────────────────────
   mariadb-104:
@@ -183,6 +191,14 @@ services:
     ports: ["54418:5432"]
     # PostgreSQL 18 keeps its data one level deeper, in a folder named after the major version.
     volumes: [postgres-18:/var/lib/postgresql]
+    healthcheck: *postgres-health
+  postgres-19:
+    image: postgres:19-alpine
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *postgres-env
+    ports: ["54419:5432"]
+    volumes: [postgres-19:/var/lib/postgresql]
     healthcheck: *postgres-health
 
   # ── MongoDB ─────────────────────────────────────────────
@@ -349,6 +365,7 @@ volumes:
   mysql-80:
   mysql-84:
   mysql-9:
+  mysql-26:
   mariadb-104:
   mariadb-1011:
   mariadb-114:
@@ -360,6 +377,7 @@ volumes:
   postgres-16:
   postgres-17:
   postgres-18:
+  postgres-19:
   mongo-44:
   mongo-60:
   mongo-70:

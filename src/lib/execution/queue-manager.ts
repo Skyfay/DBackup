@@ -1,9 +1,29 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
+import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { logger } from "@/lib/logging/logger";
 import { isShutdownRequested } from "@/lib/server/shutdown";
 import { isDatabaseMaintenanceActive, isRunHoldActive } from "@/lib/server/database-maintenance";
+import { pickFairly, type LastServed } from "@/lib/core/queue-fairness";
+import { LEADING_RUNS } from "./follower-runs";
 
 const log = logger.child({ module: "Queue" });
+
+/**
+ * The waiting runs the queue starts: those of a job, and a backup whose job was deleted, which then
+ * ends at once. A system task, like the integrity check of a tenant or a check of copies, waits as
+ * `Pending` without a job only until its own runner claims it, and is never the queue's to start.
+ */
+export const QUEUED_RUNS: Prisma.ExecutionWhereInput = {
+    OR: [{ jobId: { not: null } }, { type: "Backup" }],
+};
+
+/**
+ * The order in which the tenants last got a slot, kept by this process, which is the only one that
+ * runs the queue. After a restart no tenant is ahead, and the oldest run goes first as before.
+ */
+const lastServed: LastServed = new Map();
+let served = 0;
 
 /**
  * Checks the queue and starts jobs if slots are available.
@@ -12,8 +32,18 @@ const log = logger.child({ module: "Queue" });
  * during the scheduled one. Two runs of one job at once would plan the same position of an
  * incremental chain and could write the same file, so the waiting run starts right after,
  * when the queue is checked again at the end of the first.
+ *
+ * The queue is one for every tenant, so it reads the runs of all of them, whoever asks for it, and
+ * starts each run in the tenant of its job. A free slot goes to the tenant with the fewest running
+ * runs, then to the one that got a slot longest ago, and inside a tenant to its oldest run
+ * (`pickFairly`), so the waiting runs of one tenant never hold back those of the others by more
+ * than the runs that hold a slot already.
  */
-export async function processQueue() {
+export function processQueue(): Promise<void> {
+    return runAsSystem(processAllTenants);
+}
+
+async function processAllTenants() {
     // Skip queue processing during shutdown
     if (isShutdownRequested()) {
         log.info("Shutdown in progress - skipping queue processing");
@@ -37,10 +67,11 @@ export async function processQueue() {
     // concurrent call claims after this read is still in this list as the first of its job, so
     // this call picks that one, and its claim in performExecution fails. A run claimed before
     // this read shows up as running below. Either way no second run of a job starts beside it.
+    // A run that follows another one waits for that one, never for a slot of its own.
     const pending = await prisma.execution.findMany({
-        where: { status: "Pending" },
+        where: { status: "Pending", AND: [LEADING_RUNS, QUEUED_RUNS] },
         orderBy: { startedAt: 'asc' }, // Creation time
-        select: { id: true, jobId: true },
+        select: { id: true, jobId: true, tenantId: true },
     });
 
     if (pending.length === 0) {
@@ -48,10 +79,12 @@ export async function processQueue() {
         return;
     }
 
-    // 3. Running runs fill slots, and their jobs are busy
+    // 3. The running runs the queue started fill slots, and their jobs are busy. A run that follows
+    // another fills none, and neither does a restore or a system task like a check of copies, which
+    // the queue never starts, so a long restore of one tenant holds no backup of another.
     const running = await prisma.execution.findMany({
-        where: { status: "Running" },
-        select: { jobId: true },
+        where: { status: "Running", AND: [LEADING_RUNS, QUEUED_RUNS] },
+        select: { jobId: true, tenantId: true },
     });
 
     if (running.length >= maxJobs) {
@@ -62,16 +95,29 @@ export async function processQueue() {
     const availableSlots = maxJobs - running.length;
     const busyJobs = new Set(running.flatMap((execution) => (execution.jobId ? [execution.jobId] : [])));
 
-    // The oldest waiting run of every job that is not running, up to the free slots.
-    const pendingJobs: typeof pending = [];
+    const runningOf = new Map<string | undefined, number>();
+    for (const execution of running) runningOf.set(execution.tenantId, (runningOf.get(execution.tenantId) ?? 0) + 1);
+
+    // The oldest waiting run of every job that is not running. A run whose job was deleted starts
+    // as before and ends right there.
+    const candidates: typeof pending = [];
+    const waitingJobs = new Set<string>();
     for (const execution of pending) {
-        if (pendingJobs.length >= availableSlots) break;
-        if (execution.jobId && busyJobs.has(execution.jobId)) {
-            log.debug("Run waits for the running one of its job", { executionId: execution.id, jobId: execution.jobId });
+        if (execution.jobId && (busyJobs.has(execution.jobId) || waitingJobs.has(execution.jobId))) {
+            log.debug("Run waits for another run of its job", { executionId: execution.id, jobId: execution.jobId });
             continue;
         }
-        // A run whose job was deleted starts as before and ends right there.
-        if (execution.jobId) busyJobs.add(execution.jobId);
+        if (execution.jobId) waitingJobs.add(execution.jobId);
+        candidates.push(execution);
+    }
+
+    // Each free slot goes to the tenant whose turn it is, so one tenant with a long line of waiting
+    // runs does not take every slot before the run of another tenant starts.
+    const pendingJobs: typeof pending = [];
+    while (pendingJobs.length < availableSlots && candidates.length > 0) {
+        const [execution] = candidates.splice(pickFairly(candidates, runningOf, lastServed), 1);
+        runningOf.set(execution.tenantId, (runningOf.get(execution.tenantId) ?? 0) + 1);
+        lastServed.set(execution.tenantId, ++served);
         pendingJobs.push(execution);
     }
 
@@ -87,7 +133,7 @@ export async function processQueue() {
     for (const execution of pendingJobs) {
         // Trigger execution asynchronously
         // We push to array to possibly await them, or just to catch errors
-        promises.push(executeQueuedJob(execution.id, execution.jobId!));
+        promises.push(runAsTenant(execution.tenantId, () => executeQueuedJob(execution.id, execution.jobId!)));
     }
 
     // For testing purposes, we wait significantly longer than we think is needed.

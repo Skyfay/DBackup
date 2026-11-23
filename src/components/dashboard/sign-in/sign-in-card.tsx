@@ -5,16 +5,18 @@ import { ProviderTile } from "@/components/oidc/provider-logo";
 import { isPlainClick } from "@/components/ui/row-click";
 import { cn } from "@/lib/utils";
 import type { SsoProviderRow } from "@/services/sso/sso-providers-types";
-import { LinkedFaces, NewPeopleCell, placeLine, ProviderStateBadge, quietName } from "./sign-in-cells";
+import { BelongsTo, LinkedFaces, NewPeopleCell, placeLine, ProviderStateBadge, quietName } from "./sign-in-cells";
 
 interface SignInCardProps {
     provider: SsoProviderRow;
+    /** More than one tenant, so the card says who the provider belongs to and how it is reached. */
+    multiTenant?: boolean;
     onOpen: (provider: SsoProviderRow) => void;
     actions: React.ReactNode;
 }
 
 /** A provider as a card: where it signs in, who is linked, and what happens to someone new. */
-export function SignInCard({ provider, onOpen, actions }: SignInCardProps) {
+export function SignInCard({ provider, multiTenant = false, onOpen, actions }: SignInCardProps) {
     return (
         <div
             onClick={(event) => isPlainClick(event) && onOpen(provider)}
@@ -38,13 +40,22 @@ export function SignInCard({ provider, onOpen, actions }: SignInCardProps) {
                 <ProviderStateBadge provider={provider} />
                 <div className="-mt-1 -mr-2">{actions}</div>
             </div>
-            <p className="min-w-0 truncate text-sm text-muted-foreground">
-                Signs in at <span className="text-foreground">{placeLine(provider)}</span>
-            </p>
+            {multiTenant ? (
+                <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+                    <BelongsTo tenant={provider.tenant} className="shrink-0" />
+                    <span className="min-w-0 truncate">
+                        {provider.tenant ? <>By an email of <span className="font-mono text-xs text-foreground">{provider.domain ?? "-"}</span></> : "A button on the login page"}
+                    </span>
+                </div>
+            ) : (
+                <p className="min-w-0 truncate text-sm text-muted-foreground">
+                    Signs in at <span className="text-foreground">{placeLine(provider)}</span>
+                </p>
+            )}
             <LinkedFaces people={provider.linked} empty="nobody linked yet" />
             <div className="flex min-w-0 items-center gap-3 border-t pt-3">
                 <div className="min-w-0">
-                    <NewPeopleCell provider={provider} />
+                    <NewPeopleCell provider={provider} withTenant={multiTenant} />
                 </div>
                 <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                     {provider.lastSignIn ? <>last sign-in <RelativeTime date={provider.lastSignIn.at} /></> : "never used"}

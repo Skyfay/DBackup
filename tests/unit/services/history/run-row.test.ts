@@ -22,6 +22,17 @@ describe("nameAndSub", () => {
         expect(nameAndSub(run, parseMetadata(run.metadata))).toEqual({ name: "Restore onto Shop staging", sub: "Restore · 2026-09-26.tar" });
     });
 
+    it("names the database of a customer's restore of a shared database, and the customer in the run of the server's tenant", () => {
+        const customer = record({ type: "Restore", jobId: null, job: null, path: null, metadata: JSON.stringify({ target: { name: "Shared MySQL", adapterId: "mysql" }, restoreOf: { database: "shop2" } }) });
+        expect(nameAndSub(customer, parseMetadata(customer.metadata))).toEqual({ name: "Restore onto Shared MySQL", sub: "Restore of shop2" });
+
+        const provider = record({
+            type: "Restore", jobId: null, job: null, path: "Shared/2026-10-15.tar",
+            metadata: JSON.stringify({ target: { id: "shared-mysql", name: "Shared MySQL", adapterId: "mysql" }, restoreOf: { database: "shop2", customer: "Acme" }, followsRun: "run-acme" }),
+        });
+        expect(nameAndSub(provider, parseMetadata(provider.metadata))).toEqual({ name: "Restore onto Shared MySQL", sub: "Restore of shop2 for Acme · 2026-10-15.tar" });
+    });
+
     it("gives the system tasks a name of their own", () => {
         const run = record({ type: "IntegrityCheck", jobId: null, job: null, metadata: null });
         expect(nameAndSub(run, {}).name).toBe("Integrity check");

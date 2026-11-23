@@ -1,5 +1,7 @@
 import { createPrivateKey } from "crypto";
 
+import { assertPkcs8Cost, encryptedPkcs8Der } from "./key-cost";
+
 /**
  * Converts an encrypted PKCS#8 private key (-----BEGIN ENCRYPTED PRIVATE KEY-----)
  * to a format that ssh2 accepts.
@@ -13,9 +15,13 @@ import { createPrivateKey } from "crypto";
  * Throws if the passphrase is wrong or the key type is unsupported.
  */
 export function normalizeSshPrivateKey(privateKey: string, passphrase: string): string {
+    // The derivation runs on the event loop, so its cost is bounded first, and Node decrypts
+    // the very bytes that were checked, never another block of the text.
+    const der = encryptedPkcs8Der(privateKey);
+    assertPkcs8Cost(der);
     let keyObj;
     try {
-        keyObj = createPrivateKey({ key: privateKey, format: "pem", passphrase });
+        keyObj = createPrivateKey({ key: der, format: "der", type: "pkcs8", passphrase });
     } catch {
         throw new Error("Failed to decrypt private key. Check your passphrase.");
     }

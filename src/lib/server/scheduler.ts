@@ -2,7 +2,9 @@ import cron from "node-cron";
 import type { ScheduledTask } from "node-cron";
 import prisma from "@/lib/prisma";
 import { runJob } from "@/lib/runner";
+import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { systemTaskService, SYSTEM_TASKS } from "@/services/system/system-task-service";
+import { queueJobsChanged } from "@/services/jobs/queue-snapshot";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -38,7 +40,7 @@ export class BackupScheduler {
                 log.debug("Scheduling startup run for system task", { taskId, delayMs: 10000 });
                 setTimeout(() => {
                     log.debug("Running startup task", { taskId });
-                    systemTaskService.runTask(taskId).catch((e) => log.error("Startup task failed", { taskId }, wrapError(e)));
+                    runAsSystem(() => systemTaskService.runTask(taskId)).catch((e) => log.error("Startup task failed", { taskId }, wrapError(e)));
                 }, 10000);
             } catch (error) {
                 log.error("Failed to schedule startup run", { taskId }, wrapError(error));
@@ -47,6 +49,10 @@ export class BackupScheduler {
     }
 
     async refresh() {
+        // A saved job, preset or setting asks for the refresh, which the plan of the queue the pages
+        // share reads too, so it is read again on the next request.
+        queueJobsChanged();
+
         // Guard against concurrent refresh calls.
         // If a refresh is already running, queue one more to run after it finishes.
         // Any additional queued requests are collapsed into a single pending refresh.
@@ -60,7 +66,8 @@ export class BackupScheduler {
         this.refreshQueued = false;
 
         try {
-            await this._doRefresh();
+            // The jobs of every tenant, also when a saved job of one tenant asks for the refresh.
+            await runAsSystem(() => this._doRefresh());
         } finally {
             this.refreshing = false;
             if (this.refreshQueued) {
@@ -102,7 +109,7 @@ export class BackupScheduler {
 
                     const task = cron.schedule(effectiveSchedule, () => {
                         log.debug("Triggering job", { jobName: job.name });
-                        runJob(job.id, { type: "Scheduler", label: "Scheduler" }).catch((e) => log.error("Job failed", { jobId: job.id }, wrapError(e)));
+                        runAsTenant(job.tenantId, () => runJob(job.id, { type: "Scheduler", label: "Scheduler" })).catch((e) => log.error("Job failed", { jobId: job.id }, wrapError(e)));
                     }, { timezone });
 
                     this.tasks.set(job.id, task);
@@ -124,7 +131,7 @@ export class BackupScheduler {
                     if (schedule && cron.validate(schedule)) {
                         log.debug("Scheduling system task", { taskId, schedule, timezone });
                         const task = cron.schedule(schedule, () => {
-                            systemTaskService.runTask(taskId).catch((e) => log.error("System task failed", { taskId }, wrapError(e)));
+                            runAsSystem(() => systemTaskService.runTask(taskId)).catch((e) => log.error("System task failed", { taskId }, wrapError(e)));
                         }, { timezone });
                         this.tasks.set(taskId, task);
                     }
@@ -138,7 +145,16 @@ export class BackupScheduler {
     }
 
     stopAll() {
-        this.tasks.forEach(task => task.stop());
+        for (const [id, task] of this.tasks) {
+            // destroy(), not stop(): node-cron keeps a stopped task in its registry, so every refresh
+            // after a saved job left the tasks of every job behind once more.
+            const failed = (e: unknown) => log.warn("Could not remove a scheduled task", { id }, wrapError(e));
+            try {
+                Promise.resolve(task.destroy()).catch(failed);
+            } catch (e) {
+                failed(e);
+            }
+        }
         this.tasks.clear();
     }
 }

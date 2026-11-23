@@ -21,6 +21,8 @@
  * ```
  */
 
+import { redactContext, redactText } from "./redact";
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -137,7 +139,8 @@ function formatLog(entry: LogEntry): string {
 // ============================================================================
 
 /**
- * Creates a log entry with all metadata.
+ * Creates a log entry with all metadata. Secrets never reach a line: the values of keys that hold
+ * one are redacted, and so is the password of a connection string in any text, see `redact.ts`.
  */
 function createLogEntry(
   level: LogLevel,
@@ -147,19 +150,19 @@ function createLogEntry(
 ): LogEntry {
   const entry: LogEntry = {
     level,
-    message,
+    message: redactText(message),
     timestamp: new Date().toISOString(),
   };
 
   if (context && Object.keys(context).length > 0) {
-    entry.context = context;
+    entry.context = redactContext(context);
   }
 
   if (error) {
     entry.error = {
       name: error.name,
-      message: error.message,
-      stack: error.stack,
+      message: redactText(error.message ?? ""),
+      stack: error.stack === undefined ? undefined : redactText(error.stack),
     };
     // Include code if it's a DBackupError
     if ("code" in error && typeof error.code === "string") {

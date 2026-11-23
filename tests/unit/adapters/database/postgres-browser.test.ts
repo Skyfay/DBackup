@@ -60,7 +60,7 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL browser over a %s host", 
             await getTables(baseConfig as never, "otherdb", host);
 
             const argv = host.calls.exec[0];
-            expect(argv[argv.indexOf("-d") + 1]).toBe("otherdb");
+            expect(argv[argv.indexOf("-d") + 1]).toBe("dbname='otherdb'");
             expect(argv[argv.indexOf("-h") + 1]).toBe("db.internal");
             expect(argv[argv.indexOf("-p") + 1]).toBe("5432");
             expect(argv[argv.indexOf("-U") + 1]).toBe("postgres");
@@ -139,6 +139,45 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL browser over a %s host", 
             const dataQuery = host.calls.exec.map(queryOf).find(q => q?.startsWith("SELECT * FROM"));
             expect(dataQuery).toContain("''");
         });
+
+        it("writes values as E'' literals, so a backslash stays inside without standard_conforming_strings", async () => {
+            const host = hostWith(kind, { columns: "", count: "0\n", data: "" });
+            await getTableData(
+                baseConfig as never,
+                { database: "sh\\op", table: "us'ers", page: 1, pageSize: 10, search: "a\\' OR 1=1 --", searchColumn: "name", matchMode: "contains" } as never,
+                host,
+            );
+
+            const queries = host.calls.exec.map(queryOf);
+            const columnsQuery = queries.find(q => q?.includes("information_schema.columns"));
+            const dataQuery = queries.find(q => q?.startsWith("SELECT * FROM"));
+            expect(columnsQuery).toContain("table_catalog = E'sh\\\\op'");
+            expect(columnsQuery).toContain("table_name = E'us''ers'");
+            expect(dataQuery).toContain("OPERATOR(pg_catalog.~~*) E'%a\\\\'' OR 1=1 --%'");
+        });
+    });
+});
+
+describe("PostgreSQL browser against the objects of the owner of a database", () => {
+    it("reads the catalog with the search path pinned and names every function, type and operator in pg_catalog", async () => {
+        const seen: { query: string; options?: string }[] = [];
+        const host = createFakeHost({
+            onExec: (argv, options) => {
+                const query = queryOf(argv) ?? "";
+                seen.push({ query, options: options?.env?.PGOPTIONS });
+                return { stdout: query.includes("COUNT(*)") ? "0\n" : "" };
+            },
+        });
+        await getTables(baseConfig as never, "shop", host);
+        await getTableData(baseConfig as never, { database: "shop", table: "users", page: 1, pageSize: 10, search: "a", searchColumn: "name", matchMode: "equals" } as never, host);
+
+        const of = (part: string) => seen.find((call) => call.query.includes(part))!;
+        expect(of("table_type").options).toBe("-c search_path=pg_catalog,pg_temp");
+        expect(of("information_schema.columns").options).toBe("-c search_path=pg_catalog,pg_temp");
+        // The table itself is found by the search path of the database.
+        expect(of("COUNT(*)").options).toBeUndefined();
+        expect(of("COUNT(*)").query).toContain("pg_catalog.COUNT(*)");
+        expect(of("SELECT * FROM").query).toContain(`"name"::pg_catalog.text OPERATOR(pg_catalog.=) E'a'`);
     });
 });
 

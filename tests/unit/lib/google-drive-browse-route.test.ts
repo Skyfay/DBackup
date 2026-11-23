@@ -9,12 +9,15 @@ vi.mock("@/lib/auth/access-control", () => ({ checkPermission: (...args: unknown
 vi.mock("@/services/auth/credential-service", () => ({
     getDecryptedCredentialData: vi.fn(async () => ({ clientId: "id", clientSecret: "secret", refreshToken: "token" })),
 }));
+// The drive of these tests is no destination shared with customers, which a test of its own covers.
+vi.mock("@/services/adapters/shared-login", () => ({ assertOffSharedLogins: vi.fn(async () => undefined) }));
 vi.mock("googleapis", () => ({
     google: {
         auth: { OAuth2: class { setCredentials() {} } },
         drive: () => ({ files: { get: mocks.get, list: mocks.list } }),
     },
 }));
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: "home-drive", profileId: null, credentialIds: ["config-login"] }) }));
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
@@ -35,7 +38,7 @@ function drive(folders: Record<string, { name: string; parents?: string[] }>) {
 describe("POST /api/system/filesystem/google-drive", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.checkPermission.mockResolvedValue(undefined);
+        mocks.checkPermission.mockResolvedValue({ id: "ada", isPlatformAdmin: false });
     });
 
     it("gives the folders from the top of My Drive down to a folder, for the picker to open there", async () => {
@@ -45,6 +48,15 @@ describe("POST /api/system/filesystem/google-drive", () => {
         expect(await response.json()).toEqual({ success: true, data: { trail: [{ name: "Backups", path: "1AbC" }, { name: "Restores", path: "9XyZ" }] } });
         expect(mocks.list).not.toHaveBeenCalled();
         expect(mocks.checkPermission).toHaveBeenCalledWith(PERMISSIONS.DESTINATIONS.WRITE);
+    });
+
+    it("lists nothing with the saved login of the configuration backup's destination for someone who is no platform admin", async () => {
+        drive({});
+        const response = await POST(request({ credentialId: "config-login" }));
+
+        expect(response.status).toBe(403);
+        expect(mocks.get).not.toHaveBeenCalled();
+        expect(mocks.list).not.toHaveBeenCalled();
     });
 
     it("ends the way at a shared folder whose parent the account cannot read", async () => {

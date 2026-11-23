@@ -19,6 +19,8 @@ export interface GeneralSettings {
     maxConcurrentJobs: number;
     /** Minutes without progress before a run fails, 0 for never. */
     stuckTimeoutMinutes: number;
+    /** The longest a run may take in minutes, progress or not, 0 for no limit. */
+    maxRunMinutes: number;
     checkForUpdates: boolean;
     showQuickSetup: boolean;
 }
@@ -73,16 +75,29 @@ function whole(value: string | undefined, fallback: number, min: number, max = N
 }
 
 export async function getGeneralSettings(): Promise<GeneralSettings> {
-    const { STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES } = await stuckTimeout();
-    const stored = await readAll([...Object.values(KEYS), STUCK_TIMEOUT_SETTING]);
+    const { STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES, MAX_RUN_SETTING, DEFAULT_MAX_RUN_MINUTES } = await stuckTimeout();
+    const stored = await readAll([...Object.values(KEYS), STUCK_TIMEOUT_SETTING, MAX_RUN_SETTING]);
     return {
         instanceName: stored.get(KEYS.instanceName) ?? "",
         timezone: stored.get(KEYS.timezone) || "UTC",
         maxConcurrentJobs: whole(stored.get(KEYS.maxConcurrentJobs), 1, 1, MAX_CONCURRENT_JOBS),
         stuckTimeoutMinutes: whole(stored.get(STUCK_TIMEOUT_SETTING), DEFAULT_STUCK_TIMEOUT_MINUTES, 0),
+        maxRunMinutes: whole(stored.get(MAX_RUN_SETTING), DEFAULT_MAX_RUN_MINUTES, 0),
         checkForUpdates: stored.get(KEYS.checkForUpdates) !== "false",
         showQuickSetup: stored.get(KEYS.showQuickSetup) === "true",
     };
+}
+
+/** The time zone the scheduler plans in, UTC until one is set. */
+export async function getTimezone(): Promise<string> {
+    const stored = await readAll([KEYS.timezone]);
+    return stored.get(KEYS.timezone) || "UTC";
+}
+
+/** The name of the instance, empty when none is set. */
+export async function getInstanceName(): Promise<string> {
+    const stored = await readAll([KEYS.instanceName]);
+    return stored.get(KEYS.instanceName)?.trim() ?? "";
 }
 
 /**
@@ -90,18 +105,20 @@ export async function getGeneralSettings(): Promise<GeneralSettings> {
  * that a system task follows, like Look for new versions.
  */
 export async function saveGeneralSettings(next: GeneralSettings): Promise<void> {
-    const { STUCK_TIMEOUT_SETTING } = await stuckTimeout();
+    const { STUCK_TIMEOUT_SETTING, MAX_RUN_SETTING } = await stuckTimeout();
     const before = await getGeneralSettings();
     await prisma.$transaction([
         upsert(KEYS.instanceName, next.instanceName.trim(), "Custom instance name shown in the browser tab title"),
         upsert(KEYS.timezone, next.timezone, "System-wide timezone for scheduler"),
         upsert(KEYS.maxConcurrentJobs, String(next.maxConcurrentJobs)),
         upsert(STUCK_TIMEOUT_SETTING, String(next.stuckTimeoutMinutes)),
+        upsert(MAX_RUN_SETTING, String(next.maxRunMinutes)),
         upsert(KEYS.checkForUpdates, String(next.checkForUpdates)),
         upsert(KEYS.showQuickSetup, String(next.showQuickSetup)),
     ]);
 
-    const followed = before.checkForUpdates !== next.checkForUpdates || (before.stuckTimeoutMinutes === 0) !== (next.stuckTimeoutMinutes === 0);
+    const watchdogOff = (settings: GeneralSettings) => settings.stuckTimeoutMinutes === 0 && settings.maxRunMinutes === 0;
+    const followed = before.checkForUpdates !== next.checkForUpdates || watchdogOff(before) !== watchdogOff(next);
     if (before.timezone !== next.timezone || followed) {
         const { scheduler } = await import("@/lib/server/scheduler");
         scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after the general settings changed", {}, wrapError(e)));
@@ -119,11 +136,12 @@ export async function getSignInSettings(): Promise<SignInSettings> {
 
 /**
  * Whether turning the passkey button off would leave nobody a way to sign in: the container
- * turned passwords off with DISABLE_EMAIL_LOGIN, and no sign-in provider is on.
+ * turned passwords off with DISABLE_EMAIL_LOGIN, and no sign-in provider of the platform is on. A
+ * provider of a tenant signs in only that tenant's people, never a platform admin.
  */
 export async function passkeyIsLastWayIn(): Promise<boolean> {
     if (!isEmailLoginDisabled()) return false;
-    return (await prisma.ssoProvider.count({ where: { enabled: true } })) === 0;
+    return (await prisma.ssoProvider.count({ where: { enabled: true, tenantId: null } })) === 0;
 }
 
 export async function saveSignInSettings(next: SignInSettings): Promise<void> {

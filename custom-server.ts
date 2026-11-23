@@ -11,6 +11,7 @@
  *   HOSTNAME       - Bind address (default: "0.0.0.0")
  *   CERTS_DIR      - Directory for tls.crt/tls.key (default: "/data/certs")
  *   TRUSTED_PROXIES - The reverse proxies whose X-Forwarded-For counts, see server/client-address.ts
+ *   TRUSTED_PROXY_HEADER - The header they write the client into, x-forwarded-for (default) or x-real-ip
  */
 
 import { createServer as createHttpsServer } from "node:https";
@@ -23,10 +24,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import next from "next";
 
-import { CLIENT_ADDRESS_HEADER, clientAddressOf, trustedProxiesFrom } from "./server/client-address";
+import { CLIENT_ADDRESS_HEADER, CUSTOM_SERVER_MARK, clientAddressOf, defaultTrustNotice, proxyHeaderFrom, trustedProxiesFrom, type ProxyHeader } from "./server/client-address";
 
 // ── Configuration ──────────────────────────────────────────────
 (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+// Tells the app that this server replaces the header of the address on every request. Set before
+// the app is created, so every part of the app reads it from the start.
+process.env[CUSTOM_SERVER_MARK] = "1";
 process.chdir(__dirname);
 
 const port = parseInt(process.env.PORT || "3000", 10);
@@ -37,9 +41,14 @@ const certPath = path.join(certsDir, "tls.crt");
 const keyPath = path.join(certsDir, "tls.key");
 // Checked before anything starts, so an entry with a typo stops the server instead of trusting the wrong proxies.
 let trustedProxies: BlockList;
+let proxyHeader: ProxyHeader;
+// The line of the first forwarded header that counts by the default alone, see defaultTrustNotice.
+let trustNotice: ReturnType<typeof defaultTrustNotice>;
 try {
   trustedProxies = trustedProxiesFrom(process.env.TRUSTED_PROXIES);
-  console.log(`[Server] X-Forwarded-For counts from: ${process.env.TRUSTED_PROXIES?.trim() || "private (the default)"}`);
+  proxyHeader = proxyHeaderFrom(process.env.TRUSTED_PROXY_HEADER);
+  trustNotice = defaultTrustNotice(process.env.TRUSTED_PROXIES, trustedProxies, proxyHeader);
+  console.log(`[Server] ${proxyHeader === "x-real-ip" ? "X-Real-IP" : "X-Forwarded-For"} counts from: ${process.env.TRUSTED_PROXIES?.trim() || "loopback (the default)"}`);
 } catch (err: unknown) {
   console.error(`[Server] ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
@@ -200,18 +209,27 @@ function ensureCertificate(): boolean {
 
 // ── Server Start ──────────────────────────────────────────────
 
+// Whether the server serves HTTPS, decided before the app loads. Without a certificate it falls back
+// to HTTP, and DISABLE_HTTPS says so before the auth config reads it, so the session cookies go out
+// without Secure, which a browser would drop over plain HTTP. See src/lib/auth/secure-cookies.ts.
+const servesHttps = !disableHttps && ensureCertificate() && fs.existsSync(certPath) && fs.existsSync(keyPath);
+if (!disableHttps && !servesHttps) process.env.DISABLE_HTTPS = "true";
+
 app.prepare().then(() => {
   let server: Server;
   let protocol: string;
 
   const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     try {
+      const notice = trustNotice(req.socket.remoteAddress, req.headers["x-forwarded-for"], req.headers["x-real-ip"]);
+      if (notice) console.warn(`[Server] ${notice}`);
       // The app reads the address of the client from here only. A value the client sent is replaced.
       req.headers[CLIENT_ADDRESS_HEADER] = clientAddressOf(
         req.socket.remoteAddress,
         req.headers["x-forwarded-for"],
         req.headers["x-real-ip"],
-        trustedProxies
+        trustedProxies,
+        proxyHeader
       );
       await handler(req, res);
     } catch (err) {
@@ -225,24 +243,30 @@ app.prepare().then(() => {
     protocol = "http";
     server = createHttpServer(requestHandler);
     console.log("[Server] HTTPS disabled via DISABLE_HTTPS=true - using HTTP");
-  } else {
-    const certReady = ensureCertificate();
-
-    if (certReady && fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-      protocol = "https";
-      const tlsOptions = {
-        cert: fs.readFileSync(certPath),
-        key: fs.readFileSync(keyPath),
-      };
+  } else if (servesHttps) {
+    protocol = "https";
+    const tlsOptions = {
+      cert: fs.readFileSync(certPath),
+      key: fs.readFileSync(keyPath),
+    };
+    try {
       server = createHttpsServer(tlsOptions, requestHandler);
-      console.log("[Server] HTTPS enabled with certificate from configured CERTS_DIR");
-    } else {
-      protocol = "http";
-      server = createHttpServer(requestHandler);
-      console.warn(
-        "[Server] WARNING: Falling back to HTTP - certificate generation failed"
+    } catch (err: unknown) {
+      // A clear stop instead of a process that stays up without a listener.
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[TLS] The certificate or key in the configured CERTS_DIR cannot be loaded:", message);
+      console.error(
+        "[TLS] Replace tls.crt and tls.key there, or remove both to get a new self-signed certificate at the next start."
       );
+      process.exit(1);
     }
+    console.log("[Server] HTTPS enabled with certificate from configured CERTS_DIR");
+  } else {
+    protocol = "http";
+    server = createHttpServer(requestHandler);
+    console.warn(
+      "[Server] WARNING: Falling back to HTTP - certificate generation failed"
+    );
   }
 
   server.listen(port, hostname, () => {
@@ -263,4 +287,7 @@ app.prepare().then(() => {
 
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
+}).catch((err: unknown) => {
+  console.error("[Server] Failed to start:", err);
+  process.exit(1);
 });

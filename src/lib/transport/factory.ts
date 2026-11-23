@@ -14,7 +14,7 @@ import type { ExecutionHost, TransportResolver, TransportSpec } from "./types";
 export function createHost(spec: TransportSpec): ExecutionHost {
     switch (spec.kind) {
         case "direct":
-            return new DirectHost();
+            return new DirectHost(spec.reach);
         case "ssh":
             return new SshHost(spec.ssh);
         case "composite":

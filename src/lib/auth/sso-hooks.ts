@@ -1,0 +1,128 @@
+import { APIError } from "better-auth/api";
+import prisma from "@/lib/prisma";
+import { wrapError } from "@/lib/logging/errors";
+import { logger } from "@/lib/logging/logger";
+import { isSsoCallback, placeSsoUser, refuseClaimedSsoSignUp, refuseSsoSignUp, TENANT_DOMAIN_SIGN_UP_REFUSED, TENANT_SIGN_UP_REFUSED, type SsoHookContext } from "./sso-guard";
+import { recordSsoLink } from "./sso-link-audit";
+import { allowTenantSsoLink, joinSsoTenant, NOT_LINKED_URL, refuseSsoSession, TENANT_REFUSED_URL, tenantRefusalUrl } from "./sso-tenant-guard";
+
+const log = logger.child({ module: "Auth" });
+
+/**
+ * The database hooks of better-auth for a sign-in through a provider, which `index.ts` runs beside
+ * its own. While better-auth handles the callback of a provider it adds someone new with the user
+ * hooks and links them with the account hooks, or links an account it found by the email, and
+ * then starts a session for that account, whether the link went through or not.
+ */
+
+/** The context better-auth hands a database hook, the one of the endpoint that runs. */
+export type SsoDatabaseHookContext = (SsoHookContext & { request?: Request; redirect?: (url: string) => unknown }) | null | undefined;
+
+/**
+ * What the link hook met on a callback, by its request: the identity it let link, which the session
+ * hook then asks for, or where the login page says why it refused the link.
+ */
+const callbackLinks = new WeakMap<Request, { accountId?: string; refusedUrl?: string }>();
+
+/**
+ * The email of the user a callback adds, by its request. better-auth adds the user and links it in
+ * one transaction and runs the after hook of the user only once both are done, so the link hook
+ * meets someone new before `afterSsoUser` put them into their tenant, see `placeNewUser`.
+ */
+const addedUsers = new WeakMap<Request, { email: string; placed?: string }>();
+
+/** Where the login page says why a callback added nobody, by the message of the refusal of `sso-guard.ts`. */
+const SIGN_UP_REFUSED_URLS: Readonly<Record<string, string>> = {
+    "signup disabled": "/?error=sso_signup_disabled",
+    [TENANT_SIGN_UP_REFUSED]: TENANT_REFUSED_URL,
+    [TENANT_DOMAIN_SIGN_UP_REFUSED]: "/?error=sso_tenant_domain",
+};
+
+/** Before a user is added: the provider decides whether it adds them, never the browser. */
+export async function beforeSsoUser(user: { email?: string | null }, context: SsoDatabaseHookContext): Promise<void> {
+    try {
+        await refuseSsoSignUp(context, user);
+        await refuseClaimedSsoSignUp(context, user);
+    } catch (error) {
+        // On a callback the refusal redirects to the login page itself, see `beforeSsoLink`.
+        const url = error instanceof APIError && isSsoCallback(context?.path) ? SIGN_UP_REFUSED_URLS[String(error.body?.message)] : undefined;
+        throw (url && context?.redirect?.(url)) || error;
+    }
+    if (context?.request && user.email) addedUsers.set(context.request, { email: user.email.toLowerCase() });
+}
+
+/** After a user was added: someone a provider added starts in its group, unless the link hook placed them already. */
+export async function afterSsoUser(user: { id: string; name: string; email: string }, context: SsoDatabaseHookContext): Promise<void> {
+    if (context?.request && addedUsers.get(context.request)?.placed === user.id) return;
+    try {
+        await placeSsoUser(user, context);
+    } catch (error) {
+        log.warn("Putting a new user of a sign-in provider into its group failed", { userId: user.id }, wrapError(error));
+    }
+}
+
+/**
+ * Puts the user this callback just added into the group of its provider before the link is
+ * checked, so the provider of a tenant links the person it added as a member of that tenant. Only
+ * the account of the email `beforeSsoUser` saw and only while it works in no tenant, so an
+ * account found by its email is never placed here.
+ */
+async function placeNewUser(userId: string, context: SsoDatabaseHookContext): Promise<void> {
+    const added = context?.request ? addedUsers.get(context.request) : undefined;
+    if (!added || added.placed) return;
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true, memberships: { select: { tenantId: true } } } });
+    if (!user || user.email.toLowerCase() !== added.email || user.memberships.length > 0) return;
+    added.placed = user.id;
+    try {
+        await placeSsoUser(user, context);
+    } catch (error) {
+        log.warn("Putting a new user of a sign-in provider into its group failed", { userId: user.id }, wrapError(error));
+    }
+}
+
+/**
+ * Before an account is linked to a provider: a provider links no account it may not sign in. On a
+ * callback the refusal throws, since better-auth goes on after a link that returned nothing, marks
+ * the email as verified, which `allowTenantSsoLink` reads, and starts a session. It throws the
+ * redirect to the login page with the reason itself, since better-auth keeps the status of the error
+ * a callback ends with, also where an after hook answers with a redirect, see `refusedSsoLinkRedirect`.
+ */
+export async function beforeSsoLink(account: { userId: string; accountId?: string }, context: SsoDatabaseHookContext): Promise<false | undefined> {
+    const callback = isSsoCallback(context?.path);
+    if (callback) await placeNewUser(account.userId, context);
+    const allowed = await allowTenantSsoLink(account, context);
+    if (!callback) return allowed ? undefined : false;
+    const refusedUrl = allowed ? undefined : ((await tenantRefusalUrl(account.userId, context)) ?? NOT_LINKED_URL);
+    if (context?.request) callbackLinks.set(context.request, { accountId: account.accountId, refusedUrl });
+    if (refusedUrl) throw context?.redirect?.(refusedUrl) ?? new APIError("FORBIDDEN", { message: "account not linked" });
+    return undefined;
+}
+
+/** After a callback whose link was refused: the login page says why, see `beforeSsoLink`. */
+export function refusedSsoLinkRedirect(ctx: { request?: Request; redirect: (url: string) => unknown }): void {
+    const refusedUrl = ctx.request ? callbackLinks.get(ctx.request)?.refusedUrl : undefined;
+    if (refusedUrl) throw ctx.redirect(refusedUrl);
+}
+
+/**
+ * After an account was linked: a link the signed-in owner made goes into the audit log, and an
+ * account that signs in through a provider of a tenant for the first time joins it.
+ */
+export async function afterSsoLink(account: { userId: string }, context: SsoDatabaseHookContext): Promise<void> {
+    try {
+        await recordSsoLink(account, context);
+    } catch (error) {
+        log.warn("Writing a linked sign-in provider to the audit log failed", { userId: account.userId }, wrapError(error));
+    }
+    try {
+        await joinSsoTenant(account, context);
+    } catch (error) {
+        log.warn("Adding an account to the tenant of its sign-in provider failed", { userId: account.userId }, wrapError(error));
+    }
+}
+
+/** Before a session starts: a callback of a provider signs in only an account linked to it, which it may sign in. */
+export async function beforeSsoSession(session: { userId: string }, context: SsoDatabaseHookContext): Promise<void> {
+    const accountId = context?.request ? callbackLinks.get(context.request)?.accountId : undefined;
+    await refuseSsoSession(session, context, (url) => context?.redirect?.(url) ?? new APIError("FORBIDDEN"), accountId);
+}

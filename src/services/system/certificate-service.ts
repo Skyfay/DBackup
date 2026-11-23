@@ -2,7 +2,8 @@ import { execSync } from "node:child_process";
 import { existsSync, writeFileSync, mkdirSync, unlinkSync, renameSync } from "node:fs";
 import path from "node:path";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { ServiceError, ValidationError, wrapError } from "@/lib/logging/errors";
+import { assertServableCertificate } from "@/services/system/certificate-check";
 
 const log = logger.child({ service: "CertificateService" });
 
@@ -169,11 +170,15 @@ export function parseNames(text: string): string[] {
  */
 export function uploadCertificate(certPem: string, keyPem: string): void {
   if (!certPem.includes("-----BEGIN CERTIFICATE-----")) {
-    throw new Error("Invalid certificate format. Must be PEM encoded.");
+    throw new ValidationError("Invalid certificate format. Must be PEM encoded.");
   }
   if (!keyPem.includes("-----BEGIN") || !keyPem.includes("PRIVATE KEY-----")) {
-    throw new Error("Invalid private key format. Must be PEM encoded.");
+    throw new ValidationError("Invalid private key format. Must be PEM encoded.");
   }
+
+  // Every block of both texts, and that the server can start with them. The openssl commands below
+  // read only the first block of a file.
+  assertServableCertificate(certPem, keyPem);
 
   // Ensure directory exists
   if (!existsSync(CERTS_DIR)) {
@@ -210,7 +215,7 @@ export function uploadCertificate(certPem: string, keyPem: string): void {
       timeout: 5000,
     }).trim();
     if (!certPublicKey || certPublicKey !== keyPublicKey) {
-      throw new Error("Certificate and private key do not match.");
+      throw new ValidationError("Certificate and private key do not match.");
     }
 
     // All validations passed - replace existing files
@@ -283,9 +288,7 @@ export function regenerateSelfSignedCert(): void {
     } catch {
       // ignore cleanup errors
     }
-    throw new Error(
-      "Failed to generate TLS certificate. Is openssl installed?"
-    );
+    throw new ServiceError("CertificateService", "generate", "Failed to generate TLS certificate. Is openssl installed?");
   }
 }
 

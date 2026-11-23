@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, DatabaseBackup, Eye, Play, Plus, ScrollText, SlidersHorizontal, UserCog, type LucideIcon } from "lucide-react";
+import { ChevronRight, DatabaseBackup, Eye, Handshake, Play, Plus, ScrollText, SlidersHorizontal, UserCog, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { DialogClose, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -14,7 +14,8 @@ import { groupLine } from "./group-columns";
 /** What a new group starts with, picked in the first step. */
 export type GroupStartChoice = { kind: "custom" } | { kind: "template"; template: GroupTemplate } | { kind: "copy"; group: GroupRow };
 
-const TEMPLATE_ICONS: Record<GroupTemplate["id"], LucideIcon> = {
+export const TEMPLATE_ICONS: Record<GroupTemplate["id"], LucideIcon> = {
+    client: Handshake,
     viewer: Eye,
     operator: Play,
     "backup-admin": DatabaseBackup,
@@ -22,9 +23,9 @@ const TEMPLATE_ICONS: Record<GroupTemplate["id"], LucideIcon> = {
     "user-admin": UserCog,
 };
 
-const CARD = "flex w-full min-w-0 gap-3 rounded-lg border bg-card p-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/50";
+export const CARD = "flex w-full min-w-0 gap-3 rounded-lg border bg-card p-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/50";
 
-function Tile({ icon: Icon }: { icon: LucideIcon }) {
+export function Tile({ icon: Icon }: { icon: LucideIcon }) {
     return (
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50" aria-hidden="true">
             <Icon className="size-4" />

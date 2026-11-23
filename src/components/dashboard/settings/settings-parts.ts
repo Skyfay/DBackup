@@ -16,7 +16,8 @@ import {
 
 /**
  * The parts of the Settings page as plain data: where each sits in the navigation, what its head
- * says and which settings the search finds in it.
+ * says and which settings the search finds in it. A part of the open tenant, Recently deleted, is
+ * a part of Settings with one tenant and of the tenant settings with more.
  */
 
 export type SettingsPartId =
@@ -25,8 +26,8 @@ export type SettingsPartId =
     | "notifications"
     | "retention"
     | "database"
-    | "config-backup"
     | "recently-deleted"
+    | "config-backup"
     | "sign-in"
     | "passwords"
     | "https"
@@ -39,7 +40,22 @@ export interface SettingsPart {
     /** The line under the title of the part. */
     description: string;
     icon: LucideIcon;
+    /**
+     * Belongs to the open tenant rather than to the instance. With one tenant it is a part of
+     * Settings like the others, with more it is a part of the tenant settings and the settings of
+     * the instance leave it out.
+     */
+    tenant?: boolean;
 }
+
+/** Recently deleted, a part of Settings with one tenant and of the tenant settings with more. */
+export const RECENTLY_DELETED_PART = {
+    id: "recently-deleted",
+    label: "Recently deleted",
+    icon: ArchiveRestore,
+    description: "Keys, saved logins, connections, jobs and users after a delete, for as long as Data retention keeps them. Restore one, or delete it for good.",
+    tenant: true,
+} as const satisfies SettingsPart;
 
 export interface SettingsGroup {
     label: string;
@@ -60,7 +76,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         parts: [
             { id: "retention", label: "Data retention", icon: History, description: "How long DBackup keeps its own records, cleared every night by the system task Clean old data. Backup files follow the retention of their job." },
             { id: "database", label: "Database", icon: Database, description: "The SQLite database with the configuration, the users and the history of DBackup." },
-            { id: "recently-deleted", label: "Recently deleted", icon: ArchiveRestore, description: "Keys, saved logins, connections, jobs and users after a delete, for as long as Data retention keeps them. Restore one, or delete it for good." },
+            RECENTLY_DELETED_PART,
             { id: "config-backup", label: "Configuration backup", icon: FileCog, description: "The whole database of DBackup as one encrypted file, to rebuild it after a loss." },
         ],
     },
@@ -77,6 +93,17 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 ];
 
 export const SETTINGS_PARTS: SettingsPart[] = SETTINGS_GROUPS.flatMap((group) => group.parts);
+
+/** Whether a part belongs to the open tenant, which the settings of the instance leave out with more than one tenant. */
+export function isTenantPart(id: string): boolean {
+    return SETTINGS_PARTS.some((part) => part.id === id && part.tenant);
+}
+
+/** The groups of the Settings page, without the parts of the tenant when it does not offer them. */
+export function settingsGroups(withTenantParts: boolean): SettingsGroup[] {
+    if (withTenantParts) return SETTINGS_GROUPS;
+    return SETTINGS_GROUPS.map((group) => ({ ...group, parts: group.parts.filter((part) => !part.tenant) })).filter((group) => group.parts.length > 0);
+}
 
 export function partOf(id: SettingsPartId): SettingsPart {
     return SETTINGS_PARTS.find((part) => part.id === id) ?? SETTINGS_PARTS[0];

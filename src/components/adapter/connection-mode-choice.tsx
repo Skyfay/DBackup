@@ -17,6 +17,8 @@ export interface ModeOption {
     disabled?: boolean;
     /** A small picture of what the option looks like, above its title. */
     preview?: React.ReactNode;
+    /** What the option needs below its sentence while it is picked, like a number. */
+    content?: React.ReactNode;
 }
 
 interface ChoiceCardsProps extends Omit<React.ComponentProps<typeof RadioGroup>, "value" | "onValueChange" | "children"> {
@@ -60,6 +62,7 @@ export function ChoiceCards({ value, onValueChange, options, className, ...props
                         </span>
                         <span className="text-xs text-muted-foreground">{option.description}</span>
                     </span>
+                    {option.content && value === option.value && <span className="block w-full pl-7">{option.content}</span>}
                 </Label>
             ))}
         </RadioGroup>

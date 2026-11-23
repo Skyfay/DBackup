@@ -5,6 +5,7 @@ import { Trash } from "lucide-react";
 import { toast } from "sonner";
 import { deleteGroup } from "@/app/actions/auth/group";
 import { ChoiceCards, type ModeOption } from "@/components/adapter/connection-mode-choice";
+import { groupBeyond, type GroupViewer } from "@/components/dashboard/users/user-access";
 import { NO_GROUP } from "@/components/dashboard/users/user-columns";
 import { listed } from "@/components/dashboard/users/user-strip";
 import { ConfirmDialog, DialogItemList } from "@/components/ui/confirm-dialog";
@@ -17,29 +18,33 @@ import { groupLine } from "./group-columns";
 
 const log = logger.child({ component: "group-delete-dialog" });
 
-/** Where members can go: every other group with what it lets them do, the SuperAdmin group only for a SuperAdmin, or none. */
-export function groupTargets(groups: GroupRow[], exceptId: string | null, viewerSuperAdmin: boolean): ModeOption[] {
+/**
+ * Where members can go: every other group of the tenant with what it lets them do, as far as it
+ * may do no more than the viewer may, or none, which takes them out of the tenant.
+ */
+export function groupTargets(groups: GroupRow[], exceptId: string | null, viewer: GroupViewer, withNone = true): ModeOption[] {
     return [
         ...groups
-            .filter((group) => group.id !== exceptId && (!group.superAdmin || viewerSuperAdmin))
+            .filter((group) => group.id !== exceptId && !groupBeyond(group, viewer))
             .map((group) => ({ value: group.id, title: group.name, description: groupLine(group) })),
-        { value: NO_GROUP, title: "No group", description: "They sign in, but see and do nothing" },
+        ...(withNone ? [{ value: NO_GROUP, title: "No group", description: "They leave the tenant and no longer see it" }] : []),
     ];
 }
 
 interface GroupDeleteDialogProps {
     group: GroupRow;
     groups: GroupRow[];
-    viewerSuperAdmin: boolean;
+    viewer: GroupViewer;
     onClose: () => void;
     onDeleted: () => void;
 }
 
 /**
- * Deletes a group after asking. A group with members asks which group they move to, so nobody
- * is left without access by surprise, and the button waits for the pick.
+ * Deletes a group of the tenant after asking. A group with members asks which group they move to,
+ * so nobody is left without access by surprise, and the button waits for the pick. No group takes
+ * them out of the tenant.
  */
-export function GroupDeleteDialog({ group, groups, viewerSuperAdmin, onClose, onDeleted }: GroupDeleteDialogProps) {
+export function GroupDeleteDialog({ group, groups, viewer, onClose, onDeleted }: GroupDeleteDialogProps) {
     const [moveTo, setMoveTo] = useState("");
     const [pending, setPending] = useState(false);
     const members = group.members;
@@ -71,9 +76,9 @@ export function GroupDeleteDialog({ group, groups, viewerSuperAdmin, onClose, on
             note="Cannot be undone"
             icon={Trash}
             description={
-                members.length > 0
-                    ? `${listed(names)} ${members.length === 1 ? "is" : "are"} in it. Pick the group they move to, since without one they sign in and see nothing.`
-                    : "Nobody is in it, so no one loses access."
+                members.length === 0
+                    ? "Nobody is in it."
+                    : `${listed(names)} ${members.length === 1 ? "is" : "are"} in it. Pick the group they move to, since without one they leave the tenant.`
             }
             confirmLabel={members.length > 0 ? `Delete and move ${countWord(members.length, "person", "people")}` : "Delete group"}
             destructive
@@ -88,7 +93,7 @@ export function GroupDeleteDialog({ group, groups, viewerSuperAdmin, onClose, on
                     <div className="space-y-2">
                         <p className="text-sm font-medium">They move to</p>
                         <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-72">
-                            <ChoiceCards value={moveTo} onValueChange={setMoveTo} options={groupTargets(groups, group.id, viewerSuperAdmin)} aria-label="The group they move to" />
+                            <ChoiceCards value={moveTo} onValueChange={setMoveTo} options={groupTargets(groups, group.id, viewer)} aria-label="The group they move to" />
                         </ScrollArea>
                         <p className="text-xs text-muted-foreground">The audit log keeps the group and who was in it.</p>
                     </div>

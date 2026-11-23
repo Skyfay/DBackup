@@ -140,3 +140,23 @@ describe("the filters of the list of every backup", () => {
         expect(primaryCopy(shopOldRun, ["r2"]).destinationId).toBe("nas");
     });
 });
+
+describe("the Tenant filter of the list of every backup in All tenants", () => {
+    const tenantOf: Record<string, string> = { crm: "beta", shop: "acme", "deleted:erp": "acme" };
+    const everyTenant = runs.map((run) => ({ ...run, tenantId: tenantOf[run.jobKey] }));
+
+    it("keeps the backups of the picked tenants, and every backup while none is picked", () => {
+        expect(paths(filterBackups(everyTenant, { ...none, tenants: ["acme"] }, lookup))).toEqual(["shop-new.tar", "shop-old.tar", "erp.tar"]);
+        expect(paths(filterBackups(everyTenant, { ...none, tenants: ["acme", "beta"] }, lookup))).toHaveLength(4);
+        expect(paths(filterBackups(everyTenant, { ...none, tenants: [] }, lookup))).toHaveLength(4);
+    });
+
+    it("counts each tenant under the other filters and the other filters within the picked tenants", () => {
+        const counts = countBackups(everyTenant, { ...none, tenants: ["beta"], states: ["locked"] }, lookup, ["nas", "r2"]);
+
+        expect(counts.tenants.get("acme")).toBe(1);
+        expect(counts.tenants.get("beta")).toBeUndefined();
+        expect(counts.jobs.get("crm")).toBeUndefined();
+        expect(counts.states.failed).toBe(1);
+    });
+});

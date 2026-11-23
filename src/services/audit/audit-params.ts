@@ -19,6 +19,7 @@ const FilterSchema = z.object({
     fromDay: z.string().regex(DAY).optional(),
     toDay: z.string().regex(DAY).optional(),
     tz: z.string().max(64).optional(),
+    tenant: z.array(z.string().min(1).max(200)).max(500),
 });
 
 const PageSchema = z.object({
@@ -55,18 +56,20 @@ function rawFilter(params: URLSearchParams) {
         fromDay: params.get("fromDay") ?? undefined,
         toDay: params.get("toDay") ?? undefined,
         tz: params.get("tz") ?? undefined,
+        tenant: params.getAll("tenant"),
     };
 }
 
 /**
  * The filter of the Audit log tab from the query of a request: `who`, `area` and `action` may
- * repeat, `quick`, `period` and `search` once, `record` as `<RESOURCE>:<id>`, and a range of days
- * from the timeline as `fromDay` and `toDay` in the time zone `tz`. Null when it does not parse.
+ * repeat, `quick`, `period` and `search` once, `record` as `<RESOURCE>:<id>`, a range of days from
+ * the timeline as `fromDay` and `toDay` in the time zone `tz`, and `tenant` may repeat for the
+ * Tenant filter of All tenants. Null when it does not parse.
  */
 export function parseAuditFilter(params: URLSearchParams): AuditFilter | null {
     const parsed = FilterSchema.safeParse(rawFilter(params));
     if (!parsed.success) return null;
-    const { who, area, action, quick, period, search, record, fromDay, toDay, tz } = parsed.data;
+    const { who, area, action, quick, period, search, record, fromDay, toDay, tz, tenant } = parsed.data;
     const zone = timeZoneOr(tz);
     const at = record?.indexOf(":") ?? -1;
     return {
@@ -77,6 +80,7 @@ export function parseAuditFilter(params: URLSearchParams): AuditFilter | null {
         period,
         search,
         record: record && at > 0 ? { resource: record.slice(0, at), resourceId: record.slice(at + 1) } : null,
+        ...(tenant.length > 0 ? { tenants: tenant } : {}),
         ...(fromDay ? { from: fromZonedTime(`${fromDay}T00:00:00`, zone) } : {}),
         ...(toDay ? { to: fromZonedTime(`${nextDay(toDay)}T00:00:00`, zone) } : {}),
     };

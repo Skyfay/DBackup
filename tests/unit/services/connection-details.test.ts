@@ -15,7 +15,8 @@ describe("getConnectionDetails", () => {
         prismaMock.jobDestination.findMany.mockResolvedValue([]);
         prismaMock.jobSource.findMany.mockResolvedValue([]);
         prismaMock.notificationTemplateChannel.findMany.mockResolvedValue([]);
-        mocked(prismaMock.execution.groupBy).mockResolvedValue([]);
+        // The ids of the newest backup of each job, found by one raw query.
+        prismaMock.$queryRaw.mockResolvedValue([] as never);
         prismaMock.execution.findMany.mockResolvedValue([]);
     });
 
@@ -26,7 +27,7 @@ describe("getConnectionDetails", () => {
             { job: job("files", "uploads-nightly") },
             { job: job("docs", "archive-weekly", false) },
         ] as never);
-        mocked(prismaMock.execution.groupBy).mockResolvedValue([{ jobId: "files", _max: { startedAt: new Date("2026-09-22T02:00:00.000Z") } }]);
+        prismaMock.$queryRaw.mockResolvedValue([{ id: "exec-1" }] as never);
         prismaMock.execution.findMany.mockResolvedValue([
             { id: "exec-1", jobId: "files", status: "Success", startedAt: new Date("2026-09-22T02:00:00.000Z") },
         ] as never);
@@ -37,6 +38,8 @@ describe("getConnectionDetails", () => {
             { id: "docs", name: "archive-weekly", enabled: false, role: "directory", lastRun: null },
             { id: "files", name: "uploads-nightly", enabled: true, role: "directory", lastRun: { id: "exec-1", at: "2026-09-22T02:00:00.000Z", status: "Success" } },
         ]);
+        // The rows of the runs come through the client, which narrows them to the tenant.
+        expect(prismaMock.execution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ["exec-1"] } } }));
     });
 
     it("leaves the jobs out for a caller who may not see them", async () => {

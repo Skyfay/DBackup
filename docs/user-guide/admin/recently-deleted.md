@@ -1,6 +1,6 @@
 # Recently Deleted
 
-A deleted encryption key, saved login, connection, job or user is not gone at once. It waits under **Settings → Recently deleted** for 30 days, where it can be restored with everything that belonged to it or deleted for good.
+A deleted encryption key, saved login, connection, job or user is not gone at once. It waits under **Settings → Recently deleted** for 30 days, where it can be restored with everything that belonged to it or deleted for good. Every [tenant](/user-guide/admin/tenants) has its own list, with what was deleted while it was open. A deleted user waits in the list of the one tenant they worked in, and any other user in the list of the home tenant: a platform admin, someone of a platform group, of several tenants or of none, or with API keys in another tenant.
 
 ## What a Delete Keeps
 
@@ -10,9 +10,9 @@ Every delete dialog of these five says where the record goes and until when it c
 | :--- | :--- |
 | **Encryption key** | Its key, so the backups it encrypted open again |
 | **Saved login** | Its secret |
-| **Connection** | Its settings, its login links and the versions a database server ran |
+| **Connection** | Its settings, its login links, the versions a database server ran and the [databases it gave to customers](/user-guide/admin/shared-databases) |
 | **Job** | Its destinations with their retention, its folders, its notifications and the link of its runs in History |
-| **User** | Their password, second factor, passkeys, API keys, preferences and picture |
+| **User** | Their password, second factor, passkeys, API keys, preferences and picture, and their group in every tenant they worked in |
 
 What only belongs to the moment stays gone: a user's sessions end with the delete, and a connection starts its health checks and storage history anew.
 
@@ -20,15 +20,15 @@ A delete that other records still depend on is refused as before, like a key a j
 
 ### Delete Permanently
 
-Someone who may change the settings sees **Delete it permanently now** in the delete dialog, to skip Recently deleted, like for a key or a login that leaked. The dialog turns red and names what is lost. A key deleted this way leaves every backup it encrypted unreadable unless a [recovery kit](/user-guide/security/recovery-kit) holds it. Everyone else deletes into Recently deleted only.
+Someone who may change the tenant settings sees **Delete it permanently now** in the delete dialog, to skip Recently deleted, like for a key or a login that leaked. The dialog turns red and names what is lost. A key deleted this way leaves every backup it encrypted unreadable unless a [recovery kit](/user-guide/security/recovery-kit) holds it. A user is deleted this way only by someone who may change the settings of the tenant whose list would keep them, and by a platform admin alone for a user who would wait in the home tenant for one of the reasons at the top of this page. Everyone else deletes into Recently deleted only.
 
 ### Undo
 
-After a delete a message offers **Undo** for a few seconds, which brings back what was just deleted. It works for several records deleted together as well. Undo brings back only your own delete of the last 5 minutes, anything else is restored from the list.
+After a delete a message offers **Undo** for a few seconds, which brings back what was just deleted. It works for several records deleted together as well. Undo brings back only your own delete of the last 5 minutes, anything else is restored from the list. A user comes back with Undo from whichever list they wait in, as long as you may change their account there.
 
 ## The List
 
-Go to **Settings → Recently deleted**. Every row names the record, what it was, who deleted it and when, and when it is gone. A record with 3 days or less left is marked in amber. The chips above the list show one kind at a time.
+Go to **Settings → Recently deleted**. With more than one tenant that is the Settings under **Administration**, the settings of the open tenant, which in All tenants asks for the tenant first. Every row names the record, what it was, who deleted it and when, and when it is gone. A record with 3 days or less left is marked in amber. The chips above the list show one kind at a time.
 
 Only the kinds you may change show here:
 
@@ -38,15 +38,16 @@ Only the kinds you may change show here:
 | **Saved login** | `credentials:delete` |
 | **Connection** | Write access to its kind: `sources:write`, `destinations:write` or `notifications:write` |
 | **Job** | `jobs:write` |
-| **User** | `users:write`, and a SuperAdmin for a SuperAdmin's account |
+| **User** | `users:write`, and a platform admin for a user who waits in the home tenant for one of the reasons at the top of this page. A user whose group may do more than you may still shows, but only someone who may do all of it restores it or deletes it for good |
 
-The page needs `settings:read`, which shows the list without its buttons. **Restore** and **Delete permanently** need `settings:write` as well, like every change under Settings.
+The page needs `tenant-settings:read`, which shows the list without its buttons. **Restore** and **Delete permanently** need `tenant-settings:write` as well. Both count in the open tenant, so the admin of a customer manages the Recently deleted of that customer, see [Groups & Permissions](/user-guide/admin/permissions#settings-count-in-the-home-tenant).
 
 ### Restore
 
 **Restore** brings a record back under its own id, so jobs, backups and links that name it find it again. Tick several rows to restore them together.
 
-- **A name taken meanwhile.** A key, login, connection or job whose name another one took, or a user whose email another account took, opens **Restore** with a field for another name or email.
+- **A name taken meanwhile.** A key, login, connection or job whose name another one took, or a user whose email another account took, opens **Restore** with a field for another name or email. A taken email, the own one or a new one, is named as taken only to whoever may see the account that holds it, anyone else reads that the email cannot be given, and after several such answers in a row emails are refused for a while, like in **New user**. A user whose email, their own or a new one, has a domain the sign-in provider of another tenant claims comes back only through a platform admin or someone with `platform-accounts:write` whose platform group reaches that tenant, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant).
+- **A group beyond yours.** A user comes back, under their own email or a new one, only through someone who may do everything their group may in each tenant they worked in, or a platform admin, like a change of the account itself, see [Admin Actions](/user-guide/admin/users#admin-actions). Whoever restores a user could give them an email of their own and sign in as them. In a batch only those rows are refused, the same holds for **Delete permanently** and for Undo, and a group deleted meanwhile counts for nobody.
 - **Links that are gone.** A record whose links point to something deleted meanwhile comes back without them, and the message after the restore names each:
 
 | Gone meanwhile | What the restore does |
@@ -56,7 +57,10 @@ The page needs `settings:read`, which shows the list without its buttons. **Rest
 | The retention policy of a destination | The destination keeps every backup until a policy is picked again |
 | The naming template or schedule preset of a job | The job uses the default file names or its own schedule |
 | The login of a connection | The connection comes back without it, pick one again before it connects |
-| The group of a user | The user comes back without a group and sees nothing until they get one |
+| The group of a user, or a tenant they worked in | The user comes back without that membership, and sees nothing until they get a group when none is left |
+| The platform group of a user | The user comes back without a platform group |
+
+The API keys of a user stay out in a tenant that may make no API keys any more, see [What It May Add](/user-guide/admin/tenants#what-it-may-add), and the message says so.
 
 ### Delete for Good
 
@@ -72,7 +76,7 @@ A delete into Recently deleted, a permanent delete, a restore and a removal from
 
 ## API
 
-The delete endpoints move a record to Recently deleted as well. Add `?permanently=true` to a single delete, or `"permanently": true` to the body of a bulk delete, to delete at once. That needs `settings:write` on top of the right to delete, or the request is refused with `403`:
+The delete endpoints move a record to Recently deleted as well. Add `?permanently=true` to a single delete, or `"permanently": true` to the body of a bulk delete, to delete at once. That needs `tenant-settings:write` on top of the right to delete, or the request is refused with `403`:
 
 ```bash
 curl -s -X DELETE "${BASE_URL}/api/jobs/${JOB_ID}?permanently=true" \

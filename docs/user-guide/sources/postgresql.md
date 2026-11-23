@@ -6,9 +6,9 @@ Back up PostgreSQL databases with `pg_dump`, one database at a time.
 
 | Versions |
 | :--- |
-| 12, 13, 14, 15, 16, 17, 18 |
+| 12, 13, 14, 15, 16, 17, 18, 19 |
 
-The DBackup image ships `pg_dump` 18, which can dump older servers. Over SSH the `pg_dump` installed on the SSH server is used instead.
+The DBackup image ships `pg_dump` 19, which can dump older servers. Over SSH the `pg_dump` installed on the SSH server is used instead.
 
 ## Connection Modes
 
@@ -59,6 +59,10 @@ PostgreSQL requires a [Credential Profile](/user-guide/security/credential-profi
 | **Port** | SSH server port, over SSH only | `22` | ❌ |
 | **SSH login** | `SSH_KEY` credential profile, over SSH only | - | ✅ |
 | **Extra options** | Extra `pg_dump` flags, added after the ones DBackup sets | - | ❌ |
+
+::: info Extra options are for platform admins
+In direct mode the dump tools run on the server DBackup runs on, where an option can name any file DBackup may write. So only a platform admin, signed in with a session in the home tenant, saves, changes or tests a direct connection with **Extra options**, and anyone else opens such a connection read-only and may still pick it in a job. Over SSH the options are open to everyone. See [Connections to the Server DBackup Runs On](/user-guide/admin/tenants#connections-to-the-server-dbackup-runs-on).
+:::
 
 The source has no database field. Which databases to back up is picked in the **Source** part of the job. **All databases** lists them again on every run with `SELECT datname FROM pg_database WHERE datistemplate = false`, so a database added later is backed up too, the `postgres` database included.
 
@@ -155,7 +159,7 @@ A restore is started from **Backups**, see [Restore](/user-guide/features/restor
 
 - A target database that does not exist yet is created with `CREATE DATABASE` first, and a database can be restored under another name.
 - Each database is restored with `pg_restore --clean --if-exists --no-owner --no-acl`, plus `--no-comments --no-tablespaces --no-security-labels`. Objects in the dump are dropped and created again, objects that exist only in the target stay.
-- Owners and grants are not restored. Restored objects belong to the login that ran the restore, and roles and their grants have to be set up on a new server by hand.
+- Owners and grants are not restored. Restored objects belong to the login that ran the restore, and roles and their grants have to be set up on a new server by hand. A customer's restore of a [shared database](/user-guide/admin/shared-databases#who-a-customer-s-restore-runs-as) runs as the owner of the database instead, and it is refused when the login could do more than that owner.
 - When a start fails with access or permission denied, the page offers an admin login for that one run. For PostgreSQL it creates the databases and runs `pg_restore` as well.
 - A backup of a newer PostgreSQL version than the target server is refused, see [Version Guard](/user-guide/features/restore#version-guard).
 

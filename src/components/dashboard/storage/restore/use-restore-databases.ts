@@ -5,7 +5,8 @@ import type { AdapterOption } from "@/components/dashboard/jobs/job-form-schema"
 import type { FileInfo } from "@/components/dashboard/storage/file-info";
 import { getAdapterDefinition } from "@/lib/adapters/definitions";
 import { compareVersions } from "@/lib/utils";
-import { buildDbRows, copyName, type DbChoice, type ServerDatabase } from "./restore-model";
+import { getCustomerDatabases } from "@/app/actions/tenant/database-assignments";
+import { buildDbRows, copyName, type CustomerHolders, type DbChoice, type ServerDatabase } from "./restore-model";
 
 /** Adapters that run a server DBackup can list the databases of. The rest restore into a file, like SQLite. */
 const SERVER_ADAPTERS = ["mysql", "mariadb", "postgres", "mongodb", "mssql", "azure-sql", "redis", "valkey", "firebird"];
@@ -146,7 +147,29 @@ export function useRestoreDatabases(file: FileInfo | null, analyzed: string[], s
             : { ok: true, text: `${engine} ${file.engineVersion} into the newer ${answered.version}` };
     }, [file, answered, engine, type]);
 
-    const rows = useMemo(() => buildDbRows(choices, answered?.databases ?? [], sizes, isFirebird), [choices, answered, sizes, isFirebird]);
+    // The databases customers hold now among the names the restore writes into, which the page marks
+    // and the confirmation asks about. Read again a moment after the names stop changing.
+    const [holders, setHolders] = useState<{ target: string; names: string; held: CustomerHolders } | null>(null);
+    const wanted = useMemo(() => [...new Set(choices.filter((choice) => choice.selected && choice.targetName.trim()).map((choice) => choice.targetName))].sort().join("\u0000"), [choices]);
+    useEffect(() => {
+        if (!target || !wanted || !isServer) return;
+        let ignore = false;
+        const timer = setTimeout(() => {
+            getCustomerDatabases(target, wanted.split("\u0000"))
+                .then((result) => {
+                    if (ignore || !result.success) return;
+                    setHolders({ target, names: wanted, held: new Map(result.data.map((entry) => [entry.database, entry.customer])) });
+                })
+                .catch(() => undefined);
+        }, 300);
+        return () => {
+            ignore = true;
+            clearTimeout(timer);
+        };
+    }, [target, wanted, isServer]);
+    const held = holders && holders.target === target ? holders.held : null;
+
+    const rows = useMemo(() => buildDbRows(choices, answered?.databases ?? [], sizes, isFirebird, held ?? undefined), [choices, answered, sizes, isFirebird, held]);
 
     const setPicked = useCallback((ids: string[], selected: boolean) => {
         const picked = new Set(ids);

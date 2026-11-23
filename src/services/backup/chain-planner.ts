@@ -13,15 +13,14 @@
 import path from "path";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
-import { BackupMetadata, StorageAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import { registry } from "@/lib/core/registry";
+import { BackupMetadata } from "@/lib/core/interfaces";
 import { archiveIndexService } from "./archive-index-service";
 import { ArchiveIndex } from "@/lib/archive/types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { latestChainSnapshotWhere } from "./chain-query";
 import { isAirGapped } from "@/lib/core/air-gap";
+import { findDestination, openDestination, openRow } from "@/services/sharing/destination-access";
 import { isConnected } from "@/lib/runner/steps/air-gap";
 
 const log = logger.child({ service: "ChainPlanner" });
@@ -56,7 +55,22 @@ interface PreviousSnapshot {
     chainStartedAt: Date | null;
     /** Remote path of the chain's full backup, which every snapshot depends on. */
     fullPath: string | null;
+    /** SHA-256 of the index sidecar the run uploaded. Null for a run from before it was recorded. */
+    indexSha256: string | null;
 }
+
+/** The digest of the index sidecar a run recorded in its own row, beyond the reach of a destination. */
+function recordedIndexDigest(metadata: string | null | undefined): string | null {
+    if (!metadata) return null;
+    try {
+        const digest = (JSON.parse(metadata) as { indexSha256?: unknown }).indexSha256;
+        return typeof digest === "string" && /^[0-9a-f]{64}$/.test(digest) ? digest : null;
+    } catch {
+        return null;
+    }
+}
+
+const sha256 = (bytes: Buffer) => crypto.createHash("sha256").update(bytes).digest("hex");
 
 /** Newest successful snapshot of the job's current chain, if there is one. */
 async function findPreviousSnapshot(jobId: string): Promise<PreviousSnapshot | null> {
@@ -78,19 +92,16 @@ async function findPreviousSnapshot(jobId: string): Promise<PreviousSnapshot | n
         remotePath: previous.path,
         chainStartedAt: chainStart?.startedAt ?? null,
         fullPath: chainStart?.path ?? null,
+        indexSha256: recordedIndexDigest(previous.metadata),
     };
 }
 
 /** Reads a backup's `.meta.json` from a destination. */
 async function readMeta(configId: string, remotePath: string): Promise<BackupMetadata | null> {
-    const row = await prisma.adapterConfig.findUnique({ where: { id: configId } });
-    if (!row || row.type !== "storage") return null;
-
-    const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
-    if (!adapter?.read) return null;
-
     try {
-        const content = await adapter.read(await resolveAdapterConfig(row), `${remotePath}.meta.json`);
+        const { adapter, config } = await openDestination(configId);
+        if (!adapter.read) return null;
+        const content = await adapter.read(config, `${remotePath}.meta.json`);
         return content ? (JSON.parse(content) as BackupMetadata) : null;
     } catch {
         return null;
@@ -104,15 +115,16 @@ async function readMeta(configId: string, remotePath: string): Promise<BackupMet
  * it is connected again and lacks part of the chain, that starts one.
  */
 async function chainStateAt(configId: string, chainDir: string, expectedCount: number): Promise<"intact" | "broken" | "away"> {
-    const row = await prisma.adapterConfig.findUnique({ where: { id: configId } });
-    if (!row || row.type !== "storage") return "broken";
-
-    const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
-    if (!adapter) return "broken";
-
+    let found: Awaited<ReturnType<typeof findDestination>>;
+    try {
+        found = await findDestination(configId);
+    } catch {
+        return "broken";
+    }
+    const { row } = found;
     const airGapped = isAirGapped(row);
     try {
-        const config = await resolveAdapterConfig(row);
+        const { adapter, config } = await openRow(row, found.mode);
         if (airGapped && !(await isConnected({ adapter, config, configName: row.name }))) return "away";
         const files = await adapter.list(config, chainDir);
         const archives = files.filter((f) => f.name.endsWith(".tar"));
@@ -120,6 +132,33 @@ async function chainStateAt(configId: string, chainDir: string, expectedCount: n
     } catch {
         return airGapped ? "away" : "broken";
     }
+}
+
+/**
+ * Whether every other destination holds the index with the same bytes. Only asked for a snapshot
+ * whose run recorded no digest. An air-gapped destination that cannot serve it is left out, as it
+ * is by `chainStateAt`. Any other destination that cannot serve it counts as a difference.
+ */
+async function sameIndexEverywhere(configIds: string[], readFrom: string, remotePath: string, indexFile: string, digest: string): Promise<boolean> {
+    for (const configId of configIds) {
+        if (configId === readFrom) continue;
+        let bytes: Buffer | null = null;
+        try {
+            bytes = await archiveIndexService.fetchSidecar(configId, remotePath, indexFile);
+        } catch {
+            bytes = null;
+        }
+        if (bytes) {
+            if (sha256(bytes) !== digest) return false;
+            continue;
+        }
+        try {
+            if (!isAirGapped((await findDestination(configId)).row)) return false;
+        } catch {
+            return false;
+        }
+    }
+    return true;
 }
 
 export interface ChainPlanInput {
@@ -214,9 +253,25 @@ export async function planChain(input: ChainPlanInput): Promise<ChainPlan> {
         return fresh("the previous backup failed its last integrity check");
     }
 
+    // The lines of this index decide which files the run skips and where a carried file is read
+    // from, and the new index goes to every destination. Whoever writes one destination can edit
+    // the sidecar there, so the run builds only on the bytes it wrote: the digest of its own
+    // record, or for a run from before that record, the same bytes at every destination.
     let previousIndex: ArchiveIndex | null;
     try {
-        previousIndex = await archiveIndexService.load(metaConfigId, previous.remotePath, meta);
+        const bytes = await archiveIndexService.fetchSidecar(metaConfigId, previous.remotePath, meta.archive.indexFile);
+        if (!bytes) return fresh("the previous backup's file index could not be read");
+        const digest = sha256(bytes);
+        if (previous.indexSha256) {
+            if (digest !== previous.indexSha256) {
+                log.warn("The index of the previous snapshot differs from the one its run recorded", { jobId: input.job.id, configId: metaConfigId });
+                return fresh("the previous backup's file index is not the one its run wrote");
+            }
+        } else if (!(await sameIndexEverywhere(input.destinationConfigIds, metaConfigId, previous.remotePath, meta.archive.indexFile, digest))) {
+            log.warn("The index of the previous snapshot differs between the destinations", { jobId: input.job.id });
+            return fresh("the previous backup's file index differs between the destinations");
+        }
+        previousIndex = await archiveIndexService.parseSidecar(metaConfigId, previous.remotePath, meta, bytes);
     } catch (e: unknown) {
         log.warn("Could not read the previous snapshot index", { jobId: input.job.id }, wrapError(e));
         previousIndex = null;

@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { currentGroupPattern, EXCLUDE_GROUPS, parseJsonStringArray } from "@/lib/exclude-groups";
+import { excludePatternProblem } from "@/lib/exclude-pattern-rules";
 import { matchesExcludePattern } from "@/lib/exclude-patterns";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
@@ -75,7 +76,8 @@ function PathCheck({ entries }: { entries: { pattern: string; from: string }[] }
     const [path, setPath] = useState("");
     const id = useId();
     const probe = relative(path);
-    const match = probe ? entries.find((entry) => matchesExcludePattern(probe, entry.pattern)) : undefined;
+    // A pattern the save refuses matches nothing here, the matcher throws for one.
+    const match = probe ? entries.find((entry) => !excludePatternProblem(entry.pattern) && matchesExcludePattern(probe, entry.pattern)) : undefined;
     return (
         <div className="space-y-2">
             <Label htmlFor={id}>Check a path</Label>

@@ -7,6 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { IssueBanner } from "@/components/adapter/connection-details-sections";
 import { count } from "@/components/dashboard/storage/explorer/explorer-format";
+import { AllTenantsNotice } from "@/components/tenant/all-tenants-notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DatabaseOverview, ExplorerDbJob } from "@/services/databases/database-explorer-types";
@@ -71,7 +72,8 @@ interface DatabasePageProps {
  * A database as a page of its own, opened from the list or the timeline of the Database Explorer:
  * its numbers and its tables with the rows of the one picked, read live and filling the height of
  * the page. A Redis or Valkey server shows its numbered databases and their keys instead. The
- * backups of a day show beside the timeline, not here. What is open lives in the address.
+ * backups of a day show beside the timeline, not here. What is open lives in the address. In All
+ * tenants a note on top opens the page in the tenant of the server.
  */
 export function DatabasePage({ canBrowse, canOpenBackups }: DatabasePageProps) {
     const router = useRouter();
@@ -131,6 +133,7 @@ export function DatabasePage({ canBrowse, canOpenBackups }: DatabasePageProps) {
     const instance = database.kind === "instance";
     return (
         <div className={PAGE}>
+            <AllTenantsNotice tenantId={server.tenantId} className="shrink-0" />
             <DatabasePageHead overview={data} database={database} server={server} jobs={jobs} canOpenBackups={canOpenBackups} />
             {server.status !== "ONLINE" && <IssueBanner status={server.status} error={null} />}
             <DatabaseStrip database={database} server={server} jobs={jobs} coverage={data.coverage} jobsById={jobsById} />

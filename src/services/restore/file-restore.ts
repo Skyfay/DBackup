@@ -13,8 +13,9 @@
  */
 
 import path from "path";
-import { safeRemoteJoin } from "@/lib/archive/remote-paths";
+import { restoreDestination, safeRemoteJoin } from "@/lib/archive/remote-paths";
 import prisma from "@/lib/prisma";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { pipeline } from "stream/promises";
 import { createGzip } from "zlib";
 import { pack } from "tar-stream";
@@ -23,24 +24,33 @@ import { BackupMetadata, StorageAdapter, AdapterConfig } from "@/lib/core/interf
 import { openStorageArchiveSource, resolveStorageAdapter, ManagedArchiveSource } from "@/lib/archive/storage-source";
 import { parseArchiveIndex, readArchiveManifest, readEmbeddedIndexBytes } from "@/lib/archive/reader";
 import { createDestinationSessions } from "./destination-sessions";
+import { findRestoreTarget } from "./restore-target";
+import { openRow } from "@/services/sharing/destination-access";
 import { forEachSnapshotFile, ChainReaderOptions } from "@/lib/archive/chain-source";
 import { hashingStream } from "@/lib/archive/hashing";
 import { checkChainCompleteness } from "@/lib/archive/chain";
 import { totalSize } from "@/lib/archive/browse";
 import { resolveContents, downloadShape, type FileRestoreSelection } from "./archive-selection";
-import { databaseDumpFileName } from "@/lib/archive/dump-names";
+import { databaseDumpFileName, safeNameSegment } from "@/lib/archive/dump-names";
 import { DATABASE_MEMBER_PREFIX } from "@/lib/archive/format";
 import { entryKey } from "@/lib/archive/types";
 import { openArchiveEntry } from "@/lib/archive/reader";
 import { archiveIndexVerifier, KeyOverride, resolveBackupKey } from "@/services/backup/key-resolution";
 import { resolveTransferConcurrency } from "@/lib/adapters/transfer-concurrency";
 import { archiveIndexService } from "@/services/backup/archive-index-service";
-import { getTempDir } from "@/lib/temp-dir";
+import { giveRecordedMode, privateTempPath } from "@/lib/private-temp-dir";
+import { readSidecarText } from "@/lib/adapters/storage/common/read-sidecar";
 import { ArchiveIndex, ArchiveManifest, metadataFromIndex, partitionSymlinks } from "@/lib/archive/types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, NotFoundError, ValidationError } from "@/lib/logging/errors";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
+import { ENTRY_THROUGH_LINK, LINK_LEAVES_TARGET, linkLeavesTarget, throughLinkOf } from "@/lib/archive/link-target";
+import { assertRestoreFolder } from "@/lib/archive/remote-paths";
+import { assertWriteTargets, originOfBackup, restoredFileRefusal, type RestoreCaller } from "./restore-targets";
+import { reserveTempSpace, type TempSpaceReservation } from "./temp-space";
+import { parseWithinBudget } from "@/services/backup/index-parse-budget";
+import { assertEncryptionKept } from "./recorded-encryption";
 
 const log = logger.child({ service: "FileRestoreService" });
 
@@ -82,12 +92,25 @@ export interface FileRestoreInput {
      * user picked another. Absent for the ordinary case, where the metadata decides.
      */
     keyOverride?: KeyOverride;
+    /**
+     * Writing to storage only: refuses the connections the files would be written to by throwing,
+     * called with their ids once they are known and before anything is written. A restore to the
+     * origin learns them from the archive, so the caller cannot check them up front.
+     */
+    checkTargets?: (connectionIds: string[]) => Promise<void>;
+    /**
+     * Who restores, for the targets and files only some may write, see `assertWriteTargets` and
+     * `restoredFileRefusal`. Without one the restore writes as someone with no rights beyond it.
+     */
+    caller?: RestoreCaller;
 }
 
 /** Everything needed to read files out of a snapshot, plus how to release it. */
 export interface OpenedArchive extends ManagedArchiveSource {
     manifest: ArchiveManifest;
     index: ArchiveIndex;
+    /** The SHA-256 of the bytes of the index that was parsed, see `archiveReadSource`. */
+    indexSha256: string;
     masterKey?: Buffer;
     /** Lets sibling archives of the same chain be opened on demand. */
     chain: ChainReaderOptions;
@@ -97,25 +120,15 @@ export interface OpenedArchive extends ManagedArchiveSource {
  * Reads the backup's `.meta.json`, which carries the crypto parameters needed to open the
  * index without touching the archive.
  */
-async function readBackupMetadata(
+export async function readBackupMetadata(
     adapter: StorageAdapter,
     config: AdapterConfig,
     file: string
 ): Promise<BackupMetadata> {
-    if (adapter.read) {
-        const content = await adapter.read(config, `${file}.meta.json`);
-        if (content) return JSON.parse(content) as BackupMetadata;
-    }
-
-    const tempFile = path.join(getTempDir(), `meta-${process.pid}-${crypto.randomUUID()}.json`);
-    try {
-        if (!(await adapter.download(config, `${file}.meta.json`, tempFile))) {
-            throw new NotFoundError("Backup metadata", `${file}.meta.json`);
-        }
-        return JSON.parse(await fs.readFile(tempFile, "utf-8")) as BackupMetadata;
-    } finally {
-        await fs.unlink(tempFile).catch(() => { });
-    }
+    // Bounded, see `readSidecarText`: a `.meta.json` past the limit fails the read.
+    const content = await readSidecarText(adapter, config, `${file}.meta.json`);
+    if (!content) throw new NotFoundError("Backup metadata", `${file}.meta.json`);
+    return JSON.parse(content) as BackupMetadata;
 }
 
 /**
@@ -148,9 +161,11 @@ async function assertChainComplete(
 export async function openArchiveForRestore(
     storageConfigId: string,
     file: string,
-    override?: KeyOverride
+    override?: KeyOverride,
+    /** The tenant whose view of the destination the path is in, the tenant of the code that runs when left out. */
+    viewerTenantId?: string | null
 ): Promise<OpenedArchive> {
-    const { adapter, config } = await resolveStorageAdapter(storageConfigId);
+    const { adapter, config } = await resolveStorageAdapter(storageConfigId, viewerTenantId);
     const meta = await readBackupMetadata(adapter, config, file);
 
     if (meta.archive?.formatVersion !== 2) {
@@ -162,11 +177,15 @@ export async function openArchiveForRestore(
 
     // The index sidecar is the primary path: it is small, and reading it means the archive
     // itself is only ever touched for the entries actually being restored.
-    const sidecarBytes = await archiveIndexService.fetchSidecar(storageConfigId, file, meta.archive.indexFile);
+    // Read in the same view as the archive, which for a shared restore is not the tenant of the request.
+    const sidecarBytes = await archiveIndexService.fetchSidecar(storageConfigId, file, meta.archive.indexFile, viewerTenantId);
 
     let managed = await openStorageArchiveSource(adapter, config, file, undefined);
     try {
         const manifest = await readArchiveManifest(managed.source);
+        // The manifest of the archive itself says whether it is encrypted, the run that wrote it
+        // whether it has to be, see `recorded-encryption.ts`.
+        await assertEncryptionKept(storageConfigId, file, { encrypted: !!manifest.encryption, jobId: meta.jobId }, viewerTenantId);
 
         if (!sidecarBytes) {
             // No sidecar. Every archive carries a copy of its index as its last member, but
@@ -192,13 +211,16 @@ export async function openArchiveForRestore(
             })
             : undefined;
 
-        const index = await parseArchiveIndex(indexBytes, manifest, masterKey);
+        // Within the bound on the parses of the process, see `index-parse-budget.ts`.
+        const index = await parseWithinBudget(indexBytes.length, () => parseArchiveIndex(indexBytes, manifest, masterKey));
         await assertChainComplete(adapter, config, file, index);
 
         const chain: ChainReaderOptions = {
             adapter,
             config,
             snapshotPath: file,
+            // A chain is written by one job, so a plain archive in the chain of an encrypted one was laid there.
+            requireEncryption: !!manifest.encryption,
             // Every archive of a chain is written by the same job, so the key that opened
             // this one opens its siblings - including when Smart Recovery had to find it
             // under a profile other than the one the archive names. Only a sibling naming a
@@ -210,11 +232,21 @@ export async function openArchiveForRestore(
                     : resolveBackupKey({ profileId: siblingProfileId, override }),
         };
 
-        return { ...managed, manifest, index, masterKey, chain };
+        return { ...managed, manifest, index, indexSha256: crypto.createHash("sha256").update(indexBytes).digest("hex"), masterKey, chain };
     } catch (e: unknown) {
         await managed.dispose();
         throw e;
     }
+}
+
+/**
+ * The name of a file in a download: the id of its source as one plain folder, then its path, which
+ * may not climb out of it. Both come from the index, and `tar -xf` on the machine of the user
+ * writes wherever a name says, so `..` or an absolute path would land outside the folder it
+ * extracts into. `safeRemoteJoin` refuses those, which fails the download rather than the user.
+ */
+function downloadMemberName(src: string, filePath: string): string {
+    return `${safeNameSegment(src)}/${safeRemoteJoin("", filePath)}`;
 }
 
 export interface FileRestorePlan {
@@ -306,7 +338,7 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
                 });
                 let digest: string | undefined;
                 await pipeline(
-                    await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey),
+                    await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey, database.s),
                     hashingStream((d) => { digest = d; }),
                     member
                 );
@@ -316,7 +348,7 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
             }
 
             await forEachSnapshotFile(archive, payloads, async (file, content) => {
-                const entry = tarPack.entry({ name: `${bySrc.get(file) ?? file.src}/${file.p}`, size: file.s });
+                const entry = tarPack.entry({ name: downloadMemberName(bySrc.get(file) ?? file.src, file.p), size: file.s });
                 let digest: string | undefined;
                 await pipeline(content, hashingStream((d) => { digest = d; }), entry);
 
@@ -337,7 +369,7 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
             for (const { file, src } of symlinks) {
                 await new Promise<void>((resolve, reject) => {
                     tarPack.entry(
-                        { name: `${src}/${file.p}`, type: "symlink", linkname: file.lnk, size: 0 },
+                        { name: downloadMemberName(src, file.p), type: "symlink", linkname: file.lnk, size: 0 },
                         (err) => (err ? reject(err) : resolve())
                     );
                 });
@@ -358,26 +390,61 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
     return gzip;
 }
 
+/** Where the files of one directory source are written: the connection, its adapter and config, and the folder. */
+interface RestoreTarget {
+    adapter: StorageAdapter;
+    config: AdapterConfig;
+    /** The saved connection the files go to. */
+    connectionId: string;
+    /** The adapter and tenant of that connection, for who may write into it. */
+    adapterId: string;
+    tenantId: string;
+    basePath: string;
+    label: string;
+    /** Whether the files go back where the directory source read them. */
+    origin: boolean;
+    /** Whether the connection holds backups, where a file named like one may not be restored, see `restoredFileRefusal`. */
+    destination: boolean;
+}
+
 /**
  * Resolves where each directory source's files should be written back to.
  *
  * Driven by the source ids actually resolved from the index rather than by the request's
  * selection, so restoring a whole snapshot (which carries no selection) works too.
+ *
+ * Only a source the request names in its selection counts as the origin of its files. The ids of
+ * the index come from the destination, so a backup could name the source of another job, whose
+ * folder the restore would then write as its origin, without the right to change that connection,
+ * see `writeTargetRefusal`. A whole snapshot restored without a selection writes as anywhere else,
+ * and so does a backup no recorded run of the job of that source wrote, since the selection comes
+ * from the request as well, see `originOfBackup`.
  */
 async function resolveTargets(
-    input: FileRestoreInput,
+    input: FileRestoreInput & { indexSha256: string },
     sourceIds: string[]
-): Promise<Map<string, { adapter: StorageAdapter; config: AdapterConfig; basePath: string; label: string }>> {
-    const targets = new Map<string, { adapter: StorageAdapter; config: AdapterConfig; basePath: string; label: string }>();
+): Promise<Map<string, RestoreTarget>> {
+    const targets = new Map<string, RestoreTarget>();
+    const named = new Set((input.selections ?? []).map((selection) => selection.src));
 
     if (input.target.kind === "storage") {
-        const { adapter, config } = await resolveStorageAdapter(input.target.configId);
-        const row = await prisma.adapterConfig.findUnique({ where: { id: input.target.configId } });
+        // A folder that leaves the connection is refused before the connection is opened.
+        assertRestoreFolder(input.target.basePath);
+        // Never a destination shared with the tenant that takes only encrypted backups, see `findRestoreTarget`.
+        const found = await findRestoreTarget(input.target.configId);
+        const { adapter, config } = await openRow(found.row, found.mode);
         for (const src of sourceIds) {
+            // The folder a source read, the volume of Docker Volumes, goes back without more rights, see `writeTargetRefusal`.
+            const source = await prisma.jobSource.findUnique({ where: { id: src }, select: { configId: true, path: true } });
             targets.set(src, {
                 adapter, config,
+                connectionId: input.target.configId,
+                adapterId: found.row.adapterId,
+                tenantId: found.row.tenantId,
                 basePath: input.target.basePath,
-                label: `${row?.name ?? input.target.configId}:${input.target.basePath}`,
+                label: `${found.row.name}:${input.target.basePath}`,
+                origin: named.has(src) && await originOfBackup(input, src, source, input.target.configId, input.target.basePath, found.row.adapterId),
+                destination: found.row.storageRole === STORAGE_ROLES.DESTINATION,
             });
         }
         return targets;
@@ -395,15 +462,35 @@ async function resolveTargets(
                 `${src} - it was deleted since this backup was taken, so its original location is unknown. Restore to a chosen destination instead.`
             );
         }
-        const { adapter, config } = await resolveStorageAdapter(jobSource.configId);
+        assertRestoreFolder(jobSource.path);
+        const origin = await findRestoreTarget(jobSource.configId);
+        const { adapter, config } = await openRow(origin.row, origin.mode);
         targets.set(src, {
             adapter, config,
+            connectionId: jobSource.configId,
+            adapterId: origin.row.adapterId,
+            tenantId: origin.row.tenantId,
             basePath: jobSource.path,
             label: `${jobSource.config.name}:${jobSource.path}`,
+            // Only out of a backup a run of the job of this source wrote, see `originOfBackup`.
+            origin: named.has(src) && await originOfBackup(input, src, jobSource, jobSource.configId, jobSource.path, origin.row.adapterId),
+            destination: origin.row.storageRole === STORAGE_ROLES.DESTINATION,
         });
     }
 
     return targets;
+}
+
+/** The caller of a restore that names none: no platform admin, no permission, no tenant. */
+const NO_CALLER: RestoreCaller = { isPlatformAdmin: false, authMethod: "session" };
+
+/** The path a file is written to, null when it leaves its folder, which the write then reports. */
+function remotePathOrNull(basePath: string, relativePath: string): string | null {
+    try {
+        return safeRemoteJoin(basePath, relativePath);
+    } catch {
+        return null;
+    }
 }
 
 export interface FileRestoreResult {
@@ -432,8 +519,18 @@ export async function restoreFilesToStorage(
     }
 
     const archive = await openArchiveForRestore(input.storageConfigId, input.file, input.keyOverride);
-    const { files } = resolveContents(archive.index, input);
-    const targets = await resolveTargets(input, [...new Set(files.map((f) => f.src))]);
+    let files: ReturnType<typeof resolveContents>["files"];
+    let targets: Map<string, RestoreTarget>;
+    try {
+        files = resolveContents(archive.index, input).files;
+        targets = await resolveTargets({ ...input, indexSha256: archive.indexSha256 }, [...new Set(files.map((f) => f.src))]);
+        // Before anything is written, with the connections of an origin known only now.
+        await input.checkTargets?.([...new Set([...targets.values()].map((t) => t.connectionId))]);
+        await assertWriteTargets([...targets.values()].map((t) => ({ ...t, config: t.config as Record<string, unknown> })), input.caller ?? NO_CALLER);
+    } catch (e) {
+        await archive.dispose();
+        throw e;
+    }
 
     if (files.length === 0) {
         await archive.dispose();
@@ -444,9 +541,23 @@ export async function restoreFilesToStorage(
     let restored = 0;
     let restoredBytes = 0;
 
+    // An entry below a link of the same backup is never written, see `throughLinkOf`.
+    const throughLink = throughLinkOf(archive.index.files);
+    // A file only a platform admin restores is named as failed and never read, see `restoredFileRefusal`.
+    const writable = files.filter((file) => {
+        if (throughLink(file.src, file.file.p)) {
+            failed.push({ path: file.file.p, error: `'${file.file.p}' was not restored: ${ENTRY_THROUGH_LINK}.` });
+            return false;
+        }
+        const target = targets.get(file.src);
+        const refusal = target ? restoredFileRefusal(remotePathOrNull(target.basePath, file.file.p) ?? file.file.p, input.caller, target.destination, target.adapterId) : null;
+        if (refusal) failed.push({ path: file.file.p, error: refusal });
+        return !refusal;
+    });
+
     // Split before anything runs. Links have no entry to fetch, and they are created after
     // every file for the same reason extractArchiveFrom() does it that way.
-    const { payloads, symlinks } = partitionSymlinks(files);
+    const { payloads, symlinks } = partitionSymlinks(writable);
 
     // Write-back stages each file independently, so several run at once - the round-trip
     // win when restoring to a network destination. Each target states how many it can take;
@@ -457,7 +568,18 @@ export async function restoreFilesToStorage(
         ...[...targets.values()].map((t) => resolveTransferConcurrency(t.adapter.id, t.config)),
     );
 
-    const sessions = createDestinationSessions(concurrency);
+    // Each file is staged whole before its upload and removed after it, `concurrency` at once. The
+    // space stays promised to this restore until it ends, see `reserveTempSpace`.
+    let space: TempSpaceReservation | undefined;
+    let sessions: ReturnType<typeof createDestinationSessions>;
+    try {
+        space = await reserveTempSpace(payloads.map(({ file }) => file.s ?? 0), concurrency);
+        sessions = createDestinationSessions(concurrency);
+    } catch (error) {
+        space?.release();
+        await archive.dispose();
+        throw error;
+    }
 
     try {
         await forEachSnapshotFile(archive, payloads, async (file, content) => {
@@ -467,17 +589,21 @@ export async function restoreFilesToStorage(
                 return;
             }
 
-            const stagePath = path.join(getTempDir(), `restore-${process.pid}-${crypto.randomUUID()}`);
+            // In the private folder, since the file is restored data, decrypted.
+            const stagePath = await privateTempPath(`restore-${process.pid}-${crypto.randomUUID()}`);
+            const metadata = metadataFromIndex(file, target.origin);
             let digest: string | undefined;
             try {
-                await pipeline(content, hashingStream((d) => { digest = d; }), createWriteStream(stagePath));
+                await pipeline(content, hashingStream((d) => { digest = d; }), createWriteStream(stagePath, { flags: "wx" }));
+                // The mode the archive recorded, see `giveRecordedMode`, which an upload like rsync -a keeps.
+                await giveRecordedMode(stagePath, metadata?.mode);
 
                 if (file.h && digest && digest !== file.h) {
                     throw new Error(`Checksum mismatch: expected ${file.h}, got ${digest}`);
                 }
 
-                const remotePath = safeRemoteJoin(target.basePath, file.p);
-                if (!(await sessions.upload(target, stagePath, remotePath, undefined, metadataFromIndex(file)))) {
+                const { remotePath, restoreRelativePath } = restoreDestination(target.basePath, file.p);
+                if (!(await sessions.upload(target, stagePath, remotePath, undefined, { ...metadata, restoreRelativePath }))) {
                     throw new Error(`Adapter '${target.adapter.id}' rejected the upload`);
                 }
 
@@ -504,7 +630,13 @@ export async function restoreFilesToStorage(
                 continue;
             }
 
-            const remotePath = safeRemoteJoin(target.basePath, file.p);
+            // A link that leads out of the folder of the restore is never laid, see `link-target.ts`.
+            if (linkLeavesTarget(file.p, file.lnk, (resolved) => throughLink(src, resolved))) {
+                failed.push({ path: file.p, error: `The symbolic link '${file.p}' -> '${file.lnk}' was not restored: ${LINK_LEAVES_TARGET}.` });
+                continue;
+            }
+
+            const { remotePath, restoreRelativePath } = restoreDestination(target.basePath, file.p);
             if (!target.adapter.createSymlink) {
                 // Named individually and counted as a failure, which downgrades the restore.
                 // Object storage has no symbolic links, and reporting a complete restore that
@@ -521,7 +653,7 @@ export async function restoreFilesToStorage(
             }
 
             try {
-                await target.adapter.createSymlink(target.config, remotePath, file.lnk);
+                await target.adapter.createSymlink(target.config, remotePath, file.lnk, { restoreRelativePath });
                 restored++;
                 onProgress?.(restored, files.length, file.p);
             } catch (e: unknown) {
@@ -531,6 +663,7 @@ export async function restoreFilesToStorage(
             }
         }
     } finally {
+        space?.release();
         await sessions.close();
         await archive.dispose();
     }

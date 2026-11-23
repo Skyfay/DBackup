@@ -1,6 +1,7 @@
 import path from "path";
 import prisma from "@/lib/prisma";
 import { applyNamingPattern, chainSegment, fileNameParts, patternUsesChain } from "@/lib/templates/naming-template-engine";
+import { safeFileName } from "@/lib/templates/naming-pattern";
 import fs from "fs/promises";
 import { formatBytes } from "@/lib/utils";
 import { JobWithRelations, RunnerContext } from "../types";
@@ -53,8 +54,14 @@ export async function resolveBackupFilename(
     // Only an incremental run has a position to write; for everything else the token resolves
     // to nothing and takes its separator with it.
     const chainValue = chain ? chainSegment(chain.type, chain.index) : "";
-    const fileName = applyNamingPattern(pattern, sanitizedName, dbNameRaw, new Date(), timezone, chainValue) + ".tar";
+    // One part of a path, whatever a pattern saved before the rule holds, so the archive, its
+    // sidecars and their cleanup never leave the folder of the run, see `naming-pattern.ts`.
+    const resolved = applyNamingPattern(pattern, sanitizedName, dbNameRaw, new Date(), timezone, chainValue);
+    const fileName = safeFileName(resolved, sanitizedName) + ".tar";
     const tempFile = path.join(runDir, fileName);
+    if (path.dirname(path.resolve(tempFile)) !== path.resolve(runDir)) {
+        throw new Error(`The naming template of job ${job.name} does not name a file inside the folder of its run.`);
+    }
 
     return { tempDir: runDir, tempFile, fileName, chainInFileName: patternUsesChain(pattern) };
 }
@@ -75,12 +82,18 @@ export function parseJobDatabases(databasesJson: string | null | undefined): str
  * Adapters write their dump straight to disk and report no byte counts of their own, so the
  * file size is the only live progress there is. `onBytes` hears every new size. Returns the
  * function that stops watching.
+ *
+ * Only a file that grew is reported. Every report stamps the heartbeat of the run, so a report
+ * for a size that stands still would keep a dump that hangs looking alive, and the stuck run check
+ * would never end it and free its slot of the queue.
  */
 export function watchDumpSize(ctx: RunnerContext, file: string, label: string, onBytes?: (bytes: number) => void): () => void {
     const startedAt = Date.now();
+    let lastSize = 0;
     const timer = setInterval(() => {
         fs.stat(file).then((stats) => {
-            if (stats.size === 0) return;
+            if (stats.size === lastSize) return;
+            lastSize = stats.size;
             const elapsed = (Date.now() - startedAt) / 1000;
             const speed = elapsed > 0 ? Math.round(stats.size / elapsed) : 0;
             ctx.updateDetail(`${label}: ${formatBytes(stats.size)} dumped - ${formatBytes(speed)}/s`);

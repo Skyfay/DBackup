@@ -4,7 +4,7 @@ import "./globals.css";
 
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme/theme-provider";
-import prisma from "@/lib/prisma";
+import { getInstanceName } from "@/services/system/system-settings-service";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,8 +19,7 @@ const geistMono = Geist_Mono({
 export async function generateMetadata(): Promise<Metadata> {
   let instanceName: string | undefined;
   try {
-    const setting = await prisma.systemSetting.findUnique({ where: { key: "general.instanceName" } });
-    instanceName = setting?.value?.trim();
+    instanceName = await getInstanceName();
   } catch {
     // DB not available at build time.
   }

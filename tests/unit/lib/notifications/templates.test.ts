@@ -39,7 +39,8 @@ describe("the mails of a backup run", () => {
   it("names the job first and says where the databases went", () => {
     const payload = backup(NOTIFICATION_EVENTS.BACKUP_SUCCESS);
 
-    expect(payload.title).toBe("mysql-shop finished");
+    expect(payload.title).toBe("Backup Successful: mysql-shop");
+    expect(payload.heading).toBe("mysql-shop finished");
     expect(payload.message).toBe("3 databases from MySQL Shop are now in 2 destinations.");
     expect(payload.preheader).toBe("1.42 GB went to S3 Archive and NAS Backup in 2 min 14 s.");
     expect(payload.tone).toBe("success");
@@ -73,7 +74,8 @@ describe("the mails of a backup run", () => {
       ],
     });
 
-    expect(payload.title).toBe("mysql-shop finished partially");
+    expect(payload.title).toBe("Backup Partial: mysql-shop");
+    expect(payload.heading).toBe("mysql-shop finished partially");
     expect(payload.message).toBe("2 of 3 destinations got the backup. Dropbox did not.");
     expect(stat(payload, "Destinations")).toBe("2 of 3");
     expect(field(payload, "Failed")).toBe("Dropbox");
@@ -89,7 +91,8 @@ describe("the mails of a backup run", () => {
       lastSuccessAt: "2026-10-02T01:16:00.000Z",
     });
 
-    expect(payload.title).toBe("mysql-shop failed");
+    expect(payload.title).toBe("Backup Failed: mysql-shop");
+    expect(payload.heading).toBe("mysql-shop failed");
     expect(payload.message).toBe("The run stopped while dumping databases, so no destination got a backup.");
     expect(payload.preheader).toBe("MySQL Shop refused the login. Last clean run 2 days ago.");
     expect(stat(payload, "Failed in a row")).toBe("3");
@@ -111,7 +114,7 @@ describe("the mails of a backup run", () => {
       data: { jobName: "files", timestamp: "2026-10-04T01:17:21.000Z" },
     });
 
-    expect(payload.title).toBe("files finished");
+    expect(payload.title).toBe("Backup Successful: files");
     expect(payload.message).toBe("files finished.");
     expect(payload.actions).toEqual([]);
   });

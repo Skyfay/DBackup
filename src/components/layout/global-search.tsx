@@ -8,15 +8,17 @@ import { useTheme } from "next-themes";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { startRun } from "@/components/dashboard/history/run-actions";
 import { useViewerPermissions } from "@/components/permissions/permissions-context";
+import { useMayOpenTenant, useOpenInTenant, useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { toneAttribute } from "@/components/ui/tone";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { ALL_TENANTS } from "@/lib/tenant/home";
 import { cn } from "@/lib/utils";
 import { MIN_QUERY_LENGTH, type SearchHit } from "@/services/search/search-types";
-import { GROUP_LABELS, GROUP_ORDER, hitItems, iconOf, mayOpen, subLine, visibleChips, type SearchChip, type SearchItem } from "./search-items";
+import { GROUP_LABELS, GROUP_ORDER, hitItems, iconOf, mayOpen, recentShows, subLine, visibleChips, type SearchChip, type SearchItem } from "./search-items";
 import { actionItems, pageItems, settingItems } from "./search-offers";
 import { Kbd, SearchShortcut, useRecentSearches } from "./search-parts";
 
@@ -71,6 +73,18 @@ export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) 
     const [hits, setHits] = useState<SearchHit[]>([]);
     const [loading, setLoading] = useState(false);
     const { recent, remember } = useRecentSearches(userId);
+    // In All tenants a platform admin finds the records of every tenant, each named with its tenant
+    // and opened in it.
+    const { allTenants, activeTenantId, isPlatformAdmin, tenants, tenantCount, showQuickSetup, ownDatabases } = useTenantView();
+    // Where the search runs, which a person found here keeps, see `recentShows`.
+    const here = allTenants ? ALL_TENANTS : activeTenantId;
+    const tenantName = useTenantName();
+    const openInTenant = useOpenInTenant();
+    const mayOpenTenant = useMayOpenTenant();
+    const lineOf = (item: SearchItem) => {
+        const tenant = allTenants ? tenantName(item.tenantId) : null;
+        return tenant ? `${tenant} · ${subLine(item)}` : subLine(item);
+    };
 
     const can = useMemo(() => (permission: string) => permissions?.includes(permission) ?? false, [permissions]);
     const chips = useMemo(() => visibleChips(can), [can]);
@@ -102,15 +116,22 @@ export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) 
         };
     }, [query]);
 
+    // With more than one tenant the pages and settings split into the tenant's and the platform's,
+    // and the pages are the ones the sidebar offers.
+    const view = useMemo(
+        () => ({ tenantCount: tenantCount ?? tenants.length, isPlatformAdmin, allTenants, canTenantSettings: can(PERMISSIONS.TENANT_SETTINGS.READ), showQuickSetup, ownDatabases }),
+        [tenantCount, tenants.length, isPlatformAdmin, allTenants, can, showQuickSetup, ownDatabases]
+    );
     const items = useMemo(() => {
         const typed = query.trim().length > 0;
         const all: SearchItem[] = typed
-            ? [...hits.flatMap(hitItems), ...settingItems(query, can(PERMISSIONS.SETTINGS.READ)), ...pageItems(query, can), ...actionItems(query, hits, can)]
-            : [...recent, ...pageItems("", can), ...actionItems("", [], can)];
-        // The server searched only what the viewer may open, a recent entry is from before.
-        const allowed = all.filter((item) => mayOpen(item, can));
+            ? [...hits.flatMap((hit) => hitItems(hit, here)), ...settingItems(query, can(PERMISSIONS.SETTINGS.READ), view), ...pageItems(query, can, view), ...actionItems(query, hits, can)]
+            : [...recent.filter((item) => recentShows(item, here)), ...pageItems("", can, view), ...actionItems("", [], can)];
+        // The server searched only what the viewer may open, a recent entry is from before, maybe of
+        // a tenant the viewer may no longer open.
+        const allowed = all.filter((item) => mayOpen(item, can) && (!item.tenantId || mayOpenTenant(item.tenantId)));
         return chip === "all" ? allowed : allowed.filter((item) => item.group === chip);
-    }, [query, hits, recent, chip, can]);
+    }, [query, hits, recent, chip, can, view, mayOpenTenant, here]);
 
     const groups = GROUP_ORDER.map((group) => ({ group, items: items.filter((item) => item.group === group) })).filter((entry) => entry.items.length > 0);
 
@@ -128,7 +149,9 @@ export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) 
         if (item.href) {
             // The pages show while the search is empty anyway.
             if (item.group !== "pages") remember(item);
-            router.push(item.href);
+            // A record of another tenant, a recent one or any in All tenants, opens in its tenant.
+            if (item.tenantId) void openInTenant(item.tenantId, item.href);
+            else router.push(item.href);
         }
     };
 
@@ -191,7 +214,7 @@ export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) 
                                             <ItemTile item={item} />
                                             <div className="min-w-0 flex-1">
                                                 <div className="truncate text-sm text-foreground"><Marked text={item.title} query={query} /></div>
-                                                <div className="truncate text-xs text-muted-foreground"><Marked text={subLine(item)} query={query} /></div>
+                                                <div className="truncate text-xs text-muted-foreground"><Marked text={lineOf(item)} query={query} /></div>
                                             </div>
                                             <span className="text-xs text-muted-foreground group-data-[selected=true]:hidden">{item.kind}</span>
                                             <Kbd label="Enter" className="hidden group-data-[selected=true]:inline-flex"><CornerDownLeft aria-hidden="true" /></Kbd>

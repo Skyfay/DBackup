@@ -8,7 +8,7 @@ import { NextRequest } from "next/server";
 vi.stubEnv("ENCRYPTION_KEY", "d".repeat(64));
 
 const mocks = vi.hoisted(() => ({
-    ctx: { userId: "u1", permissions: ["credentials:write", "credentials:delete", "credentials:reveal"], isSuperAdmin: false, authMethod: "apikey", apiKeyId: "key-1" },
+    ctx: { userId: "u1", permissions: ["credentials:write", "credentials:delete", "credentials:reveal"], isPlatformAdmin: false, authMethod: "apikey", apiKeyId: "key-1" },
     findUnique: vi.fn(),
     logFor: vi.fn(),
     updateCredentialProfile: vi.fn(),
@@ -25,7 +25,12 @@ vi.mock("@/lib/auth/access-control", () => ({
     checkPermissionWithContext: vi.fn(),
 }));
 vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue(new Headers()) }));
-vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.logFor(...args) } }));
+// The configuration backup goes through nothing here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
+vi.mock("@/services/audit-service", () => ({ auditService: {
+    logFor: (...args: unknown[]) => mocks.logFor(...args),
+    logForStrict: (...args: unknown[]) => mocks.logFor(...args),
+} }));
 vi.mock("@/services/auth/credential-service", () => ({
     updateCredentialProfile: (...args: unknown[]) => mocks.updateCredentialProfile(...args),
     deleteCredentialProfile: (...args: unknown[]) => mocks.deleteCredentialProfile(...args),
@@ -108,5 +113,16 @@ describe("the audit entries of credential profiles", () => {
         expect(response.status).toBe(200);
         expect(mocks.logFor).toHaveBeenCalledWith(mocks.ctx, "EXPORT", "CREDENTIAL", { action: "reveal", name: "Shop login" }, "c-1");
         expect(order).toEqual(["audit", "secret"]);
+    });
+
+    it("reveals nothing when its audit entry could not be written", async () => {
+        mocks.getCredentialProfile.mockResolvedValue({ id: "c-1", name: "Shop login", type: "USERNAME_PASSWORD" });
+        mocks.logFor.mockRejectedValue(new Error("database is locked"));
+
+        const response = await reveal(new NextRequest("http://localhost/api/credentials/c-1/reveal"), params);
+
+        expect(response.status).toBe(500);
+        expect(mocks.getDecryptedCredentialData).not.toHaveBeenCalled();
+        expect(JSON.stringify(await response.json())).not.toContain("password");
     });
 });

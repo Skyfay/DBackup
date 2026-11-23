@@ -317,8 +317,10 @@ describe('stepRetention', () => {
         await stepRetention(ctx);
 
         const judged = (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mock.calls[0][0] as { name: string }[];
-        // A backup without a sidecar still counts as the job's own, like before.
-        expect(judged.map((f) => f.name).sort()).toEqual(['before-sidecars.sql', 'own.sql']);
+        // A file without a sidecar beside backups that have one is nothing a run wrote. It takes
+        // no place in the policy and is left alone, see retention-plain-files.test.ts.
+        expect(judged.map((f) => f.name).sort()).toEqual(['own.sql']);
+        expect(dest.adapter.delete).not.toHaveBeenCalledWith(dest.config, unknown.path);
         expect(dest.adapter.delete).not.toHaveBeenCalledWith(dest.config, left.path);
         expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('1 backup(s) in this folder belong to another job and are left alone: left-by-deleted-job.sql'), 'info');
     });

@@ -1,19 +1,20 @@
 "use client";
 
-import Link from "next/link";
 import { Database } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { count } from "@/components/dashboard/storage/explorer/explorer-format";
 import { DestinationTile } from "@/components/dashboard/storage/explorer/explorer-cells";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { TenantLine } from "@/components/tenant/tenant-column";
 import type { DataTableFilterableColumn } from "@/components/ui/data-table";
 import { JOIN_END } from "@/components/ui/page-head";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatBytes } from "@/lib/utils";
-import type { DatabaseOverview, ExplorerDatabase, ExplorerDbJob, ExplorerServer } from "@/services/databases/database-explorer-types";
+import type { DatabasePage, ExplorerDatabase, ExplorerDbJob, ExplorerServer } from "@/services/databases/database-explorer-types";
 import { JobsCell, engineOf, holdsOf, subOf } from "./database-columns";
 import type { DatabaseState } from "./database-model";
+import { RecordLink } from "./record-link";
 
 const STATES: { value: DatabaseState; label: string; dot?: string; needsJobs: boolean }[] = [
     { value: "no-job", label: "In no job", dot: "bg-warning", needsJobs: true },
@@ -24,11 +25,11 @@ const STATES: { value: DatabaseState; label: string; dot?: string; needsJobs: bo
 
 /**
  * The filters of the list: the server, the engine, the job and the state of each database. The
- * numbers beside the values come from the table, so each filter counts what the others leave and
- * sets the values without a database apart at its end.
+ * numbers beside the values come from the server, which pages the list, so each filter counts what
+ * the others leave and sets the values without a database apart at its end.
  */
-export function databaseFilters(overview: DatabaseOverview): DataTableFilterableColumn<ExplorerDatabase>[] {
-    const { servers, jobs, coverage } = overview;
+export function databaseFilters(page: Pick<DatabasePage, "serverList" | "jobOptions" | "coverage" | "facets">): DataTableFilterableColumn<ExplorerDatabase>[] {
+    const { serverList: servers, jobOptions: jobs, coverage, facets } = page;
     const shared = { note: "The numbers count the databases", unavailableLabel: "No databases with the other filters" };
     const engines = [...new Set(servers.map((server) => server.adapterId))];
     const filters: DataTableFilterableColumn<ExplorerDatabase>[] = [
@@ -40,6 +41,7 @@ export function databaseFilters(overview: DatabaseOverview): DataTableFilterable
                 value: server.id,
                 label: server.name,
                 lead: <AdapterIcon adapterId={server.adapterId} className="size-4 shrink-0" />,
+                count: facets.server[server.id] ?? 0,
             })),
         },
         {
@@ -50,6 +52,7 @@ export function databaseFilters(overview: DatabaseOverview): DataTableFilterable
                 value: adapterId,
                 label: kindNames.get(adapterId) ?? adapterId,
                 lead: <AdapterIcon adapterId={adapterId} className="size-4 shrink-0" />,
+                count: facets.engine[adapterId] ?? 0,
             })),
         },
     ];
@@ -59,8 +62,8 @@ export function databaseFilters(overview: DatabaseOverview): DataTableFilterable
             title: "Job",
             ...shared,
             options: [
-                ...jobs.filter((job) => job.enabled).map((job) => ({ value: job.id, label: job.name })),
-                { value: "none", label: "In no job" },
+                ...jobs.map((job) => ({ value: job.id, label: job.name, count: facets.job[job.id] ?? 0 })),
+                { value: "none", label: "In no job", count: facets.job.none ?? 0 },
             ],
         });
     }
@@ -72,29 +75,33 @@ export function databaseFilters(overview: DatabaseOverview): DataTableFilterable
             value: state.value,
             label: state.label,
             lead: state.dot ? <span className="flex size-4 shrink-0 items-center justify-center"><span className={`size-2 rounded-full ${state.dot}`} /></span> : undefined,
+            count: facets.state[state.value] ?? 0,
         })),
     });
     return filters;
 }
 
 /** A database on a phone, which has no room for the table. The whole card opens its page. */
-export function DatabaseCard({ database, server, jobsById, coverage, href, actions }: {
+export function DatabaseCard({ database, server, jobsById, coverage, href, actions, tenantName = null }: {
     database: ExplorerDatabase;
     server: ExplorerServer | undefined;
     jobsById: Map<string, ExplorerDbJob>;
     coverage: boolean;
     href: string;
     actions: React.ReactNode;
+    /** The tenant of the database, a small line under its server in All tenants. */
+    tenantName?: string | null;
 }) {
     const instance = database.kind === "instance";
     return (
         <div className="relative min-w-0 rounded-xl border bg-card p-4 shadow-sm has-[a:focus-visible]:bg-muted/50">
             <div className="flex items-center gap-3">
                 <DestinationTile destination={{ adapterId: server?.adapterId ?? "" }} />
-                <Link href={href} className="min-w-0 flex-1 outline-none after:absolute after:inset-0">
+                <RecordLink href={href} tenantId={database.tenantId} className="min-w-0 flex-1 outline-none after:absolute after:inset-0">
                     <span className="block truncate font-medium">{database.name}</span>
                     <span className="block truncate text-xs text-muted-foreground">{instance ? subOf(database, server) : `${server?.name} · ${engineOf(server)}`}</span>
-                </Link>
+                    <TenantLine name={tenantName} className="mt-0.5" />
+                </RecordLink>
                 <div className="relative z-10">{actions}</div>
             </div>
             <div className="mt-3 flex items-center justify-between gap-3 text-sm">

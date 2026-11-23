@@ -26,7 +26,7 @@ vi.mock("@/services/adapters/connection-details", () => ({ getConnectionDetails:
 import { GET } from "@/app/api/adapters/[id]/details/route";
 
 const call = (id = "pg") => GET(new NextRequest(`http://localhost/api/adapters/${id}/details`), { params: Promise.resolve({ id }) });
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 
 describe("GET /api/adapters/[id]/details", () => {
     beforeEach(() => {
@@ -47,12 +47,16 @@ describe("GET /api/adapters/[id]/details", () => {
         expect((await call("missing")).status).toBe(404);
     });
 
-    it("refuses a user who may not read this kind of connection", async () => {
+    it("answers a user who may not read this kind of connection like a missing one, never naming its kind", async () => {
         signedIn(PERMISSIONS.DESTINATIONS.READ);
+        mocks.getAdapterTypes.mockResolvedValue([]);
+        const missing = await (await call("missing")).json();
 
+        mocks.getAdapterTypes.mockResolvedValue(["database"]);
         const response = await call();
 
-        expect(response.status).toBe(403);
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual(missing);
         expect(mocks.getConnectionDetails).not.toHaveBeenCalled();
     });
 

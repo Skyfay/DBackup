@@ -32,12 +32,13 @@ import { GET as getRuns } from "@/app/api/history/runs/route";
 import { GET as getRun } from "@/app/api/history/runs/[id]/route";
 import { invalidateDashboardCache } from "@/services/dashboard/cache";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 const runs = (query = "") => getRuns(new NextRequest(`http://localhost/api/history/runs${query}`));
 const run = (id: string) => getRun(new NextRequest(`http://localhost/api/history/runs/${id}`), { params: Promise.resolve({ id }) });
 
 describe("History runs API", () => {
     beforeEach(() => {
+        vi.clearAllMocks();
         invalidateDashboardCache();
         mocks.listRuns.mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 25 });
         mocks.getRunFacets.mockResolvedValue({ type: {}, status: {}, job: {}, starter: {} });
@@ -72,6 +73,27 @@ describe("History runs API", () => {
     it("refuses a page size above the limit", async () => {
         signedIn(PERMISSIONS.HISTORY.READ);
         expect((await runs("?pageSize=500")).status).toBe(400);
+    });
+
+    it("narrows the runs to the tenants picked in All tenants and counts the runs of each tenant", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: [PERMISSIONS.HISTORY.READ], isPlatformAdmin: true, tenantId: null, allTenants: true });
+        expect((await runs("?tenant=acme&tenant=globex&status=Failed")).status).toBe(200);
+        expect(mocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({ statuses: ["Failed"], tenantIds: ["acme", "globex"] }));
+        expect(mocks.getRunFacets).toHaveBeenCalledWith(expect.objectContaining({ tenantIds: ["acme", "globex"] }), true);
+    });
+
+    it("ignores a Tenant filter inside a tenant, where every run is of that tenant anyway", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: [PERMISSIONS.HISTORY.READ], isPlatformAdmin: true, tenantId: "acme", allTenants: false });
+        expect((await runs("?tenant=globex")).status).toBe(200);
+        expect(mocks.listRuns.mock.calls[0][0]).not.toHaveProperty("tenantIds");
+        expect(mocks.getRunFacets).toHaveBeenCalledWith(expect.not.objectContaining({ tenantIds: expect.anything() }), false);
+    });
+
+    it("refuses a tenant that is no tenant id", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: [PERMISSIONS.HISTORY.READ], isPlatformAdmin: true, tenantId: null, allTenants: true });
+        expect((await runs(`?tenant=${"x".repeat(201)}`)).status).toBe(400);
+        expect((await runs("?tenant=")).status).toBe(400);
+        expect(mocks.listRuns).not.toHaveBeenCalled();
     });
 
     it("returns one run, and says when it is gone", async () => {

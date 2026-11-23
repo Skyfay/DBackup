@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
 import type { LogLevel, LogType } from "@/lib/core/logs";
+import { opensshRefusal } from "@/lib/transport/host-key-openssh";
 
 /**
  * Starting the rsync program itself. It runs from an argument list without a shell, so a path
@@ -38,6 +39,8 @@ export const ABORT_GRACE_MS = 5000;
 export interface RsyncCommand {
     args: string[];
     env?: NodeJS.ProcessEnv;
+    /** Told when the ssh of the transfer refused the host key of the server, see `rsync-host-key.ts`. */
+    onHostKeyRefused?: (presented: string | null) => void;
 }
 
 export interface RsyncTransfer {
@@ -70,6 +73,8 @@ export function runRsync(command: RsyncCommand, transfer: RsyncTransfer, onLog?:
         // reports an error and then closes. Only the first of them decides the outcome.
         let settled = false;
         let lastError = "";
+        // What ssh printed about the host key, which rsync's own last line never repeats.
+        let hostKeyLines = "";
 
         /** Drops the handler and the escalation timer the cancel path installs. */
         const release = () => {
@@ -125,6 +130,7 @@ export function runRsync(command: RsyncCommand, transfer: RsyncTransfer, onLog?:
         child.stderr?.on("data", (data: Buffer) => {
             for (const line of linesOf(data)) {
                 lastError = line;
+                if (/host key|SHA256:|IDENTIFICATION HAS CHANGED/i.test(line) && hostKeyLines.length < 4096) hostKeyLines += `${line}\n`;
                 if (onLog) onLog(sanitizeCommand(`stderr: ${line}`), "warning", "storage");
             }
         });
@@ -139,6 +145,11 @@ export function runRsync(command: RsyncCommand, transfer: RsyncTransfer, onLog?:
             // A transfer killed by the cancel exits with a signal. The promise already carries
             // the cancellation, so `finish` stays quiet instead of reporting a refused source.
             if (code === 0) return finish();
+            const refusal = opensshRefusal(hostKeyLines);
+            if (refusal) {
+                command.onHostKeyRefused?.(refusal.presented);
+                return finish(new Error(`rsync exited with code ${code}: Host key verification failed.${refusal.presented ? ` The server presented ${refusal.presented}.` : ""}`));
+            }
             const reason = lastError ? `: ${sanitizeCommand(lastError)}` : "";
             finish(new Error(code === null ? `rsync was stopped by ${exitSignal}${reason}` : `rsync exited with code ${code}${reason}`));
         });

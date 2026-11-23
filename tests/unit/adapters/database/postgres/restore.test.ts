@@ -20,13 +20,15 @@ const {
     mockFsOpen: vi.fn(),
 }));
 
-vi.mock("@/lib/adapters/database/common/tar-utils", () => ({
+vi.mock("@/lib/adapters/database/common/tar-utils", async (importOriginal) => ({
     isMultiDbTar: (...args: unknown[]) => mockIsMultiDbTar(...args),
     extractSelectedDatabases: (...args: unknown[]) => mockExtractSelected(...args),
     createTempDir: (...args: unknown[]) => mockCreateTempDir(...args),
     cleanupTempDir: (...args: unknown[]) => mockCleanupTempDir(...args),
     shouldRestoreDatabase: (...args: unknown[]) => mockShouldRestore(...args),
     getTargetDatabaseName: (...args: unknown[]) => mockGetTargetName(...args),
+    // The real lookup, so a dump is found among the files the extraction wrote, never joined from the manifest.
+    extractedFileOf: (await importOriginal<typeof import("@/lib/adapters/database/common/tar-utils")>()).extractedFileOf,
 }));
 
 vi.mock("fs/promises", () => ({
@@ -98,6 +100,14 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL restore over a %s host", 
             await prepareRestore(baseConfig as never, ['we"ird'], host);
 
             expect(host.calls.exec.map(queryOf)).toContain('CREATE DATABASE "we""ird"');
+        });
+
+        it("looks the name up as an E'' literal, so a backslash cannot end it", async () => {
+            const host = restoreHost(kind, () => ({ stdout: "" }));
+
+            await prepareRestore(baseConfig as never, ["a\\' OR true --"], host);
+
+            expect(host.calls.exec.map(queryOf)).toContain("SELECT 1 FROM pg_database WHERE datname = E'a\\\\'' OR true --'");
         });
 
         it("reports a permission problem in terms the user can act on", async () => {
@@ -198,7 +208,7 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL restore over a %s host", 
             await restoreOne(baseConfig as never, "/tmp/a.dump", "target", host);
 
             const restoreCall = host.calls.exec.find(a => a[0] === "pg_restore")!;
-            expect(restoreCall[restoreCall.indexOf("-d") + 1]).toBe("target");
+            expect(restoreCall[restoreCall.indexOf("-d") + 1]).toBe("dbname='target'");
         });
 
         it("works without callbacks", async () => {

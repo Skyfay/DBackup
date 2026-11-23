@@ -45,7 +45,7 @@ export function restoreCompleteTemplate(data: RestoreResultData, options?: Templ
             { label: "Finished", value: formatterFor(options).time(data.timestamp) ?? "" },
         ],
         details: restoreDetails(data),
-        actions: action("Open run", data.executionId ? paths.run(data.executionId) : undefined, "history"),
+        actions: action("Open run", data.executionId ? paths.run(data.executionId, options?.tenantId) : undefined, "history"),
         timestamp: data.timestamp,
     };
 }
@@ -72,7 +72,7 @@ export function restoreFailureTemplate(data: RestoreResultData, options?: Templa
         ],
         problem: data.error ? problemOf(data.error, data.sourceName ?? null, "Restoring", data.sourceName ? "source" : null) : undefined,
         details: restoreDetails(data),
-        actions: action("Open run", data.executionId ? paths.run(data.executionId) : undefined, "history"),
+        actions: action("Open run", data.executionId ? paths.run(data.executionId, options?.tenantId) : undefined, "history"),
         timestamp: data.timestamp,
     };
 }

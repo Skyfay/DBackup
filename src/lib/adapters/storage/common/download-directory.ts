@@ -6,7 +6,9 @@ import { mapWithConcurrency, untilAborted } from "@/lib/concurrency";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
 import { summariseExcluded, formatExcludeSummary } from "@/lib/exclude-summary";
 import { listTreeForCollection } from "./list-tree";
+import { DownloadedFileError } from "./downloaded-file";
 import { stripSlashes } from "@/lib/paths";
+import { CollectedPathError, collectedPathProblem, resolveCollectedPath, shownCollectedPath } from "@/lib/archive/collected-paths";
 
 /** Strips a queried remotePath prefix from a FileInfo.path (which list() returns relative to the adapter root). */
 export function toRelativePath(filePath: string, remotePath: string): string {
@@ -42,18 +44,31 @@ const PARTIAL_PROGRESS_INTERVAL_MS = 250;
  */
 
 /**
- * Joins a collected file under the work directory, refusing anything that escapes it.
- *
- * Mirrors the guard the restore side already applies when extracting an archive - the
- * source listing deserves the same suspicion as an archive index.
+ * The names of a listing that cannot be a file of the collection folder, see `collected-paths.ts`,
+ * as failures of the run, and one warning naming them. Shared with the native collections, so a
+ * name is refused by the same rule whichever adapter listed it.
  */
-function resolveWithinRoot(root: string, relative: string): string {
-    const resolvedRoot = path.resolve(root);
-    const resolved = path.resolve(resolvedRoot, relative);
-    if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + path.sep)) {
-        throw new Error(`path escapes the collection directory`);
+export function refuseListedNames<T extends { relativePath: string }>(
+    listed: T[],
+    onLog?: OnLog
+): { kept: T[]; refused: { path: string; error: string }[] } {
+    const kept: T[] = [];
+    const refused: { path: string; error: string }[] = [];
+    for (const entry of listed) {
+        const problem = collectedPathProblem(entry.relativePath);
+        if (problem) refused.push({ path: shownCollectedPath(entry.relativePath), error: `refused, ${problem}` });
+        else kept.push(entry);
     }
-    return resolved;
+    if (refused.length > 0 && onLog) {
+        const shown = refused.slice(0, 50);
+        onLog(
+            `${refused.length} name(s) of the listing cannot be a file of this folder and are NOT in this backup`,
+            "warning", "security",
+            shown.map((r) => `${r.path} (${r.error})`).join("\n")
+            + (refused.length > shown.length ? `\n... and ${refused.length - shown.length} more` : "")
+        );
+    }
+    return { kept, refused };
 }
 
 export async function downloadDirectoryGeneric(
@@ -85,10 +100,16 @@ export async function downloadDirectoryGeneric(
         );
     }
 
+    // A name the server listed that cannot be a file of the collection folder, like `../x` or an
+    // absolute path, is refused before anything is fetched, linked or carried under it.
+    const { kept: named, refused } = refuseListedNames(
+        allFiles.map((file) => ({ file, relativePath: toRelativePath(file.path, remotePath) })),
+        onLog
+    );
+
     const entries: { relativePath: string; sourcePath: string; size: number; lastModified: Date; linkTarget?: string }[] = [];
     const excluded: { path: string; size: number }[] = [];
-    for (const file of allFiles) {
-        const relativePath = toRelativePath(file.path, remotePath);
+    for (const { file, relativePath } of named) {
         if (matchesAnyExcludePattern(relativePath, excludePatterns)) {
             excluded.push({ path: relativePath, size: file.size });
             continue;
@@ -237,13 +258,15 @@ export async function downloadDirectoryGeneric(
             // The relative path comes from the remote server's listing, so it is not trusted:
             // an S3 key is stored verbatim and a WebDAV href is whatever the server sends. A
             // ".." segment would otherwise write outside the work directory during collection.
+            // The names were checked above already, the join is checked again right where it is used.
             let localFilePath: string;
             try {
-                localFilePath = resolveWithinRoot(localPath, entry.relativePath);
+                localFilePath = resolveCollectedPath(localPath, entry.relativePath);
             } catch (error: unknown) {
-                const message = error instanceof Error ? error.message : String(error);
-                onLog?.(`Refused to collect '${entry.relativePath}': ${message}`, "error", "security");
-                return { kind: "failure", failure: { path: entry.relativePath, error: message } };
+                if (!(error instanceof CollectedPathError)) throw error;
+                const shown = shownCollectedPath(entry.relativePath);
+                onLog?.(`Refused to collect '${shown}': ${error.reason}`, "error", "security");
+                return { kind: "failure", failure: { path: shown, error: error.reason } };
             }
             await fs.mkdir(path.dirname(localFilePath), { recursive: true });
 
@@ -257,6 +280,12 @@ export async function downloadDirectoryGeneric(
                 // A transfer torn down by the cancellation above is a cancelled run, not a
                 // file the source refused to hand over.
                 options?.signal?.throwIfAborted();
+                // A file that arrived as a link or anything else than a regular file is left out
+                // and named, like a file the source did not return, see `downloaded-file.ts`.
+                if (error instanceof DownloadedFileError) {
+                    onLog?.(`Refused to collect '${shownCollectedPath(entry.relativePath)}': ${error.reason}`, "error", "security");
+                    return { kind: "failure", failure: { path: shownCollectedPath(entry.relativePath), error: error.reason } };
+                }
                 throw error;
             } finally {
                 // Whether it arrived or not, this file is no longer in flight - its partial
@@ -280,7 +309,7 @@ export async function downloadDirectoryGeneric(
         });
 
         const resultEntries: DirectoryFileEntry[] = [];
-        const failures: { path: string; error: string }[] = [];
+        const failures: { path: string; error: string }[] = [...refused];
         for (const outcome of outcomes) {
             if (outcome.kind === "entry") resultEntries.push(outcome.entry);
             else failures.push(outcome.failure);

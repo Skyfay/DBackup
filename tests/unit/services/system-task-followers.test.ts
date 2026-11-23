@@ -18,6 +18,8 @@ vi.mock("@/lib/runner/config-runner", () => ({ runConfigBackup: (...args: unknow
 vi.mock("@/services/system/stuck-execution-service", () => ({
     STUCK_TIMEOUT_SETTING: "execution.stuckTimeoutMinutes",
     DEFAULT_STUCK_TIMEOUT_MINUTES: 360,
+    MAX_RUN_SETTING: "execution.maxRunMinutes",
+    DEFAULT_MAX_RUN_MINUTES: 1440,
     sweepStuckExecutions: vi.fn().mockResolvedValue({ checked: 2, cancelled: 0 }),
 }));
 vi.mock("@/lib/logging/logger", () => ({
@@ -58,10 +60,19 @@ describe("system tasks that follow a setting of another part", () => {
 
         await service.setTaskEnabled(SYSTEM_TASKS.STUCK_EXECUTION_CHECK, false);
         expect(store.get("execution.stuckTimeoutMinutes")).toBe("0");
+        expect(store.get("execution.maxRunMinutes")).toBe("0");
         expect(await service.getTaskEnabled(SYSTEM_TASKS.STUCK_EXECUTION_CHECK)).toBe(false);
 
         await service.setTaskEnabled(SYSTEM_TASKS.STUCK_EXECUTION_CHECK, true);
         expect(store.get("execution.stuckTimeoutMinutes")).toBe("360");
+        expect(store.get("execution.maxRunMinutes")).toBe("1440");
+    });
+
+    it("stays on while only the longest run is set", async () => {
+        store.set("execution.stuckTimeoutMinutes", "0");
+        store.set("execution.maxRunMinutes", "720");
+
+        expect(await service.getTaskEnabled(SYSTEM_TASKS.STUCK_EXECUTION_CHECK)).toBe(true);
     });
 
     it("keeps a timeout that is set when the watchdog is switched on", async () => {

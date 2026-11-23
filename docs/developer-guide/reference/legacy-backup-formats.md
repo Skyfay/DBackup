@@ -10,6 +10,8 @@ Every backup job now writes a [seekable archive](/developer-guide/reference/arch
 | Multi-database TAR | `backup.tar`, optionally `.gz` / `.br` / `.enc` as a whole, with `manifest.json` version 1 plus one dump per database | `isMultiDbTar()` inside each adapter's `restore()` |
 | MSSQL TAR of `.bak` files | A TAR of `.bak` files without any manifest, still named `.bak` | `checkIfTarArchive()` in `mssql/restore.ts` |
 
+A backup comes from a destination whoever writes to it controls, so the reader of the multi-database TAR takes no name of it as a path. Every `filename` of `manifest.json` and every member it extracts must be a plain file name and a regular file, never a link or a folder (`assertManifestFileNames` and `memberTarget` in `tar-utils.ts`, with `plainFileNameProblem` of `src/lib/archive/dump-names.ts`). An adapter finds the dump of a database among the files the extraction wrote, through `extractedFileOf`, never by joining the name of the manifest onto a folder.
+
 ## Finding the code
 
 Every place is marked with a comment that starts with `LEGACY-FORMAT`:

@@ -126,4 +126,16 @@ describe("MongoDB browser - getTableData", () => {
 
         expect(mockSort).toHaveBeenCalledWith({ name: 1 });
     });
+
+    it("refuses a search column like $where before anything reaches the server", async () => {
+        const search = { ...options, search: "sleep(1000)", searchColumn: "$where", matchMode: "equals" };
+
+        await expect(getTableData(baseConfig as any, search as any, fakeHost)).rejects.toThrow("no field of the collection");
+        expect(mockFindToArray).not.toHaveBeenCalled();
+    });
+
+    it("refuses a sort column that is an operator or no text", async () => {
+        await expect(getTableData(baseConfig as any, { ...options, sortBy: "$natural" } as any, fakeHost)).rejects.toThrow("no field of the collection");
+        await expect(getTableData(baseConfig as any, { ...options, sortBy: { $meta: "textScore" } } as any, fakeHost)).rejects.toThrow("no field of the collection");
+    });
 });

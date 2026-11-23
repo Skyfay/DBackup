@@ -9,6 +9,7 @@ import { kindNames } from "@/components/adapter/connection-columns";
 import { count } from "@/components/dashboard/storage/explorer/explorer-format";
 import { ExplorerStrip, type StripCell } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { PickList, PickTrigger, type PickGroup } from "@/components/ui/pick-list";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -22,10 +23,12 @@ import { serverHref } from "./server-model";
 
 const STATUS: Record<ExplorerServer["status"], string> = { ONLINE: "online", DEGRADED: "missed its last check", OFFLINE: "offline" };
 
-/** Opens another server, grouped by engine. */
+/** Opens another server, grouped by engine. In All tenants each server names its tenant. */
 function ServerSwitcher({ overview, current }: { overview: DatabaseOverview; current: ExplorerServer }) {
     const router = useRouter();
     const [open, setOpen] = useState(false);
+    const { allTenants } = useTenantView();
+    const nameOf = useTenantName();
     const engines = [...new Set(overview.servers.map((server) => server.adapterId))];
     const groups: PickGroup[] = engines.map((adapterId) => ({
         heading: kindNames.get(adapterId) ?? adapterId,
@@ -33,7 +36,7 @@ function ServerSwitcher({ overview, current }: { overview: DatabaseOverview; cur
             id: server.id,
             name: server.name,
             value: `${server.name} ${kindNames.get(server.adapterId) ?? server.adapterId}`,
-            meta: engineOf(server),
+            meta: [engineOf(server), allTenants ? nameOf(server.tenantId) : null].filter(Boolean).join(" · "),
             icon: <AdapterIcon adapterId={server.adapterId} className="size-4" />,
         })),
     }));

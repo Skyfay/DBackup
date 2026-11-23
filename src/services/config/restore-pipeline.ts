@@ -1,22 +1,24 @@
 import prisma from "@/lib/prisma";
 import { AppConfigurationBackup, RestoreOptions } from "@/lib/types/config-backup";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
-import { StorageAdapter } from "@/lib/core/interfaces";
+import { isShared, openRow } from "@/services/sharing/destination-access";
 import { createDecryptionStream } from "@/lib/crypto/stream";
 import { createGunzip } from "zlib";
 import { createReadStream, promises as fs } from "fs";
 import { getTempDir } from "@/lib/temp-dir";
 import path from "path";
 import { Readable, Transform } from "stream";
-import { resolveBackupKey } from "@/services/backup/key-resolution";
 import { legacyStreamVerifier } from "@/services/restore/smart-recovery";
 import { pipeline } from "stream/promises";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { importConfiguration } from "./import";
+import { resolveStoredBackupKey, UNENCRYPTED_AT_DESTINATION } from "./open-backup";
 import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { randomUUID } from "crypto";
 
 const svcLog = logger.child({ service: "ConfigService" });
 
@@ -34,6 +36,17 @@ export async function restoreFromStorage(
 
   assertNoDatabaseMaintenance("systemRestore");
 
+  // A configuration backup lies at a destination of the home tenant and restores the platform, so
+  // the run is recorded there and the destination is read there, whichever tenant the admin looks at.
+  return runAsTenant(HOME_TENANT_ID, () => startRestore(storageConfigId, file, decryptionProfileId, options));
+}
+
+async function startRestore(
+  storageConfigId: string,
+  file: string,
+  decryptionProfileId?: string,
+  options?: RestoreOptions
+): Promise<string> {
   // 1. Create Execution Record
   const execution = await prisma.execution.create({
     data: {
@@ -49,7 +62,7 @@ export async function restoreFromStorage(
     }
   });
 
-  // 2. Start Background Process
+  // 2. Start Background Process. Started here, it keeps the scope of the home tenant for all it awaits.
   runRestorePipeline(execution.id, storageConfigId, file, decryptionProfileId, options)
     .catch(err => svcLog.error("Restore pipeline logic error (uncaught)", {}, wrapError(err)));
 
@@ -82,7 +95,8 @@ async function runRestorePipeline(
 
   try {
     const tempDir = getTempDir();
-    const downloadPath = path.join(tempDir, `restore-${executionId}-${path.basename(filePath)}`);
+    // A name nobody can guess, so no one lays a file there first for the download to write through.
+    const downloadPath = path.join(tempDir, `restore-${randomUUID()}-${path.basename(filePath)}`);
 
     log(`Initializing restore from ${filePath}`);
 
@@ -91,11 +105,11 @@ async function runRestorePipeline(
 
     // Fetch Storage Config
     const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageConfigId } });
-    if (!storageConfig) throw new Error("Storage adapter not found");
+    if (!storageConfig) throw new Error("The destination no longer exists, or it belongs to a customer. A configuration backup is only restored from a destination of the home tenant.");
 
-    const adapter = registry.get(storageConfig.adapterId) as StorageAdapter;
-    if (!adapter) throw new Error(`Storage adapter '${storageConfig.adapterId}' not found in registry`);
-    const config = await resolveAdapterConfig(storageConfig);
+    if (!registry.get(storageConfig.adapterId)) throw new Error(`Storage adapter '${storageConfig.adapterId}' not found in registry`);
+    // Shared with customers, the destination holds their folder too, which their jobs filled. No file of it is taken.
+    const { adapter, config } = await openRow(storageConfig, (await isShared(storageConfig.id)) ? { kind: "provider" } : { kind: "own" });
 
     // Download
     log("Downloading backup file...");
@@ -121,6 +135,9 @@ async function runRestorePipeline(
 
     const isCompressed = filePath.includes(".gz") || (meta && String(meta.compression).toUpperCase() === 'GZIP');
 
+    // A plain file at a destination could come from anyone who may restore files into it.
+    if (!isEncrypted) throw new Error(UNENCRYPTED_AT_DESTINATION);
+
     // ── Resolve Encryption Key ───────────────────────────────
     // Support both flat (old) and nested (new) meta formats for IV/AuthTag.
     let ivHex = meta?.iv;
@@ -136,23 +153,17 @@ async function runRestorePipeline(
       log("File detected as encrypted. Preparing decryption...");
 
       const metadataProfileId: string | undefined = metaEncryption?.profileId ?? meta?.encryptionProfileId;
-      if (!decryptionProfileId && !metadataProfileId) {
-        throw new Error("File is encrypted but no Encryption Profile provided and metadata is missing encryptionProfileId.");
-      }
       if (!ivHex || !authTagHex) {
         throw new Error("Missing encryption metadata (IV/AuthTag). Cannot decrypt.");
       }
-      if (metadataProfileId && !decryptionProfileId) {
-        log(`Using Encryption Profile ID from metadata: ${metadataProfileId}`);
-      }
 
-      // Same resolution as every other restore: the profile chosen for this run, then the
-      // one the backup names, then every profile in the vault. This runs unattended, so
-      // there is no dialog to fall back to - a failure is reported in the log, and the fix
-      // is to import the key into the vault and start the restore again.
-      encryptionKey = await resolveBackupKey({
+      // The profile chosen for this run, else the key of the configuration backup. Never the one
+      // the file names or another key of the Vault, which a member of the home tenant may have
+      // added together with the file, see `resolveStoredBackupKey`. This runs unattended, so a
+      // failure is reported in the log.
+      encryptionKey = await resolveStoredBackupKey({
         profileId: metadataProfileId,
-        override: { profileId: decryptionProfileId },
+        override: decryptionProfileId ? { profileId: decryptionProfileId } : undefined,
         verify: legacyStreamVerifier({ iv: ivHex, authTag: authTagHex }, downloadPath, isCompressed ? 'GZIP' : undefined),
         log: (msg, level) => log(msg, level === "warning" ? "warn" : level ?? "info"),
       });

@@ -202,6 +202,34 @@ export class ValidationError extends DBackupError {
   }
 }
 
+/**
+ * Error thrown when an SSH server presents another host key than the one pinned for the
+ * connection. The login never started, so no password, key signature or data was sent. A
+ * `ValidationError`, so its sentence reaches the person who acts like any other refusal.
+ */
+export class HostKeyMismatchError extends ValidationError {
+  public readonly host: string;
+  public readonly port: number;
+  /** The fingerprint DBackup trusts, `SHA256:...`. */
+  public readonly expected: string;
+  /** The fingerprint the server presented, null when the client did not report it. */
+  public readonly presented: string | null;
+
+  constructor(mismatch: { host: string; port: number; expected: string; presented: string | null }) {
+    super(hostKeyMismatchMessage(mismatch), { field: "config" });
+    this.host = mismatch.host;
+    this.port = mismatch.port;
+    this.expected = mismatch.expected;
+    this.presented = mismatch.presented;
+  }
+}
+
+/** The sentence of a host key mismatch, the same in a test, a run, a health check and a browse. */
+export function hostKeyMismatchMessage(mismatch: { host: string; port: number; expected: string; presented: string | null }): string {
+  const presented = mismatch.presented ? ` (${mismatch.presented})` : "";
+  return `The server at ${mismatch.host}:${mismatch.port} presents another host key${presented} than the one DBackup trusts (${mismatch.expected}). Nothing was sent to it. If the server was reinstalled, open the connection and trust the new key.`;
+}
+
 // ============================================================================
 // Authorization Errors
 // ============================================================================
@@ -214,12 +242,14 @@ export class PermissionError extends DBackupError {
 
   constructor(
     requiredPermission: string,
-    options?: { cause?: Error; context?: Record<string, unknown> }
+    /** `message` says why in words of its own, like that All tenants only reads, in place of the permission. */
+    options?: { cause?: Error; context?: Record<string, unknown>; message?: string }
   ) {
+    const { message, ...rest } = options ?? {};
     super(
-      `Permission denied: ${requiredPermission} required`,
+      message ?? `Permission denied: ${requiredPermission} required`,
       "PERMISSION_DENIED",
-      { ...options, context: { ...options?.context, requiredPermission } }
+      { ...rest, context: { ...rest.context, requiredPermission } }
     );
     this.requiredPermission = requiredPermission;
   }
@@ -391,6 +421,23 @@ export class ApiKeyError extends DBackupError {
       context: { ...options?.context, reason },
     });
     this.reason = reason;
+  }
+}
+
+// ============================================================================
+// Tenant Errors
+// ============================================================================
+
+/**
+ * Thrown when tenant data is read or written without a tenant, or across one. It stands for a
+ * bug, never for something the user did, since handing out every row instead would be a leak.
+ */
+export class TenantScopeError extends DBackupError {
+  public readonly model: string;
+
+  constructor(model: string, message = `${model} was queried outside a tenant`) {
+    super(message, "TENANT_SCOPE_ERROR", { isOperational: false, context: { model } });
+    this.model = model;
   }
 }
 

@@ -4,11 +4,14 @@
  */
 
 import prisma from "@/lib/prisma";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { isValidCron } from "@/lib/core/cron";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { includesHistory } from "@/services/config/database-copy";
+import { FORMER_PROFILES_SETTING, formerProfileIdsOf } from "@/services/config/config-backup-targets";
 import { SYSTEM_TASKS } from "@/services/system/system-task-definitions";
 import { systemTaskService } from "@/services/system/system-task-service";
 
@@ -55,7 +58,12 @@ export async function getConfigBackupSettings(): Promise<ConfigBackupSettings> {
 }
 
 /** Why the settings cannot be saved as they are, or null when they can. */
-async function problemOf(next: ConfigBackupSettings): Promise<{ field: keyof ConfigBackupSettings; message: string } | null> {
+/** The destination and the key belong to the home tenant, whichever tenant the admin looks at. */
+function problemOf(next: ConfigBackupSettings): Promise<{ field: keyof ConfigBackupSettings; message: string } | null> {
+    return runAsTenant(HOME_TENANT_ID, () => problemInHome(next));
+}
+
+async function problemInHome(next: ConfigBackupSettings): Promise<{ field: keyof ConfigBackupSettings; message: string } | null> {
     if (next.enabled && !next.storageId) return { field: "storageId", message: "Pick a destination to back up the configuration." };
     if (next.enabled && !next.profileId) return { field: "profileId", message: "Pick an encryption key. The file holds every login, so it is always encrypted." };
     if (!isValidCron(next.schedule)) return { field: "schedule", message: "The scheduler cannot read this schedule." };
@@ -77,9 +85,15 @@ export async function saveConfigBackupSettings(next: ConfigBackupSettings): Prom
 
     const upsert = (key: string, value: string) =>
         prisma.systemSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+    // The key picked before stays locked while files it sealed may lie at a destination, see `FORMER_PROFILES_SETTING`.
+    const before = await prisma.systemSetting.findMany({ where: { key: { in: [KEYS.profileId, FORMER_PROFILES_SETTING] } }, select: { key: true, value: true } });
+    const previous = before.find((row) => row.key === KEYS.profileId)?.value || "";
+    const former = formerProfileIdsOf(before.find((row) => row.key === FORMER_PROFILES_SETTING)?.value);
+    const formerNext = previous && previous !== next.profileId && !former.includes(previous) ? [...former, previous] : former;
     await prisma.$transaction([
         upsert(KEYS.storageId, next.storageId),
         upsert(KEYS.profileId, next.profileId),
+        ...(formerNext !== former ? [upsert(FORMER_PROFILES_SETTING, JSON.stringify(formerNext))] : []),
         upsert(KEYS.includeStatistics, String(next.includeStatistics)),
         upsert(KEYS.retention, String(next.retention)),
     ]);

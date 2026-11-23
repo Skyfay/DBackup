@@ -3,6 +3,8 @@ import { GenericWebhookSchema, GenericWebhookConfig } from "@/lib/adapters/defin
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { reachOf } from "@/lib/network/reach-policy";
+import { redirectRefusal, webhookFetch } from "./http";
 
 const log = logger.child({ adapter: "generic-webhook" });
 
@@ -39,7 +41,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             const headers = buildHeaders(config);
 
             const body = config.payloadTemplate
-                ? renderTemplate(config.payloadTemplate, {
+                ? renderTemplate(config.payloadTemplate, sentContentType(headers), {
                       title: "DBackup Connection Test",
                       message: "This is a test notification to verify your webhook configuration.",
                       success: "true",
@@ -63,8 +65,10 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             if (method !== "GET" && method !== "HEAD") {
                 fetchOpts.body = body;
             }
-            const response = await fetch(config.webhookUrl, fetchOpts);
+            const response = await webhookFetch(config.webhookUrl, fetchOpts, reachOf(config));
 
+            const redirect = redirectRefusal("The webhook", response);
+            if (redirect) return { success: false, message: redirect };
             if (response.ok) {
                 return { success: true, message: `Webhook returned ${response.status}` };
             } else {
@@ -94,7 +98,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             let body: string;
 
             if (config.payloadTemplate) {
-                body = renderTemplate(config.payloadTemplate, {
+                body = renderTemplate(config.payloadTemplate, sentContentType(headers), {
                     title,
                     message,
                     success: String(success),
@@ -120,7 +124,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             if (method !== "GET" && method !== "HEAD") {
                 fetchOpts.body = body;
             }
-            const response = await fetch(config.webhookUrl, fetchOpts);
+            const response = await webhookFetch(config.webhookUrl, fetchOpts, reachOf(config));
 
             if (!response.ok) {
                 const responseBody = await response.text().catch(() => "");
@@ -167,11 +171,54 @@ function buildHeaders(config: GenericWebhookConfig): Record<string, string> {
     return headers;
 }
 
+/** The variables that go into the template as a whole JSON value rather than as text. */
+const JSON_VALUES = new Set(["fields"]);
+
+/** A value as the text inside a JSON string, so a name never ends the string or adds a key. */
+function jsonText(value: string): string {
+    return JSON.stringify(value).slice(1, -1);
+}
+
+/** A value as the text of an XML element or attribute, so a name never closes or opens an element. */
+function xmlText(value: string): string {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+interface Escaper {
+    /** For a text, like the title or the message. */
+    text: (value: string) => string;
+    /** For a value that is JSON already, `{{fields}}`. */
+    json: (value: string) => string;
+}
+
+/** The Content-Type the request really carries, which a line of the custom headers can replace. */
+function sentContentType(headers: Record<string, string>): string | undefined {
+    const types = Object.entries(headers).filter(([name]) => name.toLowerCase() === "content-type");
+    return types[types.length - 1]?.[1];
+}
+
 /**
- * Replace `{{variable}}` placeholders in a template string with actual values.
+ * How a value goes into the template, by the Content-Type the body is sent as: inside a JSON string
+ * for a JSON type, where `{{fields}}` is a JSON array of its own, encoded for a form and escaped for
+ * XML, `{{fields}}` included, so a name never adds a key, a field or an element, and as it is for
+ * any other type.
  */
-function renderTemplate(template: string, variables: Record<string, string>): string {
+function escaperFor(contentType: string | undefined): Escaper {
+    const type = (contentType || "application/json").split(";")[0].trim().toLowerCase();
+    if (type.endsWith("json")) return { text: jsonText, json: (value) => value };
+    if (type === "application/x-www-form-urlencoded") return { text: encodeURIComponent, json: encodeURIComponent };
+    if (type.endsWith("xml")) return { text: xmlText, json: xmlText };
+    return { text: (value) => value, json: (value) => value };
+}
+
+/**
+ * Replace `{{variable}}` placeholders in the template with actual values. Each value is escaped for
+ * the Content-Type of the body, see `escaperFor`.
+ */
+function renderTemplate(template: string, contentType: string | undefined, variables: Record<string, string>): string {
+    const escape = escaperFor(contentType);
     return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
-        return variables[key] ?? "";
+        const value = variables[key] ?? "";
+        return JSON_VALUES.has(key) ? escape.json(value) : escape.text(value);
     });
 }

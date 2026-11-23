@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("ssh2", () => ({ Client: vi.fn() }));
+vi.mock("ssh2", async (importOriginal) => {
+    // The key parser stays real, `unlocked-key.ts` reads keys with it.
+    const actual = await importOriginal<typeof import("ssh2") & { default?: typeof import("ssh2") }>();
+    return { ...actual, utils: actual.utils ?? actual.default?.utils, Client: vi.fn() };
+});
 
 import { buildConnectConfig } from "@/lib/transport/ssh-connection";
 import type { SshConnectionConfig } from "@/lib/transport/types";
@@ -50,7 +54,7 @@ describe("buildConnectConfig", () => {
         expect(config.password).toBeUndefined();
     });
 
-    it("passes a passphrase alongside an encrypted OpenSSH key", () => {
+    it("passes a passphrase alongside an encrypted OpenSSH key it cannot unlock itself", () => {
         const key = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----";
         const config = buildConnectConfig({
             ...base,
@@ -59,6 +63,7 @@ describe("buildConnectConfig", () => {
             passphrase: "pp",
         });
 
+        expect(config.privateKey).toBe(key);
         expect(config.passphrase).toBe("pp");
     });
 

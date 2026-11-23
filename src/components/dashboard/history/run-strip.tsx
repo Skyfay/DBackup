@@ -18,6 +18,14 @@ function time(run: RunDetail, live: boolean, elapsed: number): StripCell {
         : { label: "Took", icon: Timer, value: run.durationMs !== null ? formatDuration(run.durationMs) : "-", extra: run.usualMs !== null ? `usual ${formatDuration(run.usualMs)}` : "no earlier run to compare" };
 }
 
+/** What the bytes a restore read are of: the archive when its size is known, else how it read them. */
+function readNote(run: RunDetail): string {
+    const read = run.restore;
+    if (!read) return "not recorded for this run";
+    if (read.total) return `of an archive of ${formatBytes(read.total)}`;
+    return read.ranged ? "with ranged reads, no full download" : "the backup in full";
+}
+
 /** The numbers of an integrity check or a verification: how many copies it checked and how they came out. */
 function checkCells(run: RunDetail, checks: RunChecks, live: boolean, elapsed: number): StripCell[] {
     const finished = checks.copies.filter((copy) => copy.state !== "checking" && copy.state !== "waiting");
@@ -57,7 +65,9 @@ export function RunStrip({ run, now }: { run: RunDetail; now: number }) {
 
     const cells: StripCell[] = [
         time(run, live, elapsed),
-        { label: run.type === "Restore" ? "Read" : "Written", icon: Layers, ...bytes(run.size), extra: run.databases.length > 0 ? run.databases.join(", ") : live ? "when the run ends" : run.size ? " " : "nothing written" },
+        run.type === "Restore"
+            ? { label: live ? "Read so far" : "Read", icon: Layers, ...bytes(run.restore?.bytes ?? null), extra: readNote(run) }
+            : { label: "Written", icon: Layers, ...bytes(run.size), extra: run.databases.length > 0 ? run.databases.join(", ") : live ? "when the run ends" : run.size ? " " : "nothing written" },
     ];
     // Five cells always, so the strip never ends in an empty one.
     if (run.type === "Backup") {

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { CalendarClock, TriangleAlert } from "lucide-react";
 import { kindNames } from "@/components/adapter/connection-columns";
@@ -9,6 +8,7 @@ import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { cn, formatBytes } from "@/lib/utils";
 import type { ExplorerDatabase, ExplorerDbJob, ExplorerServer } from "@/services/databases/database-explorer-types";
 import { compactCount, databaseHref, statesOf } from "./database-model";
+import { RecordLink } from "./record-link";
 
 /** A job that backs up a database, as a small chip with its name. */
 export function JobChip({ name }: { name: string }) {
@@ -88,12 +88,13 @@ export function databaseColumns({ serversById, jobsById, coverage, biggest, rend
                         <DestinationTile destination={{ adapterId: server?.adapterId ?? "" }} />
                         <div className="min-w-0">
                             {/* The keyboard way in, a click anywhere on the row opens it too. */}
-                            <Link
+                            <RecordLink
                                 href={databaseHref(row.original)}
+                                tenantId={row.original.tenantId}
                                 className="block truncate rounded-sm font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
                             >
                                 {row.original.name}
-                            </Link>
+                            </RecordLink>
                             <p className="truncate text-xs text-muted-foreground">{subOf(row.original, server)}</p>
                         </div>
                     </div>

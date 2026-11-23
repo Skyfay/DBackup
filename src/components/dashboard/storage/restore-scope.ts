@@ -51,3 +51,26 @@ export function parseRestoreScope(param: string | null | undefined): {
         wantsFiles: scope !== "databases",
     };
 }
+
+/** A backup the restore page opens. */
+export interface RestoreTarget {
+    destinationId: string;
+    /** The file as `encodeUrlPayload` packs it. */
+    file: string;
+    /**
+     * The tenant the backup belongs to. A customer's backup on a destination another tenant shares
+     * belongs to the customer, not to the tenant of the destination, which All tenants would open.
+     */
+    tenantId?: string | null;
+    mode?: string | null;
+    /** The only databases ticked. */
+    pick?: string[];
+}
+
+/** The address of the restore page for a backup. */
+export function restoreHref({ destinationId, file, tenantId, mode, pick = [] }: RestoreTarget): string {
+    const scope = mode && mode !== "all" ? `&mode=${encodeURIComponent(mode)}` : "";
+    const picks = pick.map((name) => `&pick=${encodeURIComponent(name)}`).join("");
+    const tenant = tenantId ? `&tenant=${encodeURIComponent(tenantId)}` : "";
+    return `/dashboard/backups/restore?destinationId=${encodeURIComponent(destinationId)}&file=${encodeURIComponent(file)}${scope}${picks}${tenant}`;
+}

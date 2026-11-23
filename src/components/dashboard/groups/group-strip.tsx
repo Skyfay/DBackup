@@ -5,11 +5,18 @@ import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-
 import { listed } from "@/components/dashboard/users/user-strip";
 import type { GroupsModel } from "@/services/user/groups-types";
 
-/** The numbers above the groups: who is in none, which groups may delete backups or reveal secrets, which are empty. */
+/**
+ * The numbers above the groups: who is in none, which groups may delete backups or reveal secrets,
+ * which have nobody in them. On the Platform the groups of every tenant, with their members.
+ */
 export function GroupsStrip({ model }: { model: GroupsModel | null }) {
     const stats = model?.stats;
+    const everyTenant = model?.allTenants ?? false;
+    const here = everyTenant ? "in its tenant" : "here";
     const outside = stats ? stats.people - stats.inGroup : 0;
     const builtIn = model?.groups.filter((group) => group.superAdmin).length ?? 0;
+    const members = model?.groups.reduce((sum, group) => sum + group.members.length, 0) ?? 0;
+    const tenants = new Set(model?.groups.map((group) => group.tenantId)).size;
     return (
         <ExplorerStrip joined
             cells={[
@@ -19,7 +26,12 @@ export function GroupsStrip({ model }: { model: GroupsModel | null }) {
                     value: stats ? stats.groups.toLocaleString() : "-",
                     extra: stats ? `${builtIn} built in, ${(stats.groups - builtIn).toLocaleString()} of yours` : " ",
                 },
-                {
+                everyTenant ? {
+                    label: "Memberships",
+                    icon: UserCheck,
+                    value: stats ? members.toLocaleString() : "-",
+                    extra: stats ? `in ${tenants.toLocaleString()} ${tenants === 1 ? "tenant" : "tenants"}, a person holds one group per tenant` : " ",
+                } : {
                     label: "People in a group",
                     icon: UserCheck,
                     value: stats ? stats.inGroup.toLocaleString() : "-",
@@ -51,8 +63,8 @@ export function GroupsStrip({ model }: { model: GroupsModel | null }) {
                     unit: stats ? (stats.empty.length === 1 ? "group" : "groups") : undefined,
                     tone: stats && stats.empty.length > 0 ? "warning" : undefined,
                     extra: stats && stats.empty.length > 0
-                        ? `${listed(stats.empty)} ${stats.empty.length === 1 ? "has" : "have"} no members yet`
-                        : "every group has members",
+                        ? `${listed(stats.empty)} ${stats.empty.length === 1 ? "has" : "have"} no members ${here}`
+                        : `every group has members ${here}`,
                 },
             ]}
         />

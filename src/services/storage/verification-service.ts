@@ -1,15 +1,17 @@
-import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { StorageAdapter, BackupMetadata } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { calculateFileChecksum } from "@/lib/crypto/checksum";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath } from "@/lib/private-temp-dir";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { ServiceError, wrapError } from "@/lib/logging/errors";
+import { createConcurrencyGate } from "@/lib/concurrency";
+import { reserveTempSpace } from "@/services/restore/temp-space";
 import path from "path";
 import fs from "fs/promises";
 import crypto from "crypto";
+import { openDestination } from "@/services/sharing/destination-access";
+import { readSidecarText } from "@/lib/adapters/storage/common/read-sidecar";
 
 const log = logger.child({ service: "VerificationService" });
 
@@ -28,6 +30,8 @@ export interface FileVerificationResult {
 
 export interface VerifyOptions {
     skipIfPassed?: boolean;
+    /** The size of the backup in bytes, where the caller knows it, so a download is promised its space first. */
+    size?: number;
     /** Bytes of a download so far, for a copy that has to be downloaded to be hashed. */
     onProgress?: (processed: number, total: number) => void;
 }
@@ -41,6 +45,37 @@ export function checksNatively(adapterId: string): boolean {
     return typeof adapter?.verifyChecksum === "function";
 }
 
+/** The most checks that download a whole backup at once, in the process every tenant shares. */
+export const WHOLE_DOWNLOADS_AT_ONCE = 2;
+
+/** What a check reads that needs more temporary space than the server has free. */
+export const VERIFY_SPACE_REFUSED = "This check downloads the whole backup, which needs more temporary space than the server has free. Ask the administrator of DBackup to free up space.";
+
+const wholeDownloadGate = createConcurrencyGate(WHOLE_DOWNLOADS_AT_ONCE);
+
+/**
+ * Runs a check that downloads the whole backup into the temporary folder every tenant shares. At
+ * most `WHOLE_DOWNLOADS_AT_ONCE` run at once and the others wait their turn, and a backup of a
+ * known size is promised its space first like the staged entries of a restore (`reserveTempSpace`).
+ */
+async function wholeDownload<T>(size: number | undefined, check: () => Promise<T>): Promise<T> {
+    return wholeDownloadGate(async () => {
+        let space: Awaited<ReturnType<typeof reserveTempSpace>> | undefined;
+        if (size !== undefined && Number.isFinite(size) && size > 0) {
+            try {
+                space = await reserveTempSpace([size], 1);
+            } catch {
+                throw new ServiceError("VerificationService", "tempSpace", VERIFY_SPACE_REFUSED);
+            }
+        }
+        try {
+            return await check();
+        } finally {
+            space?.release();
+        }
+    });
+}
+
 export class VerificationService {
     async verifyFile(
         adapterConfigId: string,
@@ -50,36 +85,16 @@ export class VerificationService {
     ): Promise<FileVerificationResult> {
         const verifiedAt = new Date().toISOString();
 
-        const adapterConfig = await prisma.adapterConfig.findUnique({ where: { id: adapterConfigId } });
-        if (!adapterConfig) throw new Error("Storage configuration not found");
-
-        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-        if (!adapter) throw new Error(`Adapter '${adapterConfig.adapterId}' not found`);
-
-        const config = await resolveAdapterConfig(adapterConfig);
+        const { adapter, config } = await openDestination(adapterConfigId);
 
         // 1. Read .meta.json sidecar
         const metaPath = remotePath + ".meta.json";
         let metadata: BackupMetadata | null = null;
 
         try {
-            if (adapter.read) {
-                const content = await adapter.read(config, metaPath);
-                if (content) metadata = JSON.parse(content) as BackupMetadata;
-            }
-
-            if (!metadata) {
-                const tempMeta = path.join(getTempDir(), `verify_meta_${crypto.randomUUID()}.json`);
-                try {
-                    const ok = await adapter.download(config, metaPath, tempMeta);
-                    if (ok) {
-                        const content = await fs.readFile(tempMeta, 'utf-8');
-                        metadata = JSON.parse(content) as BackupMetadata;
-                    }
-                } finally {
-                    await fs.unlink(tempMeta).catch(() => {});
-                }
-            }
+            // Bounded, see `readSidecarText`.
+            const content = await readSidecarText(adapter, config, metaPath);
+            if (content) metadata = JSON.parse(content) as BackupMetadata;
         } catch (e: unknown) {
             log.warn("Could not read metadata for verification", { remotePath }, wrapError(e));
         }
@@ -119,18 +134,24 @@ export class VerificationService {
 
                     // Native check failed — compute actual checksum via download for diagnostics.
                     if (metadata.checksum) {
-                        const tempFile = path.join(getTempDir(), `verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
-                        try {
-                            const downloadOk = await adapter.download(config, remotePath, tempFile, options?.onProgress);
-                            if (downloadOk) {
-                                const actual = await calculateFileChecksum(tempFile);
-                                return { status: 'failed', expectedChecksum: metadata.checksum, actualChecksum: actual, verifiedAt, method: 'native' };
+                        const expected = metadata.checksum;
+                        const actual = await wholeDownload(options?.size, async () => {
+                            // In the private folder, since a plain backup is the data of the databases.
+                            const tempFile = await privateTempPath(`verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
+                            try {
+                                const downloadOk = await adapter.download(config, remotePath, tempFile, options?.onProgress);
+                                return downloadOk ? await calculateFileChecksum(tempFile) : null;
+                            } catch (e: unknown) {
+                                log.warn("Could not compute actual checksum after native failure", { remotePath }, wrapError(e));
+                                return null;
+                            } finally {
+                                await fs.unlink(tempFile).catch(() => {});
                             }
-                        } catch (e: unknown) {
+                        }).catch((e: unknown) => {
                             log.warn("Could not compute actual checksum after native failure", { remotePath }, wrapError(e));
-                        } finally {
-                            await fs.unlink(tempFile).catch(() => {});
-                        }
+                            return null;
+                        });
+                        if (actual) return { status: 'failed', expectedChecksum: expected, actualChecksum: actual, verifiedAt, method: 'native' };
                     }
 
                     return { status: 'failed', expectedChecksum: metadata.checksum, verifiedAt, method: 'native' };
@@ -145,7 +166,26 @@ export class VerificationService {
             return { status: 'no_checksum', verifiedAt };
         }
 
-        const tempFile = path.join(getTempDir(), `verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
+        const read = metadata;
+        const expected = metadata.checksum;
+        return wholeDownload(options?.size, () => this.downloadAndHash(adapterConfigId, adapter, config, remotePath, metaPath, read, expected, trigger, verifiedAt, options));
+    }
+
+    /** The check by a download of the whole backup and its SHA-256, inside `wholeDownload`. */
+    private async downloadAndHash(
+        adapterConfigId: string,
+        adapter: StorageAdapter,
+        config: any,
+        remotePath: string,
+        metaPath: string,
+        metadata: BackupMetadata,
+        expected: string,
+        trigger: 'manual' | 'post-upload' | 'scheduled',
+        verifiedAt: string,
+        options?: VerifyOptions
+    ): Promise<FileVerificationResult> {
+        // In the private folder, since a plain backup is the data of the databases.
+        const tempFile = await privateTempPath(`verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
         try {
             const downloadOk = await adapter.download(config, remotePath, tempFile, options?.onProgress);
             if (!downloadOk) {
@@ -153,7 +193,7 @@ export class VerificationService {
             }
 
             const actual = await calculateFileChecksum(tempFile);
-            const passed = actual === metadata.checksum;
+            const passed = actual === expected;
 
             await this.writeVerificationResult(adapterConfigId, adapter, config, metaPath, metadata, {
                 verifiedAt,
@@ -165,7 +205,7 @@ export class VerificationService {
 
             return {
                 status: passed ? 'passed' : 'failed',
-                expectedChecksum: metadata.checksum,
+                expectedChecksum: expected,
                 actualChecksum: passed ? undefined : actual,
                 verifiedAt,
                 method: 'download',
@@ -187,8 +227,12 @@ export class VerificationService {
         verification: NonNullable<BackupMetadata['verification']>
     ) {
         metadata.verification = verification;
-        const tempPath = path.join(getTempDir(), `meta-verify-${Date.now()}.json`);
-        await fs.writeFile(tempPath, JSON.stringify(metadata, null, 2));
+        // The metadata names the databases, so it goes into the private folder as well.
+        const tempPath = await privateTempPath(`meta-verify-${crypto.randomUUID()}.json`);
+        // The default mode, not `PRIVATE_FILE_MODE`, since an upload like rsync -a carries the mode of
+        // the file to the destination, where the sidecar keeps the mode the backup run gave it. The
+        // private folder keeps it from other users here.
+        await fs.writeFile(tempPath, JSON.stringify(metadata, null, 2), { flag: "wx" });
         try {
             await adapter.upload(config, tempPath, metaPath);
         } finally {

@@ -13,13 +13,6 @@ import type { NotificationBrand } from "@/lib/notifications/brand";
  */
 export type AdapterConfig = any;
 
-export interface AdapterConfigSchema {
-    name: string;
-    label: string;
-    description?: string;
-    input: z.ZodObject<z.ZodRawShape>;
-}
-
 export interface BackupMetadata {
     version: 1;
     jobId: string;
@@ -125,6 +118,12 @@ export interface BackupMetadata {
         /** Username or API key name. Only present if privacy.includeActorInMetadata is enabled. */
         actor?: string;
     };
+    /**
+     * The databases a run backed up alone, of the ones the job backs up, like a backup a customer
+     * started of one database of a shared server. Absent on a backup of the whole job. Retention
+     * judges such backups apart, by the same policy, so they never push a whole backup out.
+     */
+    onlyDatabases?: string[];
     /** Allow additional adapter-specific properties */
     [key: string]: unknown;
 }
@@ -403,6 +402,10 @@ export type FileInfo = {
      * others.
      */
     chainId?: string;
+    /** Type recorded by the incremental chain sidecar, independent of filename templates. */
+    chainType?: 'full' | 'incremental';
+    /** A chain-folder sidecar was missing, unreadable or incomplete; do not prune it. */
+    chainMetadataUnsafe?: boolean;
     /**
      * The job that made this backup, read from its `.meta.json`.
      *
@@ -410,6 +413,16 @@ export type FileInfo = {
      * into the same folder, and the backups the deleted job left there are not its to delete.
      */
     jobId?: string;
+    /**
+     * The databases a run backed up alone, read from its `.meta.json`. Retention judges such a
+     * backup with the others of the same databases, apart from the whole backups of the job.
+     */
+    onlyDatabases?: string[];
+    /**
+     * Set when its `.meta.json` says `sourceType: "SYSTEM"`, a file of the configuration backup,
+     * which the retention of a job never counts or deletes.
+     */
+    configBackup?: boolean;
 };
 
 /** Optional options passed to upload() for adapters that support native checksum storage. */
@@ -429,6 +442,13 @@ export interface UploadOptions {
     mode?: number;
     uid?: number;
     gid?: number;
+    /**
+     * The part of `remotePath` below the folder a restore writes into, set on every write of a
+     * restore. An adapter whose storage follows symbolic links keeps the write inside that folder,
+     * not only inside its connection: a link an earlier restore laid there must not lead this one
+     * into the files of another job, see `restoreFolderOf`.
+     */
+    restoreRelativePath?: string;
 }
 
 /**
@@ -664,6 +684,12 @@ export interface SnapshotHandle {
     noun?: string;
 }
 
+/** Options of `StorageAdapter.read()` and `readBytes()`. */
+export interface StorageReadOptions {
+    /** The most bytes the read takes, `SIDECAR_READ_LIMIT` when left out. */
+    maxBytes?: number;
+}
+
 export interface StorageAdapter extends BaseAdapter {
     type: 'storage';
     /**
@@ -713,9 +739,18 @@ export interface StorageAdapter extends BaseAdapter {
     ): Promise<boolean>;
 
     /**
-     * Reads the content of a file as a string
+     * Reads the content of a file as a string, null when it is not there.
+     *
+     * Takes at most `options.maxBytes` (`SIDECAR_READ_LIMIT` when left out) and fails with
+     * `FileTooLargeError` from `common/read-limit.ts` past it, stopping the transfer there. The
+     * server of a destination may belong to a customer, so nothing is buffered without a bound.
      */
-    read?(config: AdapterConfig, remotePath: string): Promise<string | null>;
+    read?(config: AdapterConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null>;
+
+    /**
+     * The same as `read()`, as bytes, for content that is not text, like a sealed index.
+     */
+    readBytes?(config: AdapterConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null>;
 
     /**
      * How many `read()` calls a caller may run against this destination at once.
@@ -775,6 +810,15 @@ export interface StorageAdapter extends BaseAdapter {
     delete(config: AdapterConfig, remotePath: string): Promise<boolean>;
 
     /**
+     * Optional: removes a folder, but only while it is empty, never with anything in it, and never
+     * the folder the destination is set to. Returns false when it holds something, is gone or is
+     * that folder. Implemented where the storage has folders of their own to delete, so a storage
+     * of objects, whose folders vanish with their last file, leaves it out, and so does an adapter
+     * whose protocol deletes a folder only with everything in it.
+     */
+    deleteEmptyFolder?(config: AdapterConfig, remotePath: string): Promise<boolean>;
+
+    /**
      * Optional: downloads an entire remote directory tree to a local directory, used by
      * directory-source (JobSource) backups. Adapters that don't implement this are handled
      * via a generic fallback (list() + per-file download()) - see
@@ -800,9 +844,10 @@ export interface StorageAdapter extends BaseAdapter {
      * than reporting a complete restore that quietly is not one.
      *
      * `target` is stored verbatim, exactly as it was collected. Resolving it would turn a
-     * relative link into one that is wrong from any other directory.
+     * relative link into one that is wrong from any other directory. `restoreRelativePath` keeps
+     * the link and its target inside the folder of the restore, as for an upload.
      */
-    createSymlink?(config: AdapterConfig, remotePath: string, target: string): Promise<void>;
+    createSymlink?(config: AdapterConfig, remotePath: string, target: string, options?: Pick<UploadOptions, "restoreRelativePath">): Promise<void>;
 
     /**
      * Optional: lists the immediate child directories of subPath (non-recursive), scoped to this
@@ -909,6 +954,8 @@ export interface NotificationContext {
     eventType?: string;
     /** Short title used as email subject / embed title */
     title?: string;
+    /** The heading of the banner in a mail when it differs from the title */
+    heading?: string;
     /** Structured key-value fields for rich rendering */
     fields?: Array<{ name: string; value: string; inline?: boolean }>;
     /** Hex colour for embeds / status indicators */

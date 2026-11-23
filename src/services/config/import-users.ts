@@ -1,13 +1,91 @@
 import { encrypt } from "@/lib/crypto";
+import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { scopesOf } from "@/lib/auth/oidc-scopes";
+import type { Tx } from "@/lib/prisma-tx";
+import { ensureFullAccessGroup } from "@/services/user/group-service";
 import { counted, exists, idHere, listed, type ImportContext } from "./import-context";
 
+/** A name no group has yet, the wanted one or with a number after it. */
+async function freeGroupName(tx: Tx, wanted: string): Promise<string> {
+    for (let n = 1; ; n++) {
+        const name = n === 1 ? wanted : `${wanted} ${n}`;
+        if (!(await tx.group.findFirst({ where: { name }, select: { id: true } }))) return name;
+    }
+}
+
+/** The group of the files of earlier versions that passed every check. */
+const LEGACY_SUPER_ADMIN = "SuperAdmin";
+
+/** The rights a group of a file had on the settings, which split into the settings and the tenant settings since. */
+const TENANT_SETTINGS_OF: Record<string, string> = { "settings:read": "tenant-settings:read", "settings:write": "tenant-settings:write" };
+
 /**
- * Groups, users with their sign-ins, and API keys. A group of the same name or a user of the same
- * email here takes the one of the file and keeps its id.
+ * The permissions of a group of a file from before the tenants, with the rights on the tenant
+ * settings and Recently deleted that a group of the same rights got with the update.
+ */
+export function withTenantSettings(permissions: string): string {
+    let list: unknown;
+    try {
+        list = JSON.parse(permissions);
+    } catch {
+        return permissions;
+    }
+    if (!Array.isArray(list)) return permissions;
+    const added = list.flatMap((permission) => (typeof permission === "string" && TENANT_SETTINGS_OF[permission] ? [TENANT_SETTINGS_OF[permission]] : []));
+    return JSON.stringify([...new Set([...list, ...added])]);
+}
+
+/**
+ * Whether an account here is provably the platform's own, so a user of a file may merge into it: it
+ * works in the home tenant alone, or in no tenant while a platform role or group holds it. An
+ * account of no tenant without either may be one a deleted tenant left behind, or one a tenant took
+ * out of itself, see `userService.placelessTenantOf`, and nothing here tells them apart.
+ */
+export function isPlatformsOwn(account: { platformRole: string | null; platformGroupId: string | null; memberships: readonly { tenantId: string }[] }): boolean {
+    if (account.memberships.some((membership) => membership.tenantId !== HOME_TENANT_ID)) return false;
+    return account.memberships.length > 0 || !!account.platformRole || !!account.platformGroupId;
+}
+
+/**
+ * Groups, users with their sign-ins, and API keys. An ordinary group of the same id here takes the
+ * one of the file, else a group of the same name or a user of the same email does and keeps its id. A file holds one group per user, from
+ * before tenants, which becomes their group in the home tenant. The SuperAdmin group of a file is
+ * the group with every permission here, and its people become platform admins. A user whose email
+ * or id an account here holds that is not the platform's own (`isPlatformsOwn`) is left out with a note.
  */
 export async function importUsers({ tx, data, ids, known, notes }: ImportContext): Promise<void> {
-    for (const group of data.groups) {
-        const existingByName = await tx.group.findUnique({ where: { name: group.name } });
+    const fullAccessIds = new Set<string>();
+    for (const fileGroup of data.groups) {
+        const group = { ...fileGroup, permissions: withTenantSettings(fileGroup.permissions) };
+        if (group.name === LEGACY_SUPER_ADMIN) {
+            const full = await ensureFullAccessGroup(tx);
+            ids.groups.set(group.id, full);
+            fullAccessIds.add(full);
+            continue;
+        }
+        const existingByName = await tx.group.findFirst({ where: { name: group.name } });
+        const existingById = await tx.group.findUnique({ where: { id: group.id }, select: { name: true, fullAccess: true, templateId: true } });
+        // An ordinary group of the same id here is the group of the file, under whatever name. The
+        // update renamed a group Admin beside SuperAdmin to Admin (before update), and the Admin of
+        // its file would find the group with every permission by its name. It keeps its name here
+        // while another group has the one of the file.
+        if (existingById && !existingById.fullAccess && !existingById.templateId && existingByName && existingByName.id !== group.id) {
+            await tx.group.update({ where: { id: group.id }, data: { permissions: group.permissions, updatedAt: group.updatedAt } });
+            notes.push(`The group ${group.name} of the file came back as ${existingById.name}, since another group is named ${group.name} here.`);
+            continue;
+        }
+        // An ordinary group of the file never merges into the group with every permission, which
+        // may share its name, like Admin, nor into a group the platform makes for the tenants,
+        // which only its template changes. It comes in under a name of its own.
+        if (existingByName?.fullAccess || existingById?.fullAccess || existingByName?.templateId || existingById?.templateId) {
+            const name = await freeGroupName(tx, `${group.name} (imported)`);
+            const created = await tx.group.create({ data: { name, permissions: group.permissions }, select: { id: true } });
+            ids.groups.set(group.id, created.id);
+            const why = existingByName?.fullAccess || existingById?.fullAccess ? "holds every permission here" : "is a group the platform makes for its tenants";
+            notes.push(`The group ${group.name} of the file came in as ${name}, since ${group.name} ${why}.`);
+            continue;
+        }
         if (existingByName && existingByName.id !== group.id) {
             await tx.group.update({ where: { id: existingByName.id }, data: { permissions: group.permissions, updatedAt: group.updatedAt } });
             ids.groups.set(group.id, existingByName.id);
@@ -17,21 +95,58 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
     }
 
     const withoutSecondFactor: string[] = [];
+    const leftOut = new Set<string>();
+    const notPromoted = new Set<string>();
     for (const user of data.users) {
-        const { accounts, ...userFields } = user;
-        if (userFields.groupId) userFields.groupId = idHere(ids.groups, userFields.groupId);
+        const { accounts, groupId: fileGroupId, ...userFields } = user as typeof user & { groupId?: string | null };
+        const groupId = fileGroupId ? idHere(ids.groups, fileGroupId) : null;
 
         const existingUser = await tx.user.findUnique({ where: { email: user.email } });
+        // The file holds the home tenant alone. An account here that also works in a customer's
+        // tenant is that tenant's too, maybe made there under the email of the file, so the user of
+        // the file never merges into it and gives it rights in the home tenant or the platform. An
+        // account of no tenant that the platform holds by no role or group may be what a customer's
+        // tenant left behind, with a password its maker knows, so it is left out as well.
+        const sameId = existingUser?.id === user.id ? null : await tx.user.findUnique({ where: { id: user.id }, select: { id: true } });
+        const matched = [existingUser?.id, sameId?.id].filter((id): id is string => !!id);
+        const matchedAccounts = matched.length === 0 ? [] : await tx.user.findMany({
+            where: { id: { in: matched } },
+            select: { platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } },
+        });
+        if (matchedAccounts.some((account) => !isPlatformsOwn(account))) {
+            leftOut.add(user.id);
+            continue;
+        }
+        // A user of the SuperAdmin group of the file becomes a platform admin. An account here that
+        // is none, like one a home admin made under that email with a password of their choosing,
+        // never becomes one by a restore: a platform admin decides that by hand.
+        const promotes = !!groupId && fullAccessIds.has(groupId);
+        if (promotes && matchedAccounts.some((account) => account.platformRole !== PLATFORM_ADMIN_ROLE)) {
+            notPromoted.add(user.id);
+            continue;
+        }
+        // An account that was here keeps whether its email is verified, a sign-in provider links by it.
+        const { emailVerified: _verified, ...keptFields } = userFields;
         if (existingUser && existingUser.id !== user.id) {
-            const { id: _id, email: _email, ...updateFields } = userFields;
+            const { id: _id, email: _email, ...updateFields } = keptFields;
             await tx.user.update({ where: { id: existingUser.id }, data: updateFields });
             ids.users.set(user.id, existingUser.id);
         } else {
-            await tx.user.upsert({ where: { id: user.id }, create: userFields, update: userFields });
+            await tx.user.upsert({ where: { id: user.id }, create: userFields, update: keptFields });
         }
 
         const userId = idHere(ids.users, user.id);
         known.users.add(userId);
+
+        if (groupId && (await tx.group.findUnique({ where: { id: groupId }, select: { id: true } }))) {
+            await tx.tenantMembership.upsert({
+                where: { userId_tenantId: { userId, tenantId: HOME_TENANT_ID } },
+                create: { userId, tenantId: HOME_TENANT_ID, groupId },
+                update: { groupId },
+            });
+            // A platform admin holds every right on the platform, so no platform group besides.
+            if (fullAccessIds.has(groupId)) await tx.user.update({ where: { id: userId }, data: { platformRole: PLATFORM_ADMIN_ROLE, platformGroupId: null } });
+        }
 
         for (const account of Array.isArray(accounts) ? accounts : []) {
             const remappedAccount = { ...account, userId };
@@ -58,7 +173,7 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
         // A file without the logins holds the key without its hash.
         if (!key.hashedKey) continue;
         const remappedKey = { ...key, userId: idHere(ids.users, key.userId) };
-        if (!(await exists(known.users, remappedKey.userId, () => tx.user.findUnique({ where: { id: remappedKey.userId }, select: { id: true } })))) {
+        if (leftOut.has(key.userId) || notPromoted.has(key.userId) || !(await exists(known.users, remappedKey.userId, () => tx.user.findUnique({ where: { id: remappedKey.userId }, select: { id: true } })))) {
             keysLeftOut++;
             continue;
         }
@@ -68,13 +183,26 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
     if (withoutSecondFactor.length > 0) {
         notes.push(`${counted(withoutSecondFactor.length, "user signs", "users sign")} in without a second factor until they set it up again, since the file holds none: ${listed(withoutSecondFactor)}.`);
     }
+    if (leftOut.size > 0) {
+        const emails = data.users.filter((user) => leftOut.has(user.id)).map((user) => user.email);
+        notes.push(`${counted(emails.length, "user was", "users were")} left out, since an account of the same email or id here works in another tenant or in none: ${listed(emails)}. Give the account here a group of the home tenant and restore again to merge one.`);
+    }
+    if (notPromoted.size > 0) {
+        const emails = data.users.filter((user) => notPromoted.has(user.id)).map((user) => user.email);
+        notes.push(`${counted(emails.length, "platform admin of the file was", "platform admins of the file were")} left out, since an account of the same email or id here is no platform admin: ${listed(emails)}. Make that account a platform admin by hand if it is the same person, and restore again.`);
+    }
     if (keysLeftOut > 0) notes.push(`${counted(keysLeftOut, "API key was", "API keys were")} left out, since the user it belongs to is not here.`);
 }
 
-/** Sign-in providers, their secrets encrypted again with the key of this DBackup. */
-export async function importSsoProviders({ tx, data, ids }: ImportContext): Promise<void> {
+/**
+ * Sign-in providers, their secrets encrypted again with the key of this DBackup. A file from before
+ * the tenants holds providers of the platform. One that a tenant holds here by the same id or
+ * provider id stays the tenant's and is left out, since the file would write over its issuer, its
+ * secret and its group.
+ */
+export async function importSsoProviders({ tx, data, ids, notes }: ImportContext): Promise<void> {
     for (const provider of data.ssoProviders) {
-        const providerData = { ...provider };
+        const providerData = { ...provider, tenantId: null };
         if (providerData.clientId) {
             try { providerData.clientId = encrypt(providerData.clientId); } catch { /* already encrypted or empty */ }
         }
@@ -86,6 +214,9 @@ export async function importSsoProviders({ tx, data, ids }: ImportContext): Prom
                 const oidcConfig = JSON.parse(providerData.oidcConfig);
                 if (oidcConfig.clientId) oidcConfig.clientId = encrypt(oidcConfig.clientId);
                 if (oidcConfig.clientSecret) oidcConfig.clientSecret = encrypt(oidcConfig.clientSecret);
+                // A file of an older version holds no list of scopes, like the migration of the providers fills it in, see `oidc-scopes.ts`.
+                oidcConfig.scopes = scopesOf(providerData.oidcConfig);
+                delete oidcConfig.scope;
                 providerData.oidcConfig = JSON.stringify(oidcConfig);
             } catch { /* parse error, keep as-is */ }
         }
@@ -94,6 +225,11 @@ export async function importSsoProviders({ tx, data, ids }: ImportContext): Prom
         if (providerData.defaultGroupId) providerData.defaultGroupId = idHere(ids.groups, providerData.defaultGroupId);
 
         const existingSso = await tx.ssoProvider.findUnique({ where: { providerId: providerData.providerId } });
+        const sameId = await tx.ssoProvider.findUnique({ where: { id: providerData.id }, select: { tenantId: true } });
+        if (existingSso?.tenantId || sameId?.tenantId) {
+            notes.push(`The sign-in provider ${providerData.name} of the file was left out, since a tenant has a provider of the same name here.`);
+            continue;
+        }
         if (existingSso && existingSso.id !== providerData.id) {
             const { id: _id, ...ssoUpdateFields } = providerData;
             await tx.ssoProvider.update({ where: { id: existingSso.id }, data: ssoUpdateFields });

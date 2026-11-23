@@ -59,8 +59,10 @@ function makeEncryptionMeta(iv: Buffer, authTag: Buffer, overrides: Record<strin
     };
 }
 
-const correctKey = crypto.randomBytes(32);
-const wrongKey   = crypto.randomBytes(32);
+// Fixed keys, since with random ones a wrong key decrypts to the GZIP magic about once in
+// 65536 runs, which the heuristic takes as a fit.
+const correctKey = Buffer.alloc(32, 0xc1);
+const wrongKey   = Buffer.alloc(32, 0x5e);
 const noop = vi.fn();
 
 describe('resolveDecryptionKey', () => {
@@ -172,6 +174,18 @@ describe('checkKeyCandidate (via resolveDecryptionKey)', () => {
             noop,
         );
         expect(result).toBe(correctKey);
+    });
+
+    it('takes no key for a file whose metadata names a tag shorter than 16 bytes', async () => {
+        const plaintext = Buffer.concat([Buffer.from([0x1f, 0x8b, 0x08, 0x00]), Buffer.alloc(20)]);
+        const { ciphertext, authTag } = encryptBuffer(correctKey, plaintext, iv);
+
+        setupSmartRecovery(correctKey);
+        mockCreateReadStream.mockReturnValue(makeReadStream(ciphertext));
+
+        await expect(
+            resolveDecryptionKey(makeEncryptionMeta(iv, authTag.subarray(0, 4)), '/tmp/backup.sql.gz.enc', 'GZIP', noop),
+        ).rejects.toThrow('missing, and no other profile could decrypt this file');
     });
 
     it('throws when decrypted GZIP content has wrong magic bytes (wrong key)', async () => {
@@ -310,7 +324,7 @@ describe('checkKeyCandidate (via resolveDecryptionKey)', () => {
 //   4. Smart Recovery must find the re-imported profile and decrypt the backup.
 
 describe('Key Import Scenario (delete + re-import with new ID)', () => {
-    const masterKey   = crypto.randomBytes(32);
+    const masterKey   = Buffer.alloc(32, 0xa7);
     const iv          = Buffer.alloc(16, 0x03);
     const originalId  = 'original-profile-id';
     const reimportedId = 're-imported-profile-id';
@@ -379,7 +393,7 @@ describe('Key Import Scenario (delete + re-import with new ID)', () => {
     });
 
     it('fails when the re-imported key bytes differ from the original (wrong key imported)', async () => {
-        const differentKey = crypto.randomBytes(32);
+        const differentKey = Buffer.alloc(32, 0x3d);
         const plaintext    = Buffer.from('SELECT 1;\n'.repeat(10));
         // Backup was encrypted with masterKey, but user imported a different key.
         const { ciphertext, authTag } = encryptBuffer(masterKey, plaintext, iv);
@@ -403,8 +417,8 @@ describe('Key Import Scenario (delete + re-import with new ID)', () => {
     });
 
     it('tries all available profiles and returns the one with the matching key', async () => {
-        const wrongKey1 = crypto.randomBytes(32);
-        const wrongKey2 = crypto.randomBytes(32);
+        const wrongKey1 = Buffer.alloc(32, 0x11);
+        const wrongKey2 = Buffer.alloc(32, 0x22);
         const plaintext = Buffer.from('SELECT * FROM orders;\n'.repeat(5));
         const { ciphertext, authTag } = encryptBuffer(masterKey, plaintext, iv);
         // Each checkKeyCandidate call opens a new ReadStream - return a fresh stream per call.

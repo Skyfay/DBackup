@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VERSION, dockerTags, nextVersion, withOpenapiVersion, withVersion } from "../../../../scripts/toolbox/version.mjs";
+import { VERSION, dockerTags, isPreview, nextBeta, nextVersion, previewRefusal, releaseOf, withOpenapiVersion, withVersion } from "../../../../scripts/toolbox/version.mjs";
 
 describe("the next version", () => {
     it("counts up a released version", () => {
@@ -26,6 +26,34 @@ describe("the next version", () => {
     });
 });
 
+describe("a beta", () => {
+    it("counts up the betas of a release", () => {
+        expect(nextBeta("4.1.0-beta.1")).toBe("4.1.0-beta.2");
+        expect(nextBeta("4.1.0-beta.9")).toBe("4.1.0-beta.10");
+        expect(nextBeta("4.1.0-beta")).toBe("4.1.0-beta.2");
+    });
+
+    it("starts with the first beta of the next release after a release", () => {
+        expect(nextBeta("4.0.2")).toBe("4.1.0-beta.1");
+        expect(nextBeta("4.0.2", "major")).toBe("5.0.0-beta.1");
+        expect(nextBeta("4.1.0-dev")).toBe("4.1.0-beta.1");
+    });
+
+    it("previews the release without its suffix", () => {
+        expect(isPreview("4.1.0-beta.2")).toBe(true);
+        expect(isPreview("4.1.0")).toBe(false);
+        expect(releaseOf("4.1.0-beta.2")).toBe("4.1.0");
+        expect(releaseOf("4.1.0")).toBe("4.1.0");
+    });
+
+    it("is refused for a release that is out already, and without fragments for its notes", () => {
+        const changelog = "## v4.0.2 - Fixes\n*Released: Oct 12, 2026*\n";
+        expect(previewRefusal("4.0.2-beta.1", changelog, 3)).toMatch(/released already/);
+        expect(previewRefusal("4.1.0-beta.1", changelog, 0)).toMatch(/no changelog fragments/);
+        expect(previewRefusal("4.1.0-beta.1", changelog, 3)).toBeNull();
+    });
+});
+
 describe("the Docker tags of a version", () => {
     it("tags a release as latest and its major version", () => {
         expect(dockerTags("4.0.1")).toBe("`latest`, `v4`");
@@ -33,6 +61,8 @@ describe("the Docker tags of a version", () => {
 
     it("tags a beta and a dev build with their channel only", () => {
         expect(dockerTags("4.1.0-beta")).toBe("`beta`");
+        expect(dockerTags("4.1.0-beta.2")).toBe("`beta`");
+        expect(dockerTags("4.1.0-rc.1")).toBe("`beta`");
         expect(dockerTags("4.1.0-dev")).toBe("`dev`");
     });
 });

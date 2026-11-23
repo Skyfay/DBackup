@@ -35,6 +35,11 @@ const davContents = vi.fn();
 vi.mock("webdav", () => ({
     createClient: vi.fn(() => ({ getDirectoryContents: davContents })),
 }));
+// The capped PROPFIND has its own suite, webdav-listing.test.ts. Here it answers what the
+// client lists, so these tests keep speaking in entries rather than XML.
+vi.mock("@/lib/adapters/storage/webdav-listing", () => ({
+    listDavFolder: (client: { getDirectoryContents: (dir: string) => unknown }, _url: string, dir: string) => client.getDirectoryContents(dir),
+}));
 
 // ── S3 ───────────────────────────────────────────────────────────────────
 const s3Send = vi.fn();
@@ -45,6 +50,8 @@ vi.mock("@aws-sdk/client-s3", async (importOriginal) => {
         S3Client: class {
             send = (...args: unknown[]) => s3Send(...args);
             destroy = vi.fn();
+            // Every client bounds what it reads of an answer, see `s3-response-limit.ts`.
+            middlewareStack = { add: vi.fn() };
         },
     };
 });

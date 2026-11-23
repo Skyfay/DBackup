@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createHash } from "crypto";
 import type { ArchiveIndex } from "@/lib/archive/types";
 
 const prismaMock = {
     execution: { findFirst: vi.fn() },
     adapterConfig: { findUnique: vi.fn() },
+    // Whether the tenant of a destination shares it with customers.
+    connectionShare: { count: vi.fn().mockResolvedValue(0) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
@@ -12,9 +15,17 @@ vi.mock("@/lib/core/registry", () => ({ registry: { get: (...a: unknown[]) => re
 vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: async (c: unknown) => c }));
 
 const loadIndex = vi.fn();
+const fetchSidecar = vi.fn();
 vi.mock("@/services/backup/archive-index-service", () => ({
-    archiveIndexService: { load: (...a: unknown[]) => loadIndex(...a) },
+    archiveIndexService: {
+        fetchSidecar: (...a: unknown[]) => fetchSidecar(...a),
+        parseSidecar: (...a: unknown[]) => loadIndex(...a),
+    },
 }));
+/** The sidecar bytes the run uploaded, and their digest as its Execution row records it. */
+const WRITTEN = Buffer.from("the index the run wrote");
+const EDITED = Buffer.from("the index someone edited");
+const RECORDED = JSON.stringify({ indexSha256: createHash("sha256").update(WRITTEN).digest("hex") });
 const isConnected = vi.fn();
 vi.mock("@/lib/runner/steps/air-gap", () => ({ isConnected: (...a: unknown[]) => isConnected(...a) }));
 vi.mock("@/lib/logging/logger", () => ({
@@ -73,7 +84,7 @@ function happyPath() {
             ? { ...previousExecution(), chainIndex: 0, startedAt: new Date("2026-07-20T03:00:00.000Z") }
             : previousExecution()
     );
-    prismaMock.adapterConfig.findUnique.mockResolvedValue({ id: "dest-1", type: "storage", adapterId: "local", config: "{}" });
+    prismaMock.adapterConfig.findUnique.mockResolvedValue({ id: "dest-1", type: "storage", adapterId: "local", config: "{}", tenantId: "tenant-1" });
     registryGet.mockReturnValue({
         read: vi.fn().mockResolvedValue(META),
         // Two archives present, matching a chain that is two deep.
@@ -83,6 +94,7 @@ function happyPath() {
         ]),
     });
     loadIndex.mockResolvedValue(previousIndex());
+    fetchSidecar.mockResolvedValue(WRITTEN);
 }
 
 beforeEach(() => {
@@ -106,7 +118,7 @@ describe("planChain", () => {
         /** dest-1 holds the whole chain, the air-gapped usb holds only the snapshot given. */
         function withUsb(usbList: ReturnType<typeof vi.fn>) {
             prismaMock.adapterConfig.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
-                id: where.id, name: where.id, type: "storage", storageRole: "DESTINATION", adapterId: where.id, config: "{}",
+                id: where.id, name: where.id, type: "storage", storageRole: "DESTINATION", adapterId: where.id, config: "{}", tenantId: "tenant-1",
                 metadata: where.id === "usb" ? JSON.stringify({ airGapped: true }) : null,
             }));
             registryGet.mockImplementation((adapterId: string) => ({
@@ -251,7 +263,7 @@ describe("planChain", () => {
             // The chain is tracked per job, so a gap at a single destination restarts it
             // everywhere rather than letting destinations diverge.
             prismaMock.adapterConfig.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
-                id: where.id, type: "storage", adapterId: where.id, config: "{}",
+                id: where.id, type: "storage", adapterId: where.id, config: "{}", tenantId: "tenant-1",
             }));
             registryGet.mockImplementation((adapterId: string) => ({
                 read: vi.fn().mockResolvedValue(META),
@@ -315,6 +327,65 @@ describe("planChain", () => {
             });
             const plan = await planChain(input());
             expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/predates/i) });
+        });
+    });
+
+    describe("builds only on the index the previous run wrote", () => {
+        function twoDestinations(metadata: string | null) {
+            prismaMock.execution.findFirst.mockImplementation(async (args: { where: { chainIndex?: number } }) =>
+                args.where.chainIndex === 0
+                    ? { ...previousExecution(), chainIndex: 0, startedAt: new Date("2026-07-20T03:00:00.000Z") }
+                    : previousExecution({ metadata })
+            );
+            prismaMock.adapterConfig.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
+                id: where.id, name: where.id, type: "storage", adapterId: "local", config: "{}", tenantId: "tenant-1", metadata: null,
+            }));
+        }
+        const both = () => input({ destinationConfigIds: ["dest-1", "dest-2"] });
+
+        it("continues the chain when the index matches the digest of the run", async () => {
+            twoDestinations(RECORDED);
+            const plan = await planChain(both());
+            expect(plan.type).toBe("incremental");
+            // The bytes that were compared are the bytes that are parsed.
+            expect(loadIndex.mock.calls[0][3]).toBe(WRITTEN);
+        });
+
+        it("starts a full when the index on the first destination was edited after the run", async () => {
+            twoDestinations(RECORDED);
+            fetchSidecar.mockImplementation(async (configId: string) => (configId === "dest-1" ? EDITED : WRITTEN));
+            const plan = await planChain(both());
+            expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/not the one its run wrote/i) });
+            expect(plan.previousIndex).toBeUndefined();
+            expect(loadIndex).not.toHaveBeenCalled();
+        });
+
+        it("starts a full when the edited index is on the only destination", async () => {
+            twoDestinations(RECORDED);
+            fetchSidecar.mockResolvedValue(EDITED);
+            const plan = await planChain(input());
+            expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/not the one its run wrote/i) });
+        });
+
+        it("starts a full when a run from before the digest left different indexes at its destinations", async () => {
+            twoDestinations(null);
+            fetchSidecar.mockImplementation(async (configId: string) => (configId === "dest-1" ? EDITED : WRITTEN));
+            const plan = await planChain(both());
+            expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/differs between the destinations/i) });
+            expect(loadIndex).not.toHaveBeenCalled();
+        });
+
+        it("starts a full when another destination of such a run no longer serves the index", async () => {
+            twoDestinations(null);
+            fetchSidecar.mockImplementation(async (configId: string) => (configId === "dest-1" ? WRITTEN : null));
+            const plan = await planChain(both());
+            expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/differs between the destinations/i) });
+        });
+
+        it("continues the chain of a run from before the digest when every destination holds the same index", async () => {
+            twoDestinations(null);
+            const plan = await planChain(both());
+            expect(plan.type).toBe("incremental");
         });
     });
 

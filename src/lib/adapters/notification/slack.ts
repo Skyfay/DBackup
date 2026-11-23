@@ -3,6 +3,9 @@ import { SlackSchema, SlackConfig } from "@/lib/adapters/definitions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { reachOf } from "@/lib/network/reach-policy";
+import { redirectRefusal, webhookFetch } from "./http";
+import { escapeSlack } from "./escape";
 
 const log = logger.child({ adapter: "slack" });
 
@@ -16,14 +19,16 @@ export const SlackAdapter: NotificationAdapter = {
     async test(config: SlackConfig): Promise<{ success: boolean; message: string }> {
         try {
             validateOutboundUrl(config.webhookUrl);
-            const response = await fetch(config.webhookUrl, {
+            const response = await webhookFetch(config.webhookUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     text: "🔔 *DBackup Connection Test*\nThis is a test notification to verify your webhook configuration.",
                 }),
-            });
+            }, reachOf(config));
 
+            const redirect = redirectRefusal("Slack", response);
+            if (redirect) return { success: false, message: redirect };
             if (response.ok) {
                 return { success: true, message: "Test notification sent successfully!" };
             } else {
@@ -59,9 +64,10 @@ export const SlackAdapter: NotificationAdapter = {
                     },
                     {
                         type: "section",
+                        // The names in a message stay text, never a link or a mention like `<!channel>`.
                         text: {
                             type: "mrkdwn",
-                            text: message,
+                            text: escapeSlack(message),
                         },
                     },
                 ];
@@ -72,7 +78,7 @@ export const SlackAdapter: NotificationAdapter = {
                         type: "section",
                         fields: context.fields.map((f: { name: string; value: string }) => ({
                             type: "mrkdwn",
-                            text: `*${f.name}:*\n${f.value || "-"}`,
+                            text: `*${escapeSlack(f.name)}:*\n${escapeSlack(f.value || "-")}`,
                         })),
                     });
                 }
@@ -95,7 +101,7 @@ export const SlackAdapter: NotificationAdapter = {
                     },
                 ];
             } else {
-                payload.text = message;
+                payload.text = escapeSlack(message);
             }
 
             if (config.channel) {
@@ -110,11 +116,11 @@ export const SlackAdapter: NotificationAdapter = {
                 payload.icon_emoji = config.iconEmoji;
             }
 
-            const response = await fetch(config.webhookUrl, {
+            const response = await webhookFetch(config.webhookUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
-            });
+            }, reachOf(config));
 
             if (!response.ok) {
                 const body = await response.text().catch(() => "");

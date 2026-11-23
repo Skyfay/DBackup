@@ -1,4 +1,6 @@
 import { logger } from "@/lib/logging/logger";
+import { isConfigBackupFolderName } from "@/lib/core/config-backup-path";
+import { isUnsafeJobFolderName } from "@/lib/core/job-folder";
 import { counted, exists, idHere, listed, type ImportContext } from "./import-context";
 
 const svcLog = logger.child({ service: "ConfigService" });
@@ -21,9 +23,22 @@ export async function importJobs(ctx: ImportContext): Promise<void> {
     const defaultNames: string[] = [];
     const ownSchedule: string[] = [];
     const withoutSource: string[] = [];
+    const inConfigFolder: string[] = [];
+    const outsideOwnFolder: string[] = [];
 
     for (const jobItem of data.jobs) {
         const job = { ...jobItem };
+
+        // A job called like the folder of the configuration backup would write among its files,
+        // so it comes in paused and runs once it is renamed, see `isConfigBackupFolderName`.
+        if (isConfigBackupFolderName(job.name)) {
+            if (job.enabled !== false) inConfigFolder.push(job.name);
+            job.enabled = false;
+        } else if (isUnsafeJobFolderName(job.name)) {
+            // A name whose folder leaves its own writes beside it, see `isUnsafeJobFolderName`.
+            if (job.enabled !== false) outsideOwnFolder.push(job.name);
+            job.enabled = false;
+        }
 
         if (job.sourceId) {
             const sourceId = idHere(ids.adapters, job.sourceId);
@@ -79,6 +94,8 @@ export async function importJobs(ctx: ImportContext): Promise<void> {
         withoutFolders.push(job.name);
     }
 
+    if (inConfigFolder.length > 0) notes.push(jobsNote(inConfigFolder, "job is paused until it is renamed, its name is the folder of the configuration backup", "jobs are paused until they are renamed, their names are the folder of the configuration backup"));
+    if (outsideOwnFolder.length > 0) notes.push(jobsNote(outsideOwnFolder, "job is paused until it is renamed, its name holds a . or .. folder or a folder that starts with a hyphen", "jobs are paused until they are renamed, their names hold a . or .. folder or a folder that starts with a hyphen"));
     if (pausedForKey.length > 0) notes.push(jobsNote(pausedForKey, "job is paused so it does not back up unencrypted, its encryption key is not here", "jobs are paused so they do not back up unencrypted, their encryption key is not here"));
     if (keptEverything > 0) notes.push(`${counted(keptEverything, "job destination keeps", "job destinations keep")} every backup until a retention policy is picked again, since the file holds no retention policies.`);
     if (defaultNames.length > 0) notes.push(jobsNote(defaultNames, "job uses the default file names, since the file holds no naming templates", "jobs use the default file names, since the file holds no naming templates"));

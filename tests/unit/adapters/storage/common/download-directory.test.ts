@@ -15,6 +15,7 @@ import {
     toRelativePath,
 } from "@/lib/adapters/storage/common/download-directory";
 import { resolveExcludePatterns } from "@/lib/exclude-groups";
+import { DownloadedFileError } from "@/lib/adapters/storage/common/downloaded-file";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
 import type { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
 
@@ -104,6 +105,20 @@ describe("downloadDirectoryGeneric", () => {
         expect(result.bytes).toBe(300);
         expect(result.entries.map((e) => e.relativePath).sort()).toEqual(["a.txt", "sub/b.txt"]);
         expect(adapter.download).toHaveBeenCalledTimes(2);
+    });
+
+    it("leaves out and names a file that arrived as a link, and collects the rest", async () => {
+        // What the check of the registry throws for a download that left no regular file.
+        const files = [makeFile("Job/a.txt", 100), makeFile("Job/shadow", 10)];
+        const adapter = makeAdapter(files, async (_config, remotePath) => {
+            if (remotePath.endsWith("shadow")) throw new DownloadedFileError("mock", "Job/shadow arrived as a symbolic link, not as a regular file, so it was not read");
+            return true;
+        });
+
+        const result = await downloadDirectoryGeneric(adapter, {}, "Job", "/local/job");
+
+        expect(result.entries.map((e) => e.relativePath)).toEqual(["a.txt"]);
+        expect(result.failures).toEqual([{ path: "shadow", error: expect.stringContaining("symbolic link") }]);
     });
 
     it("skips files matching exclude patterns", async () => {
@@ -504,6 +519,26 @@ describe("symbolic links during collection", () => {
 
         expect(shouldDownload).not.toHaveBeenCalled();
         expect(result.entries[0].linkTarget).toBe("../archive/cert1.pem");
+    });
+
+    it("refuses listed names that leave the collection folder, for links and unchanged files too", async () => {
+        // An S3 key or a WebDAV href is whatever the server sends.
+        const adapter = makeAdapter([
+            makeFile("Job/ok.txt", 10),
+            makeFile("Job/../../app/data/dbackup.db", 10),
+            makeLink("Job/../outside-link", "x"),
+            makeFile("Job/kept/../../../carried.txt", 10),
+        ]);
+        const shouldDownload = vi.fn().mockReturnValue(false);
+
+        const result = await downloadDirectoryGeneric(
+            adapter, {}, "Job", "/local/job", undefined, undefined, undefined, { shouldDownload }
+        );
+
+        expect(result.entries.map((e) => e.relativePath)).toEqual(["ok.txt"]);
+        expect(result.failures.map((f) => f.path)).toEqual(["../../app/data/dbackup.db", "../outside-link", "kept/../../../carried.txt"]);
+        expect(shouldDownload).toHaveBeenCalledTimes(1);
+        expect(adapter.download).not.toHaveBeenCalled();
     });
 
     it("still applies exclude patterns to links", async () => {

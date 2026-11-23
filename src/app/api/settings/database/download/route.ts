@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { AuthContext, getAuthContext } from "@/lib/auth/access-control";
 import { generateFileDownloadToken, consumeFileDownloadToken, markTokenUsed } from "@/lib/auth/download-tokens";
 import { tempFileDownloadResponse } from "@/lib/server/temp-file-response";
 import { DATABASE_BUSY } from "@/lib/server/database-maintenance";
-import { createDatabaseSnapshot } from "@/services/system/database-service";
+import { createDownloadCopy } from "@/services/config/database-copy";
+import { platformLogFor } from "@/services/system/settings-save";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ServiceError, wrapError } from "@/lib/logging/errors";
@@ -19,21 +21,17 @@ const log = logger.child({ route: "settings/database/download" });
 const DATABASE_DOWNLOAD_SCOPE = "dbackup-database";
 
 /**
- * Security: deliberately stricter than any permission. The file holds every user's password hash,
- * active session tokens and all stored credentials, so a copy is enough to take over the instance.
- * Only a signed-in member of the SuperAdmin group qualifies, which also rules out API keys.
+ * Security: deliberately stricter than any permission. The file holds every user's password hash
+ * and all stored credentials, so a copy is enough to take over the instance. The live sessions and
+ * verification codes are left out of it (`createDownloadCopy`). Only a platform admin signed in
+ * with a session qualifies, which also rules out API keys.
  */
-async function requireSuperAdmin(): Promise<AuthContext | NextResponse> {
-    let ctx: AuthContext | null;
-    try {
-        ctx = await getAuthContext(await headers());
-    } catch {
-        // An invalid, disabled or expired API key.
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!ctx.isSuperAdmin || ctx.authMethod !== "session") {
-        return NextResponse.json({ error: "Only SuperAdmins can download the database." }, { status: 403 });
+async function requirePlatformAdmin(): Promise<AuthContext | Response> {
+    // A disabled, expired or blocked API key has no context, `unauthorized` says why.
+    const ctx = await getAuthContext(await headers()).catch(() => null);
+    if (!ctx) return unauthorized();
+    if (!ctx.isPlatformAdmin || ctx.authMethod !== "session") {
+        return NextResponse.json({ error: "Only platform admins can download the database." }, { status: 403 });
     }
     return ctx;
 }
@@ -45,17 +43,19 @@ async function requireSuperAdmin(): Promise<AuthContext | NextResponse> {
  * refusal (for example a backup still running) reaches the page as a readable error.
  */
 export async function POST() {
-    const ctx = await requireSuperAdmin();
-    if (ctx instanceof NextResponse) return ctx;
+    const ctx = await requirePlatformAdmin();
+    if (ctx instanceof Response) return ctx;
 
     try {
-        const snapshot = await createDatabaseSnapshot();
+        const snapshot = await createDownloadCopy();
 
-        await auditService.logFor(
-            ctx,
+        await auditService.log(
+            ctx.userId,
             AUDIT_ACTIONS.EXPORT,
             AUDIT_RESOURCES.SYSTEM,
-            { action: "database_download", sizeBytes: snapshot.sizeBytes }
+            { action: "database_download", sizeBytes: snapshot.sizeBytes },
+            undefined,
+            platformLogFor(ctx)
         );
 
         const token = generateFileDownloadToken({
@@ -82,8 +82,8 @@ export async function POST() {
 
 /** Streams a prepared copy. Only the user who prepared it can collect it. */
 export async function GET(req: NextRequest) {
-    const ctx = await requireSuperAdmin();
-    if (ctx instanceof NextResponse) return ctx;
+    const ctx = await requirePlatformAdmin();
+    if (ctx instanceof Response) return ctx;
 
     const token = req.nextUrl.searchParams.get("token");
     const claim = token ? consumeFileDownloadToken(token, ctx.userId) : null;

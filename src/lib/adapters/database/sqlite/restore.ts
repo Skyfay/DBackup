@@ -2,6 +2,7 @@ import path from "path";
 import { DatabaseAdapter } from "@/lib/core/interfaces";
 import type { ExecutionHost } from "@/lib/transport";
 import { AdapterError } from "@/lib/logging/errors";
+import { ownDataRefusal } from "@/lib/adapters/own-data";
 
 export const prepareRestore: NonNullable<DatabaseAdapter["prepareRestore"]> = async () => {
     // SQLite needs no preparation: the restore replaces a single file.
@@ -55,6 +56,10 @@ export const restore: DatabaseAdapter["restore"] = async (config, sourcePath, ho
         if (!host) {
             throw new Error("SQLite adapter requires an execution host. Call it through withHost().");
         }
+
+        // No restore writes over the own database of DBackup, also through a link that points there by now.
+        const ownData = await ownDataRefusal("sqlite", config as Record<string, unknown>);
+        if (ownData) throw new Error(ownData);
 
         const dbPath = config.path as string;
         const binary = await host.which((config.sqliteBinaryPath as string) || "sqlite3");

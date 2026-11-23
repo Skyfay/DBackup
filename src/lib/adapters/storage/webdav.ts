@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry, StorageReadOptions, UploadOptions } from "@/lib/core/interfaces";
 import { WebDAVSchema } from "@/lib/adapters/definitions";
 import { createClient, WebDAVClient, FileStat } from "webdav";
 import { createReadStream, createWriteStream } from "fs";
@@ -10,6 +10,12 @@ import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
+import { createListingGuard } from "@/lib/adapters/storage/common/listing-limits";
+import { collectCapped, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
+import { urlHost } from "@/lib/adapters/dialed-hosts";
+import { reachOf } from "@/lib/network/reach-policy";
+import { webdavAgents } from "./webdav-agents";
+import { listDavFolder } from "./webdav-listing";
 
 const log = logger.child({ adapter: "webdav" });
 
@@ -20,10 +26,16 @@ interface WebDAVConfig {
     pathPrefix?: string;
 }
 
+/**
+ * The client of a connection. Its agents connect only to the host of the URL, so a redirect to
+ * another host fails instead of reaching a host the local network check never read, see
+ * `webdav-agents.ts`, and for a tenant that blocks the local network only to checked addresses.
+ */
 function getClient(config: WebDAVConfig): WebDAVClient {
     return createClient(config.url, {
         username: config.username,
         password: config.password,
+        ...webdavAgents(urlHost(config.url) ?? "", reachOf(config)),
     });
 }
 
@@ -43,6 +55,38 @@ async function ensureDir(client: WebDAVClient, remotePath: string): Promise<void
     }
 }
 
+/** A folder of a listing as one key: normalized, with a leading and without a trailing slash. */
+function folderKey(folder: string): string {
+    const normalized = path.posix.normalize(`/${folder.replace(/\\/g, "/")}`);
+    return normalized.length > 1 ? normalized.replace(/\/+$/, "") : normalized;
+}
+
+/** Whether the folder `child` lies below `parent`, both keys of `folderKey`, and is not `parent` itself. */
+function strictlyBelow(child: string, parent: string): boolean {
+    return child !== parent && child.startsWith(parent === "/" ? "/" : `${parent}/`);
+}
+
+/**
+ * The bytes of a file, at most the limit of the read, see `read-limit.ts`. Streamed, so a server
+ * that sends more stops at the first chunk past it. Null when the file is not there.
+ */
+async function readCappedBytes(config: WebDAVConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null> {
+    try {
+        const client = getClient(config);
+        const source = resolvePath(config, remotePath);
+        return await collectCapped(client.createReadStream(source), readLimitOf(options));
+    } catch (error) {
+        if (isFileTooLarge(error)) throw error;
+        // Quietly fail if file not found (expected for missing .meta.json)
+        return null;
+    }
+}
+
+/**
+ * `UploadOptions.restoreRelativePath` of a write of a restore is taken and not acted on: WebDAV
+ * knows no symbolic links, a server answers a link of its file system as the folder or file it
+ * points at. Whether one below the folder of the restore is followed is decided by the server alone.
+ */
 export const WebDAVAdapter: StorageAdapter = {
     id: "webdav",
     type: "storage",
@@ -50,7 +94,7 @@ export const WebDAVAdapter: StorageAdapter = {
     configSchema: WebDAVSchema,
     credentials: { primary: "USERNAME_PASSWORD" },
 
-    async upload(config: WebDAVConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
+    async upload(config: WebDAVConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, _options?: UploadOptions): Promise<boolean> {
         try {
             const client = getClient(config);
             const destination = resolvePath(config, remotePath);
@@ -141,18 +185,11 @@ export const WebDAVAdapter: StorageAdapter = {
 
     readConcurrency: STATELESS_READ_CONCURRENCY,
 
-    async read(config: WebDAVConfig, remotePath: string): Promise<string | null> {
-        try {
-            const client = getClient(config);
-            const source = resolvePath(config, remotePath);
-
-            const content = await client.getFileContents(source, { format: "text" });
-            return content as string;
-        } catch {
-            // Quietly fail if file not found (expected for missing .meta.json)
-            return null;
-        }
+    async read(config: WebDAVConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null> {
+        return textOf(await readCappedBytes(config, remotePath, options));
     },
+
+    readBytes: readCappedBytes,
 
     async browseDirectories(config: WebDAVConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
         try {
@@ -162,8 +199,9 @@ export const WebDAVAdapter: StorageAdapter = {
                 ? path.posix.join("/", prefix, subPath)
                 : (subPath ? path.posix.join("/", subPath) : "/");
 
-            // Depth 1: the collection's own children, which is exactly one tree level.
-            const items = await client.getDirectoryContents(startDir) as FileStat[];
+            // Depth 1: the collection's own children, which is exactly one tree level. The answer is
+            // read up to `WEBDAV_MAX_LISTING_BYTES`, see `listDavFolder`.
+            const items = await listDavFolder(client, config.url, startDir);
             return items
                 .filter((item) => item.type === "directory")
                 .map((item) => ({
@@ -187,14 +225,25 @@ export const WebDAVAdapter: StorageAdapter = {
 
             const files: FileInfo[] = [];
             const prefixPath = prefix ? path.posix.join("/", prefix) : "";
+            // The server may belong to a customer and answers with whatever names it likes. Every
+            // entry, a folder too, passes the guard as it arrives, see `listing-limits.ts`, and the
+            // walk goes only down: into a folder strictly below the one it lists and never into one
+            // it listed before, so a folder that names itself or one above it as a child ends.
+            const guard = createListingGuard();
+            const visited = new Set<string>();
 
             // Recursive walk - avoids Depth:infinity PROPFIND which many servers reject
             const walk = async (currentDir: string) => {
-                const items = await client.getDirectoryContents(currentDir) as FileStat[];
+                const current = folderKey(currentDir);
+                if (visited.has(current)) return;
+                visited.add(current);
+                // The answer of one folder is bounded too, see `listDavFolder`.
+                const items = await listDavFolder(client, config.url, currentDir);
 
                 for (const item of items) {
+                    guard.add(item.filename);
                     if (item.type === "directory") {
-                        await walk(item.filename);
+                        if (strictlyBelow(folderKey(item.filename), current)) await walk(item.filename);
                     } else {
                         let relativePath = item.filename;
                         if (prefixPath && relativePath.startsWith(prefixPath)) {

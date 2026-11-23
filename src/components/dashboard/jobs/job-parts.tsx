@@ -1,7 +1,7 @@
 "use client";
 
 import { useFormContext } from "react-hook-form";
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { KeyRound, Lock, ShieldCheck } from "lucide-react";
 import { ChoiceCards } from "@/components/adapter/connection-mode-choice";
 import { SwitchList } from "@/components/adapter/setting-switches";
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -119,8 +119,11 @@ export function BasicsPart({ jobId }: { jobId?: string }) {
     );
 }
 
-/** The key every backup of the job is encrypted with, or none. */
-export function EncryptionPart({ encryptionProfiles }: { encryptionProfiles: EncryptionOption[] }) {
+/**
+ * The key every backup of the job is encrypted with, or none. `strict` names the picked
+ * destinations whose provider takes only encrypted backups, which the save checks too.
+ */
+export function EncryptionPart({ encryptionProfiles, strict = [] }: { encryptionProfiles: EncryptionOption[]; strict?: string[] }) {
     const form = useFormContext<JobFormValues>();
     const encrypted = form.watch("encryptionProfileId") !== NO_ENCRYPTION;
 
@@ -139,6 +142,12 @@ export function EncryptionPart({ encryptionProfiles }: { encryptionProfiles: Enc
                     </FormItem>
                 )}
             />
+            {!encrypted && strict.length > 0 && (
+                <p className="flex gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm">
+                    <Lock className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+                    {strict.join(", ")} {strict.length === 1 ? "takes" : "take"} only encrypted backups. Pick a key, or the job cannot be saved.
+                </p>
+            )}
             <ul className="grid gap-3 text-sm text-muted-foreground">
                 <li className="flex gap-3">
                     <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

@@ -8,14 +8,29 @@
  */
 
 import fs from "fs/promises";
-import { createReadStream } from "fs";
+import path from "path";
 import { Readable } from "stream";
 import { ArchiveByteSource } from "./types";
+import { DamagedBackupError } from "./limits";
+import { createNoFollowReadStream } from "@/lib/server/no-follow";
 
-/** Reads an entire stream into a buffer. */
-export async function readAll(stream: NodeJS.ReadableStream): Promise<Buffer> {
+/**
+ * Reads an entire stream into a buffer.
+ *
+ * @param limit - The most bytes taken. A stream that carries more fails the read with a
+ *   `DamagedBackupError` at that point, so content of a backup never grows the memory past it.
+ */
+export async function readAll(stream: NodeJS.ReadableStream, limit?: number): Promise<Buffer> {
     const chunks: Buffer[] = [];
-    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    let length = 0;
+    for await (const chunk of stream) {
+        length += (chunk as Buffer).length;
+        // Leaving the loop by a throw destroys the stream, so nothing more is read or inflated.
+        if (limit !== undefined && length > limit) {
+            throw new DamagedBackupError(`an entry holds more than the ${limit} bytes it may`);
+        }
+        chunks.push(chunk as Buffer);
+    }
     return Buffer.concat(chunks);
 }
 
@@ -24,14 +39,19 @@ function isEmptyRange(start: number, end: number): boolean {
     return end < start;
 }
 
-/** Byte source over a local file. */
+/**
+ * Byte source over a local file, which has to be a regular file. The archive may be a download of
+ * a storage a customer controls, so a link is never followed, neither by the look at its size nor
+ * by a read, see `downloaded-file.ts`.
+ */
 export async function localFileSource(filePath: string): Promise<ArchiveByteSource> {
-    const stats = await fs.stat(filePath);
+    const stats = await fs.lstat(filePath);
+    if (!stats.isFile()) throw new Error(`The archive ${path.basename(filePath)} is no regular file`);
     return {
         size: stats.size,
         // createReadStream's `end` is inclusive, matching the interface contract.
         read: async (start: number, end: number) =>
-            isEmptyRange(start, end) ? Readable.from([]) : createReadStream(filePath, { start, end }),
+            isEmptyRange(start, end) ? Readable.from([]) : createNoFollowReadStream(filePath, { start, end }),
     };
 }
 

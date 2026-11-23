@@ -8,6 +8,7 @@ const push = vi.fn();
 vi.mock("next/navigation", () => ({
     useRouter: () => ({ push, replace: vi.fn() }),
     useSearchParams: () => search,
+    usePathname: () => "/dashboard/explorer/server",
 }));
 vi.mock("@/lib/auth/client", () => ({
     useSession: () => ({ data: { user: { timezone: "UTC", dateFormat: "yyyy-MM-dd", timeFormat: "HH:mm" } } }),

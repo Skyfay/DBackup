@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
 import { isValidCron } from "@/lib/core/cron";
+import { JOB_FOLDER_NAME, isUnsafeJobFolderName } from "@/lib/core/job-folder";
 import type { JobListItem } from "@/services/jobs/job-list-service";
+import type { ProvidedTerms } from "@/lib/adapters/dto";
 
 /** A connection a job can use, as the page hands it to the form. */
 export interface AdapterOption {
@@ -18,6 +20,10 @@ export interface AdapterOption {
     /** The config without its secrets, for where the connection points. */
     config?: string;
     lastStatus?: string;
+    /** Set when another tenant shares the connection with this one, see src/services/sharing/. */
+    provided?: ProvidedTerms;
+    /** The tenant that shares it, where a list names no more than that, like the templates page. */
+    provider?: string;
 }
 
 export interface EncryptionOption {
@@ -80,7 +86,8 @@ const directorySourceSchema = z.object({
 
 export const jobSchema = z
     .object({
-        name: z.string().trim().min(1, "Give the job a name."),
+        // The same rule the job service checks, so the field says it before a save is refused.
+        name: z.string().trim().min(1, "Give the job a name.").refine((name) => !isUnsafeJobFolderName(name), JOB_FOLDER_NAME),
         enabled: z.boolean(),
         /** Own cron expression, or one that follows a schedule preset. */
         scheduleMode: z.enum(["own", "preset"]),

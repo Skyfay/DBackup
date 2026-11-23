@@ -3,19 +3,25 @@
  * the lab the selected families need, loads their test data and starts DBackup from scratch beside
  * them. Removes the DBackup container again afterwards, the lab keeps running.
  *
+ * The tests reach DBackup at localhost. With the Docker host of the lab on another machine, the
+ * port of localhost is forwarded to it until the run ends.
+ *
  * E2E_NO_BUILD=1 uses an image built already, like CI does. E2E_KEEP=1 leaves DBackup running.
  */
 
 import { DATABASES } from "../../lab/src/catalog";
 import { describeDown, isUp, serviceStates } from "../../lab/src/containers";
-import { compose, type RunResult } from "../../lab/src/docker";
-import { BASE_URL, PORT, lab } from "./environment";
+import { compose, dockerArgs, run, type RunResult } from "../../lab/src/docker";
+import { BASE_URL, PORT, lab, labIsLocal } from "./environment";
+import { forwardToLab } from "./forward";
 import { loadDatasets, selectedServices, startServices } from "./services";
 import { selectedFamilies, uiSelected } from "./targets";
 
 const write = (line: string) => process.stdout.write(`${line}\n`);
 const tail = (result: RunResult) => (result.stderr || result.stdout).trim().split("\n").slice(-15).join("\n");
 const appEnv = { E2E_PORT: String(PORT), E2E_BASE_URL: BASE_URL };
+/** How much of the build cache stays on the lab host after a build. */
+const BUILD_CACHE_CAP = "10GB";
 
 async function waitForHealth(deadline: number): Promise<void> {
     for (;;) {
@@ -46,15 +52,37 @@ async function servicesDown(services: string[]): Promise<Record<string, string>>
 }
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
-    const families = selectedFamilies();
-    const services = selectedServices();
-    const names = [...(uiSelected() ? ["ui"] : []), ...families.map((family) => family.name)];
+    const names = [...(uiSelected() ? ["ui"] : []), ...selectedFamilies().map((family) => family.name)];
     write(`End-to-end tests of ${names.join(", ")} on ${lab.docker.name} (${lab.docker.address})`);
+    // First, so a port that is taken fails the run before the build.
+    const unforward = labIsLocal ? async () => undefined : await forwardToLab(lab.docker.address, PORT);
+    if (!labIsLocal) write(`Forwarding ${BASE_URL} to ${lab.docker.address}:${PORT}`);
+    try {
+        await prepare();
+    } catch (error) {
+        await unforward();
+        throw error;
+    }
+
+    return async () => {
+        await unforward();
+        if (process.env.E2E_KEEP) return;
+        await compose(lab, ["--progress", "quiet", "rm", "--stop", "--force", "app"], { env: appEnv });
+    };
+}
+
+/** Builds the image, starts the services and their data, then DBackup from scratch. */
+async function prepare(): Promise<void> {
+    const services = selectedServices();
 
     if (!process.env.E2E_NO_BUILD) {
         write("Building the image of this checkout, the first build takes a few minutes");
         const built = await compose(lab, ["--progress", "quiet", "build", "app"]);
         if (built.code !== 0) throw new Error(`Building the image failed:\n${tail(built)}`);
+        // Every build leaves layers in the cache of the lab host, which filled its disk once.
+        // The newest stay up to the cap, so the next build is still quick.
+        const trimmed = await run("docker", dockerArgs(lab.docker, ["builder", "prune", "--force", "--max-used-space", BUILD_CACHE_CAP]));
+        if (trimmed.code !== 0) write(`Could not trim the build cache of the lab host: ${tail(trimmed)}`);
     }
 
     write(`Starting ${services.join(", ")}`);
@@ -70,9 +98,4 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const app = await compose(lab, ["--progress", "quiet", "up", "-d", "--force-recreate", "--no-build", "--wait", "app"], { env: appEnv });
     if (app.code !== 0) throw new Error(`DBackup did not come up:\n${tail(app)}`);
     await waitForHealth(Date.now() + 120_000);
-
-    return async () => {
-        if (process.env.E2E_KEEP) return;
-        await compose(lab, ["--progress", "quiet", "rm", "--stop", "--force", "app"], { env: appEnv });
-    };
 }

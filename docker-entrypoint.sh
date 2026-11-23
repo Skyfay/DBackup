@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+# Everything before gosu runs as root, so commands are only looked up in the system folders,
+# which only root can write, and never in a folder the runtime user owns.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
 # ─── Docker Secrets / _FILE resolution ───────────────────────
 # Supports the common _FILE convention used by Docker Swarm secrets.
 # If ENCRYPTION_KEY_FILE or BETTER_AUTH_SECRET_FILE is set, the content
@@ -25,6 +30,11 @@ _resolve_secret() {
 
 _resolve_secret ENCRYPTION_KEY
 _resolve_secret BETTER_AUTH_SECRET
+
+# ─── Encryption key ──────────────────────────────────────────
+# Checked here, before the copy of the database and the migrations, since a migrated database
+# cannot be undone and the app would then refuse to start with the same key anyway.
+sh /usr/local/lib/dbackup/check-encryption-key.sh
 
 # ─── Configurable UID/GID ────────────────────────────────────
 # Defaults match the build-time user (1001:1001).
@@ -61,11 +71,6 @@ mkdir -p "$DATA_DIR/db" "$DATA_DIR/certs"
 
 chown -R "$PUID:$PGID" "$DATA_DIR"
 
-# Only chown /pnpm if ownership doesn't match (avoids slow recursive walk on every start)
-if [ "$(stat -c '%u' /pnpm 2>/dev/null)" != "$PUID" ]; then
-  chown -R "$PUID:$PGID" /pnpm
-fi
-
 # ─── Ensure /tmp is writable ─────────────────────────────────
 # Prisma engine needs /tmp for binary extraction at runtime.
 # Some Docker layer combinations (COPY --link) may reset /tmp permissions.
@@ -73,8 +78,10 @@ chmod 1777 /tmp
 
 # ─── Start application ───────────────────────────────────────
 # A configuration restore waits beside the database until DBackup is down, swap it in first.
-# Then run database migrations, which bring an older restored copy up to date, and exec node
-# as PID 1 for proper signal handling
+# Keep a copy of the database when a migration is pending, since none can be undone. Then run
+# the migrations, which bring an older restored copy up to date, and exec node as PID 1 for
+# proper signal handling
 gosu "$PUID:$PGID" node /app/scripts/apply-pending-restore.js
+gosu "$PUID:$PGID" node /app/scripts/backup-before-migrate.js
 gosu "$PUID:$PGID" prisma migrate deploy
 exec gosu "$PUID:$PGID" node custom-server.js

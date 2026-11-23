@@ -1,6 +1,6 @@
 # What only the end-to-end tests in e2e/ start, under the profile "e2e": DBackup itself, built from
-# this checkout, a customer server without Docker and a second FTP server. They join the Compose
-# project of the lab, so DBackup reaches every server by its name, like a user's container reaches
+# this checkout, a customer server without Docker, a second FTP server and an identity provider for
+# the SSO tests. They join the Compose project of the lab, so DBackup reaches every server by its name, like a user's container reaches
 # the servers it backs up. `pnpm lab:up` never starts them.
 #
 # DBackup declares no volume, so a test run that recreates its container starts from an empty
@@ -17,7 +17,8 @@ services:
     environment:
       ENCRYPTION_KEY: "e2e0000000000000000000000000000000000000000000000000000000000e2e"
       BETTER_AUTH_SECRET: "dbackup-e2e-tests-only-not-a-secret"
-      BETTER_AUTH_URL: ${E2E_BASE_URL:-http://127.0.0.1:3300}
+      # The address the tests open, localhost also with a remote lab host, see e2e/support/forward.ts.
+      BETTER_AUTH_URL: ${E2E_BASE_URL:-http://localhost:3300}
       DISABLE_HTTPS: "true"
       LOG_LEVEL: "info"
       # SQL Server writes its .bak files readable for the group of their folder only, see
@@ -53,3 +54,73 @@ services:
     environment:
       USERS: "lab|lab-password|/ftp/lab"
       ADDRESS: ftp-e2e
+
+  # The identity provider of the SSO tests, with the client and the people of DEX in
+  # lab/src/catalog.ts. DBackup reaches it by its name in the network of the lab, and the browser of
+  # the tests by the same name, which it maps to the Docker host, so both see one issuer. That is why
+  # it listens on the same port inside and outside. It keeps nothing, a restart forgets every session.
+  dex:
+    profiles: ["e2e"]
+    image: ghcr.io/dexidp/dex:v2.46.1
+    restart: unless-stopped
+    command: ["dex", "serve", "/etc/dex/e2e.yaml"]
+    configs:
+      - source: dex
+        target: /etc/dex/e2e.yaml
+    ports: ["5556:5556"]
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5556/dex/.well-known/openid-configuration"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+# Inline, so the file goes in through the remote docker context of the lab too, unlike a bind mount.
+configs:
+  dex:
+    # One redirect URI and one pair of people per attempt of the SSO tests, since a retry in CI runs
+    # them again on the same instance, where the first attempt took its provider ID and emails. The
+    # password of every person is the one of DEX, its bcrypt hash with every $ doubled for Compose.
+    content: |
+      issuer: http://dex:5556/dex
+      storage:
+        type: memory
+      web:
+        http: 0.0.0.0:5556
+      oauth2:
+        skipApprovalScreen: true
+      staticClients:
+        - id: dbackup-e2e
+          name: DBackup e2e
+          secret: dex-client-e2e-only-not-a-secret
+          redirectURIs:
+            - http://localhost:3300/api/auth/sso/callback/dex-0
+            - http://localhost:3300/api/auth/sso/callback/dex-1
+            - http://localhost:3300/api/auth/sso/callback/dex-tenant-0
+            - http://localhost:3300/api/auth/sso/callback/dex-tenant-1
+      enablePasswordDB: true
+      staticPasswords:
+        - email: newcomer-0@sso.e2e.dbackup.test
+          hash: "$$2b$$10$$n3cc1CHKc2bTFBydb2Z9HOkiMuekQ//C07Ge6kS/JbzVcAZrTwbfK"
+          username: newcomer-0
+          userID: e2e-newcomer-0
+        - email: newcomer-1@sso.e2e.dbackup.test
+          hash: "$$2b$$10$$n3cc1CHKc2bTFBydb2Z9HOkiMuekQ//C07Ge6kS/JbzVcAZrTwbfK"
+          username: newcomer-1
+          userID: e2e-newcomer-1
+        - email: member-0@sso.e2e.dbackup.test
+          hash: "$$2b$$10$$n3cc1CHKc2bTFBydb2Z9HOkiMuekQ//C07Ge6kS/JbzVcAZrTwbfK"
+          username: member-0
+          userID: e2e-member-0
+        - email: member-1@sso.e2e.dbackup.test
+          hash: "$$2b$$10$$n3cc1CHKc2bTFBydb2Z9HOkiMuekQ//C07Ge6kS/JbzVcAZrTwbfK"
+          username: member-1
+          userID: e2e-member-1
+        - email: tenant-0@tenant.e2e.dbackup.test
+          hash: "$$2b$$10$$n3cc1CHKc2bTFBydb2Z9HOkiMuekQ//C07Ge6kS/JbzVcAZrTwbfK"
+          username: tenant-0
+          userID: e2e-tenant-0
+        - email: tenant-1@tenant.e2e.dbackup.test
+          hash: "$$2b$$10$$n3cc1CHKc2bTFBydb2Z9HOkiMuekQ//C07Ge6kS/JbzVcAZrTwbfK"
+          username: tenant-1
+          userID: e2e-tenant-1

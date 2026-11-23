@@ -3,6 +3,8 @@
  * up on the side of the provider. The fields themselves come with the page model.
  */
 
+import { OIDC_SCOPES } from "@/lib/auth/oidc-scopes";
+
 export interface AdapterCopy {
     name: string;
     /** One line on its card in the first step of New provider. */
@@ -65,7 +67,7 @@ export const NAMED_ADAPTERS = ["authentik", "authelia", "keycloak", "pocket-id"]
 export const GENERIC_ADAPTER = "generic";
 
 /** What DBackup asks a provider for. */
-export const SSO_SCOPES = "openid profile email";
+export const SSO_SCOPES = OIDC_SCOPES.join(" ");
 
 export function adapterCopy(adapterId: string, fallbackName = adapterId): AdapterCopy {
     return COPY[adapterId] ?? { name: fallbackName, needs: "", setup: COPY.generic.setup };

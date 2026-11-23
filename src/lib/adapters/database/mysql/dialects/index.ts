@@ -28,8 +28,8 @@ export function getDialect(adapterId: string, version?: string): MySQLBaseDialec
             return new MySQLBaseDialect();
         }
 
-        // MySQL 5.7
-        if (lowerV.includes('5.7.')) {
+        // MySQL 5.7, by its start, since MySQL counts by the year from 26 on and a 25.7 or 35.7 is no 5.7.
+        if (/^5\.7(\.|$)/.test(lowerV)) {
             return new MySQL57Dialect();
         }
 

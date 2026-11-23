@@ -29,6 +29,14 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn().mockResolvedValue({ userId: "user-readonly" }),
     checkPermissionWithContext: vi.fn(),
+    // A read-only caller does not see what the tenant shares.
+    hasPermissionWithContext: vi.fn().mockReturnValue(false),
+}));
+
+// The secrets of the own connections are the case here. A connection another tenant shares carries
+// no config at all, so none is listed beside them.
+vi.mock("@/services/sharing/connection-options", () => ({
+    providedItems: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("next/headers", () => ({
@@ -48,12 +56,10 @@ vi.mock("@/lib/core/audit-types", () => ({
     AUDIT_RESOURCES: {},
 }));
 
-vi.mock("@/lib/auth/permissions", () => ({
-    PERMISSIONS: {
-        DESTINATIONS: { READ: "destinations:read", WRITE: "destinations:write" },
-        SOURCES: { VIEW: "sources:view", WRITE: "sources:write" },
-        NOTIFICATIONS: { READ: "notifications:read", WRITE: "notifications:write" },
-    },
+// The real constants: the owner permissions read every group of them and AVAILABLE_PERMISSIONS
+// when they load, so a subset takes the import of the route down.
+vi.mock("@/lib/auth/permissions", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/lib/auth/permissions")>()),
 }));
 
 vi.mock("@/lib/adapters/credential-validation", () => ({
@@ -61,6 +67,8 @@ vi.mock("@/lib/adapters/credential-validation", () => ({
 }));
 
 const mockFindMany = vi.fn();
+// The configuration backup goes through nothing here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
 vi.mock("@/lib/prisma", () => ({
     default: {
         adapterConfig: {
@@ -178,5 +186,12 @@ describe("GET /api/adapters – secret disclosure regression", () => {
         const req = new NextRequest("http://localhost/api/adapters");
         const res = await GET(req);
         expect(res.status).toBe(400);
+    });
+
+    it("returns 400 for a type without a permission of its own, before anything is read", async () => {
+        const req = new NextRequest("http://localhost/api/adapters?type=credentials");
+        const res = await GET(req);
+        expect(res.status).toBe(400);
+        expect(mockFindMany).not.toHaveBeenCalled();
     });
 });

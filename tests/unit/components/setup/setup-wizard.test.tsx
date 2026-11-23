@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import type { AdapterDefinition } from "@/lib/adapters/definitions";
 import type { SavedConnection } from "@/components/adapter/use-connection-form";
 import { SetupWizard } from "@/components/dashboard/setup/setup-wizard";
+import { TenantViewProvider } from "@/components/tenant/tenant-view";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
@@ -55,15 +57,19 @@ const posted = (url: string) => {
     return call ? JSON.parse(String(call[1]?.body ?? "{}")) : undefined;
 };
 
-function renderWizard(rights: { vault?: boolean; notification?: boolean } = {}, keys: { id: string; name: string; detail: string }[] = []) {
+/** The Quick Setup of a platform admin in the home tenant, who may add a Local Filesystem, or of a member there. */
+function renderWizard(rights: { vault?: boolean; notification?: boolean; platformAdmin?: boolean } = {}, keys: { id: string; name: string; detail: string }[] = []) {
+    const view = { tenants: [{ id: HOME_TENANT_ID, name: "Platform" }], activeTenantId: HOME_TENANT_ID, allTenants: false, isPlatformAdmin: rights.platformAdmin ?? true };
     render(
-        <SetupWizard
-            canCreateVault={rights.vault ?? true}
-            canCreateNotification={rights.notification ?? true}
-            canRunJob
-            canOpenVault
-            keys={keys}
-        />
+        <TenantViewProvider value={view}>
+            <SetupWizard
+                canCreateVault={rights.vault ?? true}
+                canCreateNotification={rights.notification ?? true}
+                canRunJob
+                canOpenVault
+                keys={keys}
+            />
+        </TenantViewProvider>
     );
 }
 
@@ -88,6 +94,18 @@ describe("quick setup", () => {
         createEncryptionProfile.mockReset().mockResolvedValue({ success: true, data: { id: "key-1" } });
         global.fetch = mockFetch as unknown as typeof fetch;
         Element.prototype.scrollIntoView = vi.fn();
+    });
+
+    it("offers a Local Filesystem destination to a platform admin alone, since it reaches the server DBackup runs on", async () => {
+        const user = userEvent.setup();
+        renderWizard({ platformAdmin: false });
+
+        await user.click(screen.getByRole("button", { name: /^MySQL/ }));
+        await user.click(await screen.findByRole("button", { name: "Save connection" }));
+
+        expect(openPart("Where should the backups go?")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /^Local Filesystem/ })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /^SFTP/ })).toBeInTheDocument();
     });
 
     it("walks from the database to the finished job, one part under the other", async () => {

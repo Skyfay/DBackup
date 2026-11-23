@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
-    ctx: null as null | { userId: string; permissions: string[] },
+    ctx: null as null | { userId: string; permissions: string[]; authMethod?: string; apiKeyId?: string; tenantId?: string },
     readPublic: vi.fn(),
     read: vi.fn(),
     info: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock("@/lib/auth/access-control", () => ({
         if (!ctx.permissions.includes(permission)) throw new Error(`Missing ${permission}`);
     },
 }));
-vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.audit(...args) } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
 vi.mock("@/services/system/system-settings-service", () => ({ getSignInSettings: () => mocks.look() }));
 vi.mock("@/services/system/login-image-service", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/services/system/login-image-service")>()),
@@ -55,9 +55,24 @@ describe("the routes of the login picture", () => {
         expect(response.status).toBe(200);
         expect(response.headers.get("Content-Type")).toBe("image/webp");
         expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        expect(response.headers.get("Content-Security-Policy")).toBe("sandbox; default-src 'none'");
         // The address changes with the picture, so the browser asks for it once.
         expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
         expect((await publicRoute.GET(new NextRequest("http://localhost/api/login-image"))).headers.get("Cache-Control")).toBe("public, max-age=3600");
+    });
+
+    it("serves no stored type but the four pictures an upload is kept as, also in the preview of the settings", async () => {
+        for (const mimeType of ["image/svg+xml", "text/html"]) {
+            mocks.readPublic.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), mimeType, updatedAt: new Date() });
+            mocks.read.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), mimeType });
+            expect((await publicRoute.GET(new NextRequest("http://localhost/api/login-image"))).status).toBe(404);
+            expect((await settingsRoute.GET()).status).toBe(404);
+        }
+        mocks.read.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), mimeType: "image/png" });
+        const preview = await settingsRoute.GET();
+        expect(preview.headers.get("Content-Type")).toBe("image/png");
+        expect(preview.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        expect(preview.headers.get("Content-Security-Policy")).toBe("sandbox; default-src 'none'");
     });
 
     it("answers 404 while the login page shows the logos", async () => {
@@ -82,7 +97,7 @@ describe("the routes of the login picture", () => {
         const response = await settingsRoute.POST(upload(new File([new Uint8Array([0xff, 0xd8, 0xff])], "alps.jpg")));
 
         expect(response.status).toBe(200);
-        expect(mocks.audit).toHaveBeenCalledWith(mocks.ctx, "UPDATE", "SYSTEM", { area: "Sign-in", changes: [{ field: "Login image", from: "old.png", to: "alps.jpg" }] });
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "SYSTEM", { area: "Sign-in", changes: [{ field: "Login image", from: "old.png", to: "alps.jpg" }] }, undefined, { tenantId: "default", apiKeyId: null });
     });
 
     it("says why a file is refused", async () => {
@@ -103,9 +118,19 @@ describe("the routes of the login picture", () => {
         await settingsRoute.DELETE();
 
         expect(mocks.remove).toHaveBeenCalled();
-        expect(mocks.audit).toHaveBeenCalledWith(mocks.ctx, "UPDATE", "SYSTEM", {
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "SYSTEM", {
             area: "Sign-in",
             changes: [{ field: "Login image", from: "alps.jpg", to: null }, { field: "Login page", from: "Your own image", to: "DBackup logos" }],
-        });
+        }, undefined, { tenantId: "default", apiKeyId: null });
+    });
+
+    it("writes a change through an API key of a customer's tenant into the log of the platform, naming the key", async () => {
+        mocks.ctx = { userId: "u1", permissions: ["settings:write"], authMethod: "apikey", apiKeyId: "k1", tenantId: "acme" };
+        mocks.info.mockResolvedValue({ fileName: "alps.jpg" });
+        mocks.look.mockResolvedValue({ loginLook: "logos" });
+
+        await settingsRoute.DELETE();
+
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "SYSTEM", expect.anything(), undefined, { tenantId: "default", apiKeyId: "k1" });
     });
 });

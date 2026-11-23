@@ -35,7 +35,7 @@ function schemaFor(rules: PasswordRules | null) {
 
 type Values = z.infer<ReturnType<typeof schemaFor>>;
 
-/** The first account of a new DBackup, which becomes its SuperAdmin. */
+/** The first account of a new DBackup, which becomes its platform admin. */
 export function FirstAccountForm({ rules, onBack }: { rules: PasswordRules | null; onBack: () => void }) {
     const router = useRouter();
     const [busy, setBusy] = useState(false);
@@ -114,7 +114,7 @@ export function FirstAccountForm({ rules, onBack }: { rules: PasswordRules | nul
                     />
                     <p className="flex gap-2.5 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
                         <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                        You become the SuperAdmin. Add the others later under Users &amp; Groups, and a passkey in your profile.
+                        You become the platform admin. Add the others later under Users &amp; Groups, and a passkey in your profile.
                     </p>
                     <Button type="submit" tone="create" size="lg" className="w-full" disabled={busy}>
                         {busy ? <Loader2 className="animate-spin" /> : <UserPlus />}

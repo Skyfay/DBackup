@@ -3,11 +3,12 @@
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { userMessage } from "@/lib/logging/user-message";
 import * as certificateService from "@/services/system/certificate-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { auditService } from "@/services/audit-service";
 import { certificateChanges, certificateSnapshot, SETTINGS_AREAS } from "@/services/system/settings-audit";
+import { PLATFORM_LOG } from "@/services/system/settings-save";
 
 const log = logger.child({ action: "certificate" });
 
@@ -43,14 +44,13 @@ export async function uploadCertificate(formData: FormData) {
     await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, {
       area: SETTINGS_AREAS.CERTIFICATE,
       changes: certificateChanges(before, certificateSnapshot(certificateService.getCertificateInfo())),
-    });
+    }, undefined, PLATFORM_LOG);
     return {
       success: true,
       message: "Certificate uploaded successfully. Restart DBackup to apply the new certificate.",
     };
   } catch (error) {
-    log.error("Failed to upload certificate", {}, wrapError(error));
-    return { success: false, error: getErrorMessage(error) };
+    return { success: false, error: userMessage(error, "The certificate could not be saved. The server log has the details.", log, "Failed to upload certificate") };
   }
 }
 
@@ -69,13 +69,12 @@ export async function regenerateCertificate() {
     await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, {
       area: SETTINGS_AREAS.CERTIFICATE,
       changes: certificateChanges(before, certificateSnapshot(certificateService.getCertificateInfo())),
-    });
+    }, undefined, PLATFORM_LOG);
     return {
       success: true,
       message: "Self-signed certificate regenerated. Restart DBackup to apply.",
     };
   } catch (error) {
-    log.error("Failed to regenerate certificate", {}, wrapError(error));
-    return { success: false, error: getErrorMessage(error) };
+    return { success: false, error: userMessage(error, "The certificate could not be regenerated. The server log has the details.", log, "Failed to regenerate certificate") };
   }
 }

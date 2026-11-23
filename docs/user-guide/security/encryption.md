@@ -104,7 +104,7 @@ A key that a job or the config backup still encrypts with cannot be deleted. The
 
 Any other key moves to [Recently deleted](/user-guide/admin/recently-deleted) for 30 days. Its backups cannot be opened while it is there, and a restore opens them again.
 
-With the right to change the settings, tick **Delete it permanently now** for a key that leaked. The dialog then lists the backups that still need the key, and a key that was never in a kit can get its kit right there. After a permanent delete nobody can open those backups without a recovery kit, DBackup neither.
+With the right to change the tenant settings, tick **Delete it permanently now** for a key that leaked. The dialog then lists the backups that still need the key, and a key that was never in a kit can get its kit right there. After a permanent delete nobody can open those backups without a recovery kit, DBackup neither.
 
 ## Using Encryption
 
@@ -214,6 +214,16 @@ If profile ID doesn't match (e.g., after key import):
 1. System tries every key in the Vault
 2. Validates each by opening the index of the archive, which only the right key can do
 3. Uses matching key automatically
+
+### A Plain File in Place of an Encrypted Backup
+
+The `.meta.json` and the archive itself come from the destination, so they cannot be what decides whether a backup has to be encrypted. The run of the job records that in History, along with every destination it reached. A restore, a download and a browse of a backup whose run encrypted it refuse a plain file at that path:
+
+```
+This backup was written encrypted, but the file at the destination is not encrypted. It may have been replaced there, so DBackup does not read it.
+```
+
+The same holds for every archive of an incremental chain: a plain archive in the chain of an encrypted backup is refused. A backup that no run in History wrote, imported or older than its record, is read as before.
 
 ### Manual (Recovery Kit)
 

@@ -32,6 +32,23 @@ function browserHost(kind: HostKind, responses: { dbsize?: string; scan?: string
 }
 
 describe.each<HostKind>(["direct", "ssh"])("Redis browser over a %s host", (kind) => {
+    it("hands redis-cli the password in REDISCLI_AUTH on every read, never in its argv", async () => {
+        const envs: Array<Record<string, string | undefined> | undefined> = [];
+        const host = createFakeHost({
+            kind,
+            onExec: (argv, options) => {
+                envs.push(options?.env);
+                return { stdout: commandOf(argv) === "SCAN" ? "0\nuser:1\n" : "string\t-1\n" };
+            },
+        });
+        await getTableData(baseConfig as never, { database: "0", search: "user", searchColumn: "key" } as never, host);
+        await getTableData(baseConfig as never, { database: "0" } as never, host);
+
+        expect(host.calls.exec.map(commandOf)).toEqual(expect.arrayContaining(["SCAN", "EVAL", "DBSIZE"]));
+        for (const argv of host.calls.exec) expect(argv.join(" ")).not.toContain("secret");
+        for (const env of envs) expect(env).toEqual({ REDISCLI_AUTH: "secret" });
+    });
+
     describe("getTables()", () => {
         it("reports the key count as a single pseudo table", async () => {
             const host = browserHost(kind, { dbsize: "42\n" });

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import { useSwitchFromLink } from "@/components/tenant/tenant-from-link";
 
 /**
  * Opens the record a link names, like `?open=` from the search in the header, once its list has
@@ -10,10 +11,12 @@ import { useSearchParams } from "next/navigation";
  * not hold, like one deleted since, is skipped.
  *
  * The rows are null or undefined until they loaded, never an empty list in their place, or a link
- * that arrives before them is dropped.
+ * that arrives before them is dropped. A link that names another tenant, like one of a notification,
+ * waits until the dashboard switched into it, see `TenantFromLink`.
  */
 export function useOpenFromLink<Row extends { id: string }>(rows: readonly Row[] | null | undefined, open: (row: Row) => void, param = "open") {
     const wanted = useSearchParams().get(param);
+    const switching = useSwitchFromLink();
     const openRef = useRef(open);
     const handled = useRef<string | null>(null);
 
@@ -26,7 +29,7 @@ export function useOpenFromLink<Row extends { id: string }>(rows: readonly Row[]
             handled.current = null;
             return;
         }
-        if (!rows || handled.current === wanted) return;
+        if (!rows || switching || handled.current === wanted) return;
         handled.current = wanted;
         const row = rows.find((entry) => entry.id === wanted);
         if (row) openRef.current(row);
@@ -35,5 +38,5 @@ export function useOpenFromLink<Row extends { id: string }>(rows: readonly Row[]
         rest.delete(param);
         const query = rest.toString();
         window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
-    }, [wanted, rows, param]);
+    }, [wanted, rows, param, switching]);
 }

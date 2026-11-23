@@ -1,13 +1,20 @@
 import type { Prisma } from "@prisma/client";
+import { WHOLE_JOB_RUNS, isSingleDatabaseRun } from "./whole-runs";
+import { LEADING_RUNS } from "@/lib/execution/follower-runs";
+import { CUSTOMER_BACKUP_STAGES, backupOf } from "@/services/tenant/shared-backup-runs";
 import prisma from "@/lib/prisma";
+import { providedTo } from "@/services/sharing/provided";
 import { buildChecks, type CheckTarget } from "./run-checks";
 import { dumpRecordsOf, dumpSizes } from "./run-dumps";
 import { markSteps, buildProblems, type ProblemTargets } from "./run-problems";
 import { databasesOf, isRunStatus, liveOf, parseMetadata, runRow, starterOf, uploadsOf } from "./run-row";
 import { buildSteps, median, parseLog, usualSteps } from "./run-steps";
 import { buildSummary } from "./run-summary";
+import { buildRestoreSummary } from "./restore-summary";
+import { restoreRecordOf } from "./restore-rows";
 import { RUN_SELECT, usualOf } from "./run-list-service";
-import type { RunDetail, RunNeighbour, RunNotification, RunUpload } from "./run-types";
+import type { RunDetail, RunNeighbour, RunNotification, RunRestoreRead, RunUpload } from "./run-types";
+import type { RestoreRecord } from "@/services/restore/restore-record";
 
 /**
  * The page of one run: its steps with their lines and usual times, what to look at, its copies,
@@ -93,17 +100,24 @@ async function encryptionOf(archive: unknown): Promise<string | true | null> {
     return profile?.name ?? true;
 }
 
-/** The destinations an integrity check or a verification went through, with whether each checks a copy by itself. */
-async function checkTargets(metadata: { plan?: unknown; copies?: unknown }): Promise<Map<string, CheckTarget>> {
+/**
+ * The destinations an integrity check or a verification went through, with whether each checks a
+ * copy by itself. A destination another tenant shares with the tenant of the run is no row of that
+ * tenant, so it is asked for by its id, and only its name and adapter come back.
+ */
+async function checkTargets(metadata: { plan?: unknown; copies?: unknown }, tenantId: string): Promise<Map<string, CheckTarget>> {
     const ids = new Set<string>();
     for (const copy of Array.isArray(metadata.copies) ? metadata.copies : []) if (typeof copy?.destinationId === "string") ids.add(copy.destinationId);
     const planned = (metadata.plan as { destinations?: { id?: unknown }[] } | undefined)?.destinations ?? [];
     for (const entry of planned) if (typeof entry?.id === "string") ids.add(entry.id);
     if (ids.size === 0) return new Map();
-    const [configs, { checksNatively }] = await Promise.all([
+    const [own, { checksNatively }] = await Promise.all([
         prisma.adapterConfig.findMany({ where: { id: { in: [...ids] } }, select: { id: true, name: true, adapterId: true } }),
         import("@/services/storage/verification-service"),
     ]);
+    const found = new Set(own.map((config) => config.id));
+    const provided = await providedTo(tenantId, { kind: "destination", ids: [...ids].filter((configId) => !found.has(configId)) });
+    const configs = [...own, ...provided.map(({ id, name, adapterId }) => ({ id, name, adapterId }))];
     return new Map(configs.map((config) => [config.id, { name: config.name, adapterId: config.adapterId, native: checksNatively(config.adapterId) }]));
 }
 
@@ -117,20 +131,42 @@ function appliesTo(step: string, job: { source: unknown; sources: unknown[] } | 
     return true;
 }
 
-/** The runs a run is compared with: those of its job, or for a system task those of the same task. */
-function scopeOf(record: { jobId: string | null; type: string }): Prisma.ExecutionWhereInput | null {
+/**
+ * The runs a run is compared with: those of its job, or for a system task those of the same task in
+ * the same tenant, since All tenants reads the checks of every tenant.
+ */
+export function scopeOf(record: { jobId: string | null; type: string; tenantId: string }): Prisma.ExecutionWhereInput | null {
     if (record.jobId) return { jobId: record.jobId };
-    return record.type === "IntegrityCheck" || record.type === "Verification" ? { type: record.type, jobId: null } : null;
+    return record.type === "IntegrityCheck" || record.type === "Verification" ? { type: record.type, jobId: null, tenantId: record.tenantId } : null;
 }
 
 async function usualStepsOf(scope: Prisma.ExecutionWhereInput, exclude: string) {
     const runs = await prisma.execution.findMany({
-        where: { ...scope, status: "Success", id: { not: exclude }, logsPurgedAt: null },
+        where: { ...scope, status: "Success", id: { not: exclude }, logsPurgedAt: null, AND: [WHOLE_JOB_RUNS] },
         orderBy: { startedAt: "desc" },
         take: USUAL_RUNS,
         select: { logs: true },
     });
     return usualSteps(runs.map((run) => parseLog(run.logs)));
+}
+
+/**
+ * What a restore read, with the size of the archive when the backup run that wrote it is still
+ * known in the tenant of the run. A customer's run names no archive, so it never gets one.
+ */
+async function restoreRead(record: RestoreRecord | null): Promise<RunRestoreRead | null> {
+    if (!record || record.ranged === null) return null;
+    const backup = record.archive
+        ? await prisma.execution.findFirst({ where: { type: "Backup", path: record.archive }, orderBy: { startedAt: "desc" }, select: { size: true } })
+        : null;
+    return { bytes: record.read, total: backup?.size ? Number(backup.size) : null, ranged: record.ranged };
+}
+
+/** The tenant a provider's run of a customer's restore restores for, and whether a run is the customer's own. */
+function restoreParties(metadata: Record<string, unknown>): { customer: string | null; shared: boolean } {
+    const of = metadata.restoreOf as { database?: unknown; customer?: unknown } | undefined;
+    if (!of || typeof of.database !== "string") return { customer: null, shared: false };
+    return typeof of.customer === "string" ? { customer: of.customer, shared: false } : { customer: null, shared: true };
 }
 
 export async function getRunDetail(id: string, now = Date.now()): Promise<RunDetail | null> {
@@ -145,18 +181,22 @@ export async function getRunDetail(id: string, now = Date.now()): Promise<RunDet
     const jobId = record.jobId;
     const scope = scopeOf(record);
     const isCheck = record.type === "IntegrityCheck" || record.type === "Verification";
+    const restored = record.type === "Restore" ? restoreRecordOf(extra.restore) : null;
+    // A run of single databases is compared with nothing, the usual times are those of the whole job.
+    const single = isSingleDatabaseRun(record.metadata);
 
-    const [notificationRows, usual, usualMs, recent, previous, next, queue, sizes, encryption, checkTargetMap] = await Promise.all([
+    const [notificationRows, usual, usualMs, recent, previous, next, queue, sizes, encryption, checkTargetMap, read] = await Promise.all([
         prisma.notificationLog.findMany({ where: { executionId: id }, orderBy: { sentAt: "asc" }, select: { id: true, channelId: true, channelName: true, adapterId: true, status: true, error: true, title: true, sentAt: true } }),
-        scope ? usualStepsOf(scope, id) : Promise.resolve(new Map<string, number>()),
-        jobId && record.type === "Backup" ? usualOf(jobId) : Promise.resolve(null),
+        scope && !single ? usualStepsOf(scope, id) : Promise.resolve(new Map<string, number>()),
+        jobId && record.type === "Backup" && !single ? usualOf(jobId) : Promise.resolve(null),
         scope ? prisma.execution.findMany({ where: scope, orderBy: { startedAt: "desc" }, take: RECENT, select: NEIGHBOUR_SELECT }) : Promise.resolve([]),
         scope ? prisma.execution.findFirst({ where: { ...scope, startedAt: { lt: record.startedAt } }, orderBy: { startedAt: "desc" }, select: NEIGHBOUR_SELECT }) : Promise.resolve(null),
         scope ? prisma.execution.findFirst({ where: { ...scope, startedAt: { gt: record.startedAt } }, orderBy: { startedAt: "asc" }, select: NEIGHBOUR_SELECT }) : Promise.resolve(null),
-        status === "Running" ? prisma.execution.findMany({ where: { status: "Pending" }, orderBy: { startedAt: "asc" }, select: RUN_SELECT }) : Promise.resolve([]),
+        status === "Running" ? prisma.execution.findMany({ where: { status: "Pending", AND: [LEADING_RUNS] }, orderBy: { startedAt: "asc" }, select: RUN_SELECT }) : Promise.resolve([]),
         jobId && record.type === "Backup" ? previousDumps(jobId, record.startedAt) : Promise.resolve(new Map<string, number>()),
         encryptionOf(extra.archive),
-        isCheck ? checkTargets(extra) : Promise.resolve(new Map<string, CheckTarget>()),
+        isCheck ? checkTargets(extra, record.tenantId) : Promise.resolve(new Map<string, CheckTarget>()),
+        restoreRead(restored),
     ]);
 
     const notifications: RunNotification[] = notificationRows.map((row) => ({
@@ -172,8 +212,10 @@ export async function getRunDetail(id: string, now = Date.now()): Promise<RunDet
         sourceId: record.job?.source?.id ?? null,
     };
     // A removed log leaves no steps to tell, which is not the same as steps that were skipped.
+    // A customer's run of a backup of a shared database tells the steps it has, not those of the job.
+    const followed = record.type === "Backup" && !record.job && backupOf(extra) !== null;
     const steps = record.logsPurgedAt ? [] : buildSteps(entries, { type: record.type, status, currentStage: liveOf(metadata).stage, now, usual })
-        .filter((step) => step.lines.length > 0 || appliesTo(step.name, record.job, entries));
+        .filter((step) => step.lines.length > 0 || (followed ? CUSTOMER_BACKUP_STAGES.includes(step.name) : appliesTo(step.name, record.job, entries)));
     const { problems, lineProblems } = buildProblems(entries, notifications, targets);
 
     let uploads = live ? uploadsOf(metadata) : finishedUploads(metadata, record.size === null ? null : Number(record.size));
@@ -186,7 +228,16 @@ export async function getRunDetail(id: string, now = Date.now()): Promise<RunDet
     const marked = markSteps(steps, lineProblems, problems);
     const size = record.size === null ? null : Number(record.size);
     const checks = buildChecks(record.type, extra, checkTargetMap, live);
-    const summary = checks ? [] : buildSummary({
+    const target = extra.target as { name?: unknown; adapterId?: unknown } | undefined;
+    const summary = checks ? [] : record.type === "Restore" ? buildRestoreSummary({
+        entries,
+        steps: marked,
+        record: restored,
+        target: typeof target?.name === "string" ? { name: target.name, adapterId: typeof target.adapterId === "string" ? target.adapterId : null } : null,
+        ...restoreParties(extra),
+        live,
+        now,
+    }) : buildSummary({
         entries,
         steps: marked,
         records: dumpRecordsOf(extra.dumps),
@@ -221,6 +272,7 @@ export async function getRunDetail(id: string, now = Date.now()): Promise<RunDet
         problems,
         uploads,
         checks,
+        restore: read,
         notifications,
         recent: recent.map((entry) => neighbour(entry)!),
         previous: neighbour(previous),

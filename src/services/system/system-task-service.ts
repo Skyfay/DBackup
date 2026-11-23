@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { runAsSystem } from "@/lib/tenant/context";
 import { registerAdapters } from "@/lib/adapters";
 import { isValidCron } from "@/lib/core/cron";
 import { healthCheckService } from "./healthcheck-service";
@@ -72,8 +73,9 @@ export class SystemTaskService {
             return (await readSetting(CHECK_FOR_UPDATES)) !== "false";
         }
         if (taskId === SYSTEM_TASKS.STUCK_EXECUTION_CHECK) {
-            const { STUCK_TIMEOUT_SETTING } = await stuckTimeout();
-            return (await readSetting(STUCK_TIMEOUT_SETTING)) !== "0";
+            // On while it ends either kind of run: one that stopped reporting, or one that runs too long.
+            const { STUCK_TIMEOUT_SETTING, MAX_RUN_SETTING } = await stuckTimeout();
+            return (await readSetting(STUCK_TIMEOUT_SETTING)) !== "0" || (await readSetting(MAX_RUN_SETTING)) !== "0";
         }
 
         const value = await readSetting(`task.${taskId}.enabled`);
@@ -93,11 +95,17 @@ export class SystemTaskService {
             return;
         }
         if (taskId === SYSTEM_TASKS.STUCK_EXECUTION_CHECK) {
-            // Off is the timeout Never. On again brings back the default, unless a time is set.
-            const { STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES } = await stuckTimeout();
+            // Off is the timeout Never and the longest run No limit. On again brings back the defaults, unless a time is set.
+            const { STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES, MAX_RUN_SETTING, DEFAULT_MAX_RUN_MINUTES } = await stuckTimeout();
             const current = await readSetting(STUCK_TIMEOUT_SETTING);
-            if (!enabled) await writeSetting(STUCK_TIMEOUT_SETTING, "0");
-            else if (current === "0") await writeSetting(STUCK_TIMEOUT_SETTING, String(DEFAULT_STUCK_TIMEOUT_MINUTES));
+            const longest = await readSetting(MAX_RUN_SETTING);
+            if (!enabled) {
+                await writeSetting(STUCK_TIMEOUT_SETTING, "0");
+                await writeSetting(MAX_RUN_SETTING, "0");
+            } else if (current === "0" && longest === "0") {
+                await writeSetting(STUCK_TIMEOUT_SETTING, String(DEFAULT_STUCK_TIMEOUT_MINUTES));
+                await writeSetting(MAX_RUN_SETTING, String(DEFAULT_MAX_RUN_MINUTES));
+            }
             return;
         }
 
@@ -202,7 +210,12 @@ export class SystemTaskService {
         }
     }
 
-    async runTask(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
+    /** Runs a system task for every tenant, also when someone starts it from a page of one. */
+    runTask(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
+        return runAsSystem(() => this.runForAllTenants(taskId, triggerType, triggerLabel));
+    }
+
+    private async runForAllTenants(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
         // VACUUM or a database download holds Prisma's only connection. A task started now
         // would just queue behind it until the pool timeout fails it.
         if (isDatabaseMaintenanceActive()) {
@@ -210,10 +223,23 @@ export class SystemTaskService {
             return undefined;
         }
 
+        // A start while the task still runs is skipped, like the health check of every minute that
+        // takes longer than a minute on a busy instance. Taken before the first await, so two starts
+        // at once cannot both pass.
+        if (running.has(taskId)) {
+            log.info("Skipping system task, it is still running", { taskId });
+            return undefined;
+        }
+        running.add(taskId);
+
         log.info("Running system task", { taskId });
         const startedAt = new Date();
-        await this.setTaskLastRunAt(taskId, startedAt);
-        running.add(taskId);
+        try {
+            await this.setTaskLastRunAt(taskId, startedAt);
+        } catch (error: unknown) {
+            running.delete(taskId);
+            throw error;
+        }
 
         let outcome: TaskOutcome;
         try {

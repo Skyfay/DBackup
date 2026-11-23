@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { authClient } from "@/lib/auth/client";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { StepDialog } from "./security-dialogs";
+import { SecretField, StepDialog } from "./security-dialogs";
 
 const log = logger.child({ component: "passkeys-section" });
 
@@ -105,19 +105,30 @@ function NameDialog({ open, onOpenChange, title, note, tone, confirm, initial, o
 interface PasskeysSectionProps {
     userId: string;
     canManage: boolean;
+    /** The group may turn off the second factor, which deleting the last passkey does while it is one. */
+    canEndFactor: boolean;
     /** A passkey counts as the second factor, which ends with the last passkey. */
     passkeyFactor: boolean;
+    /** The account signs in with a password, which deleting a passkey of the second factor asks for. */
+    hasPassword: boolean;
     passkeys: PasskeyRow[] | null;
     reload: () => Promise<PasskeyRow[]>;
     onFactorChanged: () => void;
 }
 
 /** The passkeys of the viewer with Add a passkey, and Rename and Delete on each. */
-export function PasskeysSection({ userId, canManage, passkeyFactor, passkeys, reload, onFactorChanged }: PasskeysSectionProps) {
+export function PasskeysSection({ userId, canManage, canEndFactor, passkeyFactor, hasPassword, passkeys, reload, onFactorChanged }: PasskeysSectionProps) {
     const [adding, setAdding] = useState(false);
     const [renaming, setRenaming] = useState<PasskeyRow | null>(null);
     const [removing, setRemoving] = useState<PasskeyRow | null>(null);
     const [busy, setBusy] = useState(false);
+    const [password, setPassword] = useState("");
+    // The last passkey is the whole second factor while it counts as one, which the group may keep.
+    const keepsLast = passkeyFactor && passkeys?.length === 1 && !canEndFactor;
+    // Deleting it ends the second factor, which asks for the password like turning it off.
+    const endsFactor = passkeyFactor && passkeys?.length === 1;
+    // Every passkey of the second factor goes only with the password, not the last one alone.
+    const asksPassword = passkeyFactor && hasPassword;
 
     const add = async (name: string) => {
         try {
@@ -157,7 +168,7 @@ export function PasskeysSection({ userId, canManage, passkeyFactor, passkeys, re
         if (!removing) return;
         setBusy(true);
         try {
-            const result = await authClient.passkey.deletePasskey({ id: removing.id });
+            const result = await authClient.passkey.deletePasskey({ id: removing.id, ...(asksPassword ? { password } : {}) });
             if (result?.error) {
                 toast.error(result.error.message || "The passkey could not be deleted.");
                 return;
@@ -166,7 +177,7 @@ export function PasskeysSection({ userId, canManage, passkeyFactor, passkeys, re
             const rest = await reload();
             // Without a passkey none can count as the second factor any more.
             if (rest.length === 0 && passkeyFactor) {
-                const toggled = await togglePasskeyTwoFactor(userId, false);
+                const toggled = await togglePasskeyTwoFactor(userId, false, asksPassword ? password : undefined);
                 if (toggled.success) {
                     toast.info("A passkey no longer counts as the second factor, the last one is gone.");
                     onFactorChanged();
@@ -178,6 +189,7 @@ export function PasskeysSection({ userId, canManage, passkeyFactor, passkeys, re
         } finally {
             setBusy(false);
             setRemoving(null);
+            setPassword("");
         }
     };
 
@@ -218,7 +230,7 @@ export function PasskeysSection({ userId, canManage, passkeyFactor, passkeys, re
                                     name={passkey.name || "Unnamed passkey"}
                                     groups={[
                                         { actions: [{ id: "rename", label: "Rename", icon: Pencil, onSelect: () => setRenaming(passkey), tone: "edit" }] },
-                                        { actions: [{ id: "delete", label: "Delete", icon: Trash2, onSelect: () => setRemoving(passkey), tone: "destructive" }] },
+                                        { actions: [{ id: "delete", label: "Delete", icon: Trash2, onSelect: () => setRemoving(passkey), tone: "destructive", ...(keepsLast ? { disabled: true, note: "Your group may not turn off your second factor." } : {}) }] },
                                     ]}
                                 />
                             )}
@@ -231,17 +243,23 @@ export function PasskeysSection({ userId, canManage, passkeyFactor, passkeys, re
             <NameDialog open={renaming !== null} onOpenChange={(open) => !open && setRenaming(null)} title="Rename the passkey" note={renaming?.name || "Unnamed passkey"} tone="edit" confirm="Save" initial={renaming?.name ?? ""} onSave={rename} />
             <ConfirmDialog
                 open={removing !== null}
-                onOpenChange={(open) => !open && setRemoving(null)}
+                onOpenChange={(open) => {
+                    if (open) return;
+                    setRemoving(null);
+                    setPassword("");
+                }}
                 icon={Trash2}
                 destructive
                 title="Delete the passkey?"
                 note="It no longer signs you in"
-                description={passkeyFactor && passkeys?.length === 1 ? "It is your last one, so a passkey no longer counts as the second factor." : undefined}
+                description={endsFactor ? "It is your last one, so a passkey no longer counts as the second factor." : undefined}
                 confirmLabel="Delete passkey"
                 isPending={busy}
+                disabled={asksPassword && !password}
                 onConfirm={() => void remove()}
             >
                 {removing && <DialogItemList items={[{ name: removing.name || "Unnamed passkey", icon: Fingerprint }]} />}
+                {asksPassword && <SecretField label="Your password" value={password} onChange={setPassword} autoFocus />}
             </ConfirmDialog>
         </div>
     );

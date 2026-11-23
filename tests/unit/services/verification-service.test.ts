@@ -1,11 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { BackupMetadata } from '@/lib/core/interfaces';
 
 vi.mock('@/lib/prisma', () => ({
     default: {
         adapterConfig: { findUnique: vi.fn() },
+        // Nobody shares the destination, so its tenant sees it as it is.
+        connectionShare: { count: vi.fn().mockResolvedValue(0) },
     },
 }));
+
+vi.mock('@/services/sharing/provided', () => ({ providedConnection: vi.fn().mockResolvedValue(null) }));
 
 vi.mock('@/lib/core/registry', () => ({
     registry: { get: vi.fn() },
@@ -25,6 +29,12 @@ vi.mock('@/lib/crypto/checksum', () => ({
 
 vi.mock('@/lib/temp-dir', () => ({
     getTempDir: vi.fn().mockReturnValue('/tmp'),
+}));
+
+// The private folder of the temporary folder, see `privateTempDir`.
+vi.mock('@/lib/private-temp-dir', () => ({
+    privateTempPath: vi.fn(async (name: string) => `/tmp/dbackup-private-test/${name}`),
+    PRIVATE_FILE_MODE: 0o600,
 }));
 
 vi.mock('fs/promises', () => {
@@ -50,7 +60,8 @@ vi.mock('@/lib/logging/logger', () => ({
     },
 }));
 
-vi.mock('@/lib/logging/errors', () => ({
+vi.mock('@/lib/logging/errors', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@/lib/logging/errors')>()),
     wrapError: vi.fn((e) => e),
 }));
 
@@ -59,6 +70,12 @@ vi.mock('@/services/storage/storage-service', () => ({
         updateStorageListCacheEntry: vi.fn().mockResolvedValue(undefined),
     },
 }));
+
+// A verified result updates the listing cache through a dynamic import nobody awaits, so each test
+// waits for it, or it loads after the environment is torn down.
+afterEach(async () => {
+    await vi.dynamicImportSettled();
+});
 
 import prisma from '@/lib/prisma';
 import { registry } from '@/lib/core/registry';
@@ -69,8 +86,10 @@ import fsPromises from 'fs/promises';
 function makeAdapterConfig(overrides: Record<string, unknown> = {}) {
     return {
         id: 'config-1',
+        type: 'storage',
         adapterId: 'local',
         name: 'Local Storage',
+        tenantId: 'acme',
         config: '{}',
         primaryCredentialId: null,
         sshCredentialId: null,
@@ -113,12 +132,35 @@ describe('VerificationService', () => {
         vi.mocked(calculateFileChecksum).mockResolvedValue('sha256:abc123');
     });
 
+    it('writes the result of two checks in the same millisecond through two temp files of their own', async () => {
+        (prisma.adapterConfig.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeAdapterConfig());
+        const adapter = makeAdapter({
+            read: vi.fn().mockResolvedValue(JSON.stringify(makeMetadata())),
+            verifyChecksum: vi.fn().mockResolvedValue('passed'),
+        });
+        (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+        const now = vi.spyOn(Date, 'now').mockReturnValue(1_767_000_000_000);
+        try {
+            await Promise.all([
+                verificationService.verifyFile('config-1', 'a.tar', 'manual'),
+                verificationService.verifyFile('config-1', 'b.tar', 'manual'),
+            ]);
+        } finally {
+            now.mockRestore();
+        }
+
+        const written = vi.mocked(fsPromises.writeFile).mock.calls.map((call) => String(call[0]));
+        expect(written).toHaveLength(2);
+        expect(new Set(written).size).toBe(2);
+        expect(adapter.upload.mock.calls.map((call: unknown[]) => call[1])).toEqual(written);
+    });
+
     it('throws when adapter config is not found', async () => {
         (prisma.adapterConfig.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
         await expect(
             verificationService.verifyFile('missing-id', 'backup.sql', 'manual')
-        ).rejects.toThrow('Storage configuration not found');
+        ).rejects.toThrow('Storage adapter not found: missing-id');
     });
 
     it('throws when adapter is not in registry', async () => {
@@ -127,7 +169,7 @@ describe('VerificationService', () => {
 
         await expect(
             verificationService.verifyFile('config-1', 'backup.sql', 'manual')
-        ).rejects.toThrow("Adapter 'local' not found");
+        ).rejects.toThrow('Storage adapter implementation not found: local');
     });
 
     it('returns no_metadata when adapter.read returns null and download returns false', async () => {
@@ -331,6 +373,22 @@ describe('VerificationService', () => {
             'backup.sql.meta.json',
             expect.stringContaining('/tmp')
         );
+    });
+
+    // An upload like rsync -a carries the mode of the file, so the sidecar keeps the mode the backup
+    // run gave it on the destination, the private folder keeps it from other users here.
+    it('writes the sidecar it uploads with the default mode, not 0600', async () => {
+        (prisma.adapterConfig.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeAdapterConfig());
+        (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(makeAdapter({
+            read: vi.fn().mockResolvedValue(JSON.stringify(makeMetadata())),
+            verifyChecksum: vi.fn().mockResolvedValue('passed'),
+        }));
+
+        await verificationService.verifyFile('config-1', 'backup.sql', 'manual');
+
+        const [[file, , options]] = vi.mocked(fsPromises.writeFile).mock.calls;
+        expect(String(file)).toContain('/tmp/dbackup-private-test/meta-verify-');
+        expect(options).toEqual({ flag: 'wx' });
     });
 
     it('calls adapter.upload to persist verification result after native check', async () => {

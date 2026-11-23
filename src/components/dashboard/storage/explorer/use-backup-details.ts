@@ -32,7 +32,9 @@ export function useBackupDetails({ runs, at, jobsByKey, destinationsById }: Back
     const [details, setDetails] = useState<{ open: boolean; key: string } | null>(null);
     const onClosedRef = useRef<(() => void) | null>(null);
     const run = details && runs ? runs.find((entry) => runKey(entry) === details.key) ?? null : null;
-    const execution = useExplorerData<RunExecution | null>(run ? `/api/storage/explorer/execution?path=${encodeURIComponent(run.path)}` : null);
+    // In All tenants two tenants can each have a backup at the same path, so the run names its tenant.
+    const tenant = run?.tenantId ? `&tenant=${encodeURIComponent(run.tenantId)}` : "";
+    const execution = useExplorerData<RunExecution | null>(run ? `/api/storage/explorer/execution?path=${encodeURIComponent(run.path)}${tenant}` : null);
 
     const data = useMemo<BackupDetailsData | null>(() => {
         if (!run || !runs) return null;

@@ -3,6 +3,7 @@ import type { ExecutionHost } from "@/lib/transport";
 import type { AzureSQLConfig } from "@/lib/adapters/definitions";
 import { AdapterError } from "@/lib/logging/errors";
 import { buildConnectionString, describeConnection } from "./connection-string";
+import { pinnedServer } from "./pinned-server";
 import type { BacpacExporter, ExporterLog } from "./types";
 
 /**
@@ -17,7 +18,8 @@ import type { BacpacExporter, ExporterLog } from "./types";
  * The exception holds because of why the rule exists: `SshHost` renders env into
  * an `export` prefix so secrets stay out of the *remote* process table. This
  * adapter has no SSH mode at all, by construction - the schema carries no
- * `connectionMode`, so `standardTransport` always returns a DirectHost. The argv
+ * `connectionMode`, and the `transport` resolver of the adapter answers a DirectHost
+ * whatever a stored config holds beside its schema. The argv
  * array therefore never touches a shell, and the exposure is the process table of
  * the very container that already holds the password in memory.
  *
@@ -125,6 +127,9 @@ export const sqlpackageExporter: BacpacExporter = {
     async exportDatabase(config, dbName, destPath, host, log) {
         const binary = await host.which(BINARY);
 
+        // The address SqlPackage dials for a tenant that blocks the local network, checked now.
+        const server = await pinnedServer(config);
+
         log(`Exporting ${describeConnection(config, dbName)}`, "info", "command");
 
         await run(
@@ -133,7 +138,7 @@ export const sqlpackageExporter: BacpacExporter = {
                 "/Action:Export",
                 `/TargetFile:${destPath}`,
                 "/OverwriteFiles:True",
-                `/SourceConnectionString:${buildConnectionString(config, dbName)}`,
+                `/SourceConnectionString:${buildConnectionString(config, dbName, server)}`,
             ],
             host,
             log,
@@ -143,6 +148,9 @@ export const sqlpackageExporter: BacpacExporter = {
 
     async importDatabase(config, srcPath, targetDbName, host, log, onProgress) {
         const binary = await host.which(BINARY);
+
+        // The address SqlPackage dials for a tenant that blocks the local network, checked now.
+        const server = await pinnedServer(config);
 
         log(`Importing into ${describeConnection(config, targetDbName)}`, "info", "command");
 
@@ -162,7 +170,7 @@ export const sqlpackageExporter: BacpacExporter = {
                 binary,
                 "/Action:Import",
                 `/SourceFile:${srcPath}`,
-                `/TargetConnectionString:${buildConnectionString(config, targetDbName)}`,
+                `/TargetConnectionString:${buildConnectionString(config, targetDbName, server)}`,
             ],
             host,
             log,

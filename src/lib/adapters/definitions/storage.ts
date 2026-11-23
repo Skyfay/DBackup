@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { safePath, sshFields } from "./shared";
+import { safePath, sshFields, verifyHostKeyField } from "./shared";
+import { isSmbAddress, isSmbCommandSafe, SMB_ADDRESS_HINT, SMB_FOLDER_HINT, SMB_LOGIN_HINT, smbLoginHasPercent } from "../smb-address";
+import { rsyncUsernameProblem } from "../storage/rsync-user";
+import { isPortOrDefault, plainHostProblem, PLAIN_HOST_HINT, PORT_HINT } from "../command-values";
 
 /**
  * Where a Docker daemon listens unless told otherwise.
@@ -88,16 +91,20 @@ export const SFTPSchema = z.object({
     password: z.string().optional().describe("Password"),
     privateKey: z.string().optional().describe("Private Key (PEM format, optional)"),
     passphrase: z.string().optional().describe("Passphrase for Private Key (optional)"),
+    verifyHostKey: verifyHostKeyField,
     pathPrefix: z.string().optional().describe("Remote destination folder"),
 });
 
 export const SMBSchema = z.object({
-    address: z.string().min(1, "Share address is required (e.g. //server/share)"),
-    username: z.string().default("guest").describe("Username (default: guest)"),
+    // Only the forms smbclient reads, see `smb-address.ts`.
+    address: z.string().min(1, "Share address is required (e.g. //server/share)").refine(isSmbAddress, SMB_ADDRESS_HINT),
+    // smbclient and rpcclient read a % in the login as the start of a password, see `smb-address.ts`.
+    username: z.string().refine((value) => !smbLoginHasPercent(value), SMB_LOGIN_HINT).default("guest").describe("Username (default: guest)"),
     password: z.string().optional().describe("Password"),
-    domain: z.string().optional().describe("Workgroup or domain name"),
+    domain: z.string().refine((value) => !smbLoginHasPercent(value), SMB_LOGIN_HINT).optional().describe("Workgroup or domain name"),
     maxProtocol: z.enum(["SMB3", "SMB2", "NT1"]).default("SMB3").describe("Maximum SMB protocol version"),
-    pathPrefix: z.string().optional().describe("Remote destination folder"),
+    // smbclient reads a semicolon, a double quote or a control character as part of its command, see `smb-address.ts`.
+    pathPrefix: z.string().optional().refine((value) => value === undefined || isSmbCommandSafe(value), SMB_FOLDER_HINT).describe("Remote destination folder"),
     // Directory sources only, and only accepted once the server has been probed - see the
     // check-snapshot route. Snapshotting a backup destination gains nothing.
     useVss: z.boolean().default(false).describe("Read from a VSS shadow copy instead of the live share"),
@@ -116,17 +123,27 @@ export const FTPSchema = z.object({
     username: z.string().default("anonymous").describe("Username (default: anonymous)"),
     password: z.string().optional().describe("Password"),
     tls: z.boolean().default(false).describe("Enable TLS (FTPS)"),
+    // Named like the switch of SQL Server. A connection saved before it has none and keeps accepting
+    // every certificate, see `later-switches.ts`.
+    trustServerCertificate: z.boolean().default(false).describe("Trust self-signed certificates (FTPS)"),
     pathPrefix: z.string().optional().describe("Remote destination folder"),
 });
 
 export const RsyncSchema = z.object({
-    host: z.string().min(1, "Host is required"),
-    port: z.coerce.number().default(22).describe("SSH port"),
-    username: z.string().min(1, "Username is required"),
+    // rsync and ssh read the host out of `user@host:path` and the port out of the `-e` command they
+    // split into words, see `command-values.ts`.
+    host: z.string().min(1, "Host is required").refine((value) => value === "" || plainHostProblem(value) === null, PLAIN_HOST_HINT),
+    port: z.coerce.number().refine(isPortOrDefault, PORT_HINT).default(22).describe("SSH port"),
+    // A plain login name, see `rsync-user.ts`.
+    username: z.string().min(1, "Username is required").superRefine((value, ctx) => {
+        const problem = value === "" ? null : rsyncUsernameProblem(value);
+        if (problem) ctx.addIssue({ code: "custom", message: problem });
+    }),
     authType: z.enum(["password", "privateKey", "agent"]).default("password").describe("Authentication Method"),
     password: z.string().optional().describe("Password"),
     privateKey: z.string().optional().describe("Private Key (PEM format, optional)"),
     passphrase: z.string().optional().describe("Passphrase for Private Key (optional)"),
+    verifyHostKey: verifyHostKeyField,
     pathPrefix: safePath("Remote destination path").describe("Remote destination folder (e.g. /backups)"),
     options: z.string().optional().describe("Additional rsync options"),
 });
@@ -166,5 +183,3 @@ export type RsyncConfig = z.infer<typeof RsyncSchema>;
 export type GoogleDriveConfig = z.infer<typeof GoogleDriveSchema>;
 export type DropboxConfig = z.infer<typeof DropboxSchema>;
 export type OneDriveConfig = z.infer<typeof OneDriveSchema>;
-
-export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig | WebDAVConfig | FTPConfig | RsyncConfig | GoogleDriveConfig | DropboxConfig | OneDriveConfig;

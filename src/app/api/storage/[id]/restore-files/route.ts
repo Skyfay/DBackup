@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { Readable } from "stream";
 import { z } from "zod";
+import { backupPathIssue } from "@/lib/server/backup-path-schema";
 import { registerAdapters } from "@/lib/adapters";
 import { getAuthContext, checkPermissionWithContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -12,22 +14,38 @@ import { planFileRestore, restoreFilesToStorage, FileRestoreInput } from "@/serv
 import { openArchiveDownload, planArchiveDownload, type ArchiveDownload } from "@/services/restore/archive-download";
 import { generateSelectionDownloadToken, consumeSelectionDownloadToken } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
+import { permissionRefusal, serviceRefusal } from "@/lib/server/permission-refusal";
+import { configBackupRefusal } from "@/lib/server/config-backup-guard";
+import { configBackupTargetRefusal, configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
+import { runAsTenant } from "@/lib/tenant/context";
+import { assertRestoreFolder } from "@/lib/archive/remote-paths";
 import { attachmentDisposition } from "@/lib/server/content-disposition";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { PermissionError, wrapError } from "@/lib/logging/errors";
 
 registerAdapters();
 
 const log = logger.child({ route: "storage/restore-files" });
 
+/** Whether a folder stays inside its connection, see `assertRestoreFolder`. */
+function staysInside(basePath: string): boolean {
+    try {
+        assertRestoreFolder(basePath);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 const TargetSchema = z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("download") }),
     z.object({ kind: z.literal("origin") }),
-    z.object({ kind: z.literal("storage"), configId: z.string().min(1), basePath: z.string().min(1) }),
+    // A folder that leaves the connection, by `..` or a part a storage reads as one, see `cleanPath`.
+    z.object({ kind: z.literal("storage"), configId: z.string().min(1), basePath: z.string().min(1).refine(staysInside, "The target folder leaves its connection.") }),
 ]);
 
 const RestoreFilesSchema = z.object({
-    file: z.string().min(1).refine((v) => !v.includes("..") && !v.startsWith("/"), "Invalid file path"),
+    file: z.string().min(1).superRefine(backupPathIssue),
     /**
      * Omit together with `databases` to restore the complete snapshot. An entry without paths
      * means that whole source.
@@ -80,7 +98,7 @@ function downloadResponse(download: ArchiveDownload): NextResponse {
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const { id } = await props.params;
 
@@ -103,10 +121,25 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                 target.kind === "download" ? PERMISSIONS.STORAGE.DOWNLOAD : PERMISSIONS.STORAGE.RESTORE
             );
         }
+        const configBackup = await configBackupRefusal(ctx, id, file);
+        if (configBackup) return configBackup;
+        // Files written into the destination of the configuration backup change what it holds.
+        if (target.kind === "storage") {
+            const locked = await configBackupTargetResponse(ctx, { connectionIds: [target.configId] });
+            if (locked) return locked;
+        }
 
         const input: FileRestoreInput = {
             storageConfigId: id, file, selections, databases, excludePatterns, target,
             ...(profileIdOverride ? { keyOverride: { profileId: profileIdOverride } } : {}),
+            // The same for the origin, whose connections the archive names: a directory source of
+            // a job may be the destination of the configuration backup.
+            checkTargets: async (connectionIds) => {
+                const message = await configBackupTargetRefusal(ctx, { connectionIds });
+                if (message) throw new PermissionError("platform admin", { message });
+            },
+            // Docker volumes and the files of the configuration backup depend on who restores.
+            caller: ctx,
         };
 
         if (dryRun) {
@@ -119,8 +152,11 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             // chain, fails now - as a message the user can read - instead of halfway into a
             // download the browser has already started writing to disk.
             const { fileName, contentType, ...plan } = await planArchiveDownload(input);
+            // The tenant goes with it, since the browser collects it with a request of its own.
             const token = generateSelectionDownloadToken({
                 storageId: id, file, userId: ctx.userId, fileName, contentType,
+                ...(ctx.tenantId ? { tenantId: ctx.tenantId } : {}),
+                ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
                 selections, databases, excludePatterns, profileIdOverride,
             });
 
@@ -154,11 +190,16 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                 : `Restored ${result.restored} file(s), ${result.failed.length} failed`,
         });
     } catch (e: unknown) {
+        const refused = permissionRefusal(e);
+        if (refused) return refused;
         const keyRequired = keyRequiredResponse(e);
         if (keyRequired) return keyRequired;
 
+        // A selection that matches nothing or a source that is gone says so, written for the user.
+        const refusal = serviceRefusal(e);
+        if (refusal) return refusal;
         log.error("File restore failed", { configId: id }, wrapError(e));
-        return NextResponse.json({ success: false, error: getErrorMessage(e) }, { status: 500 });
+        return NextResponse.json({ success: false, error: "The files could not be restored. The log of DBackup has the details." }, { status: 500 });
     }
 }
 
@@ -171,7 +212,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
  */
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const { id } = await props.params;
 
@@ -179,7 +220,9 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.DOWNLOAD);
 
         const token = req.nextUrl.searchParams.get("token");
-        const claim = token ? consumeSelectionDownloadToken(token, ctx.userId) : null;
+        // Only the request of the tenant and the API key that prepared it collects it, so the check
+        // above held for the tenant of the backup.
+        const claim = token ? consumeSelectionDownloadToken(token, ctx.userId, { tenantId: ctx.tenantId, apiKeyId: ctx.apiKeyId }) : null;
         if (!claim || claim.storageId !== id) {
             return NextResponse.json(
                 { success: false, error: "This download link has expired. Start the download again." },
@@ -187,7 +230,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
             );
         }
 
-        const download = await openArchiveDownload({
+        const open = () => openArchiveDownload({
             storageConfigId: id,
             file: claim.file,
             selections: claim.selection.selections,
@@ -198,6 +241,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                 ? { keyOverride: { profileId: claim.selection.profileIdOverride } }
                 : {}),
         });
+        // Served in the tenant it was prepared in, whose view of the destination its path is in.
+        const download = claim.tenantId ? await runAsTenant(claim.tenantId, open) : await open();
 
         await auditService.logFor(
             ctx, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
@@ -213,7 +258,9 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         // The name the prepare step promised, so the browser saves what the user was shown.
         return downloadResponse({ ...download, fileName: claim.selection.fileName });
     } catch (e: unknown) {
+        const refusal = serviceRefusal(e);
+        if (refusal) return refusal;
         log.error("Prepared file download failed", { configId: id }, wrapError(e));
-        return NextResponse.json({ success: false, error: getErrorMessage(e) }, { status: 500 });
+        return NextResponse.json({ success: false, error: "The download could not be prepared. The log of DBackup has the details." }, { status: 500 });
     }
 }

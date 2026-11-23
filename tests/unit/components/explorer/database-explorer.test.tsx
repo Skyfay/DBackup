@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ViewMode } from "@/lib/core/table-preferences";
 import { measureTimeline } from "../storage/explorer-fixtures";
 import { destination, file, job, run, stored } from "../storage/explorer-fixtures";
-import { ago, dbRun, onPhone, overview, serve } from "./database-fixtures";
+import { ago, dbRun, fetchMock, onPhone, overview, serve } from "./database-fixtures";
 
 let search = new URLSearchParams();
 const replace = vi.fn((url: string) => {
@@ -29,6 +29,7 @@ const explorer = (view: ViewMode) => (
     <DatabaseExplorer canOpenBackups canRestore canDownload canDelete={false} canManageVault={false} canViewHistory canExecute initialView={view} />
 );
 const page = (view: ViewMode = "table") => render(explorer(view));
+const listCalls = () => fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.startsWith("/api/databases/list?"));
 
 describe("Database Explorer", () => {
     beforeEach(() => {
@@ -113,6 +114,33 @@ describe("Database Explorer", () => {
 
         expect(await screen.findByText("erp")).toBeInTheDocument();
         expect(screen.queryByText("analytics")).not.toBeInTheDocument();
+    });
+
+    it("asks the server for one page of the biggest first, and again for a search from the first page", async () => {
+        serve();
+        const user = userEvent.setup();
+        page();
+
+        expect(await screen.findByText("shop")).toBeInTheDocument();
+        expect(listCalls()[0]).toBe("/api/databases/list?page=1&pageSize=20&sort=size&order=desc");
+        expect(screen.getByText("Total 4 row(s).")).toBeInTheDocument();
+
+        await user.type(screen.getByRole("textbox", { name: "Search databases" }), "ana");
+        await waitFor(() => expect(screen.queryByText("shop")).not.toBeInTheDocument());
+        expect(listCalls().at(-1)).toContain("search=ana");
+        expect(screen.getByText("analytics")).toBeInTheDocument();
+        expect(screen.getByText("Total 1 row(s).")).toBeInTheDocument();
+        // The numbers above the list still count every database.
+        expect(screen.getByText("of 4")).toBeInTheDocument();
+    });
+
+    it("draws the timeline from every database the filters leave at once, not a page", async () => {
+        measureTimeline();
+        serve();
+        page("timeline");
+
+        await waitFor(() => expect(listCalls().some((url) => url.includes("pageSize=1000"))).toBe(true));
+        expect(listCalls().some((url) => url.includes("pageSize=20"))).toBe(false);
     });
 
     it("leaves out the jobs, the backups and the timeline for a viewer who may not see jobs", async () => {

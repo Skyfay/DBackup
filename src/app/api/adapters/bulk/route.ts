@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { deleteAdapters, getAdapterTypes, updateAdapterFlags, type AdapterFlagChange } from "@/services/adapters/adapter-service";
+import { deleteAdapters, updateAdapterFlags, type AdapterFlagChange } from "@/services/adapters/adapter-service";
+import { getAdapterType } from "@/services/adapters/adapter-list";
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { TRASH_ADMIN_PERMISSION, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { PERMANENT_DELETE_REFUSED } from "@/lib/core/delete-mode";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 import { auditService } from "@/services/audit-service";
+import { changedNames, connectionNames } from "@/services/audit/record-names";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { summarizeBulkResult, BULK_REQUEST_LIMIT } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage, PermissionError } from "@/lib/logging/errors";
+import { PermissionError, wrapError } from "@/lib/logging/errors";
+import { serviceRefusal } from "@/lib/server/permission-refusal";
+import { CONNECTION_GONE_ROW, seesConnectionType } from "@/lib/server/connection-access";
 
 const log = logger.child({ route: "adapters/bulk" });
 
@@ -39,12 +45,12 @@ const BulkAdaptersSchema = z.object({
  *
  * Connections are one table behind three permissions, so the check is per distinct type in
  * the selection rather than one blanket check. Deleting a mixed selection therefore
- * requires every permission it touches.
+ * requires every permission it touches, of the kinds the caller may see, see `seesConnectionType`.
  */
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -58,17 +64,28 @@ export async function POST(req: NextRequest) {
         }
 
         // Resolving the types is a read of nothing but the type column, and it has to come
-        // before the check because the check depends on it.
-        const types = await getAdapterTypes(ids);
-        if (types.length === 0) {
+        // before the check because the check depends on it. A connection of a kind the caller
+        // may not even read counts as missing, so the answer never tells that it exists.
+        const typed = await Promise.all(ids.map(async (id) => ({ id, type: await getAdapterType(id) })));
+        const seen = typed.filter((row): row is { id: string; type: string } => seesConnectionType(ctx, row.type));
+        if (seen.length === 0) {
             return NextResponse.json({ success: false, error: "No matching connections" }, { status: 404 });
         }
-        for (const type of types) {
+        for (const type of new Set(seen.map((row) => row.type))) {
             checkPermissionWithContext(ctx, getWritePermissionForAdapterType(type));
         }
+        const targets = seen.map((row) => row.id);
+        // A selection with the destination of the configuration backup goes only with a platform admin.
+        const locked = await configBackupTargetResponse(ctx, { connectionIds: targets });
+        if (locked) return locked;
 
         const deleting = action === "delete";
-        const result = deleting ? await deleteAdapters(ids, { permanently, by: ctx.userId }) : await updateAdapterFlags(ids, FLAG_ACTIONS[action]);
+        // Read first, a deleted connection is gone afterwards.
+        const names = await connectionNames(targets);
+        const acted = deleting ? await deleteAdapters(targets, { permanently, by: ctx.userId }) : await updateAdapterFlags(targets, FLAG_ACTIONS[action]);
+        // A missing id and one the caller may not see fail with the same row.
+        const gone = typed.filter((row) => !targets.includes(row.id)).map((row) => ({ id: row.id, error: CONNECTION_GONE_ROW }));
+        const result = { ...acted, failed: [...acted.failed, ...gone] };
 
         await auditService.logFor(
             ctx,
@@ -80,6 +97,7 @@ export async function POST(req: NextRequest) {
                 requested: ids.length,
                 succeeded: result.succeeded.length,
                 failed: result.failed.length,
+                names: changedNames(result.succeeded, names),
             }
         );
 
@@ -91,9 +109,11 @@ export async function POST(req: NextRequest) {
         if (error instanceof PermissionError) {
             return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
         }
+        const refused = serviceRefusal(error);
+        if (refused) return refused;
         log.error("Bulk adapter action failed", {}, wrapError(error));
         return NextResponse.json(
-            { success: false, error: getErrorMessage(error) || "Bulk action failed" },
+            { success: false, error: "The bulk action failed. The log of DBackup has the details." },
             { status: 500 }
         );
     }

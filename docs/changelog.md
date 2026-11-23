@@ -2,6 +2,364 @@
 
 All notable changes to DBackup are documented here.
 
+## v5.0.0 - Multi-Tenancy for MSPs, Shared Databases, SSH Host Key Pinning, and PostgreSQL 19
+*Released: Nov 23, 2026*
+
+> 🔒 **Security Update:** This release fixes two vulnerabilities in DBackup's own code ([GHSA-xfw2-4542-cvr6](https://github.com/Skyfay/DBackup/security/advisories/GHSA-xfw2-4542-cvr6), [GHSA-25xf-8j2m-jfvq](https://github.com/Skyfay/DBackup/security/advisories/GHSA-25xf-8j2m-jfvq)). Update as soon as possible.
+
+> ⚠️ **Before updating:** Most installations update without doing anything. [Updating to 5.0](https://docs.dbackup.app/user-guide/updating-to-5) names in one table the setups that need a look, like a reverse proxy, SSH connections or email with STARTTLS, and how to go back.
+
+> ⚠️ **Breaking:** Some actions need more rights or a platform admin, and the API answers `viewerPlatformAdmin` instead of `viewerSuperAdmin`. The same page lists every change for groups and API users.
+
+### ✨ Features
+
+- **api**: Tenants with their settings, members and invitations, the sharing of destinations and channels and the rules of a shared server can be managed through the API. An API key of the home tenant may carry the rights on tenants and accounts its owner holds, for the tenants its owner reaches.
+- **api**: GET /api/jobs/list and GET /api/databases/list read the jobs and the databases a page at a time with search, filters and their counts.
+- **PostgreSQL**: Added support for PostgreSQL 19. The image now ships `pg_dump`, `pg_restore` and `psql` from PostgreSQL 19, which also back up and restore every older version from 12 on.
+- **SSH**: DBackup pins the host key of an SSH server on the first connect and refuses a server that presents another one, for SFTP, rsync, databases in SSH mode and Docker Volumes over SSH. Each connection shows the pinned key and has a switch to turn the check off.
+- **SSO**: A sign-in provider can belong to a tenant. It is reached by the email domain instead of a button, and the people it adds join that tenant.
+- **tenants**: One instance serves several tenants, each with its own connections, jobs, backups, keys, templates, API keys and audit log. People work in a tenant through a group, and the head of the sidebar switches between the tenants someone may open.
+- **tenants**: Platform admins see every tenant at once in All tenants, with the jobs, connections, backups, runs and accounts of all of them. A record opens in its tenant to be changed.
+- **tenants**: Every tenant has its own groups, starting with Admin, and its admins manage them.
+- **tenants**: With more than one tenant the section Platform holds the tenants, every account and the settings of the instance. Administration holds the open tenant, with its own settings for its name, logo and notifications.
+- **tenants**: Platform groups give the people of the MSP rights on the platform and rights in all tenants or selected ones, on top of their own groups. Platform admin is the built-in platform group with every right.
+- **tenants**: A tenant admin adds people with an invitation link that works once, for an existing account or a new one.
+- **tenants**: Single databases of a shared server can be given to another tenant, by hand, by name patterns or through the API. That tenant finds the database under Connections and its backups in the Backups list, and downloads and restores its own database only.
+- **tenants**: The platform decides which tenants share with customers, the home tenant from the start.
+- **tenants**: A shared database can move to another server and keeps its older backups for its tenant. When the connection of a shared server is deleted, its tenants keep downloading their backups.
+- **tenants**: The platform makes a group once for all or chosen tenants, from presets like Client, which their admins give to people and only the platform changes. A new tenant starts with Admin and every group for all tenants.
+- **tenants**: The tenant of a shared database can start a backup of it alone, as often a day as the platform allows that tenant or a database or rule sets on its own. Such a backup shows in its History as a short run that names the database alone.
+- **tenants**: A restore a tenant starts of a shared database also shows in the History and the audit log of the tenant of the server, with the whole log.
+- **tenants**: A tenant of the MSP shares its destinations and notification channels with other tenants, which back up into a folder of their own there or name their own recipients. It sees the space each tenant takes but never its backups, and taking a destination back deletes the backups of that tenant on it.
+- **tenants**: The platform decides for each tenant whether it adds database connections, directory sources, destinations, notification channels and API keys itself. Switching one off stops new ones, and for API keys also the keys the tenant has.
+- **tenants**: Connections that reach the server DBackup runs on, like Local Filesystem, SQLite without SSH or extra options of a dump tool in direct mode, are added and changed by a platform admin of the home tenant only.
+- **tenants**: The platform blocks the connections of a tenant into the local network and allows chosen address ranges. New tenants start blocked, and a connection over SSH counts by its SSH server.
+
+### 🐛 Bug Fixes
+
+- **api**: Changing a job through the API keeps its notification channels when the request leaves them out, and checks the destinations it names. Starting a job that does not exist answers 404 instead of 500.
+- **api**: Routes answer 403 instead of 500 when a permission is missing, cancelling a run among them.
+- **api**: An API key whose stored permissions are broken holds no permission instead of failing its requests with an error.
+- **api**: A disabled or expired API key is answered with 401 and its reason on every route instead of a 500.
+- **audit**: Cancelling a restore, verifying a backup, switching the passkey as second factor, testing a connection, reading the databases of a source and sending a test notification are written to the audit log.
+- **audit**: Turning on the second factor no longer writes a sign-in to the audit log.
+- **auth**: Two accounts made at the same moment on a new instance no longer leave it without a platform admin.
+- **backup**: A dump that stopped growing no longer counts as alive, so the check for stuck runs ends it and frees its slot.
+- **backup**: A configuration backup that the destination did not store fails instead of reporting success.
+- **backup**: A job called config-backups no longer deletes configuration backups with its retention, and such a name is refused. The own retention of the configuration backup counts only its own files.
+- **backup**: A configuration backup whose destination settings cannot be read fails instead of uploading with an empty configuration.
+- **backup**: A file that grew between the listing and the transfer is recorded with its real size, so it restores whole.
+- **backups**: The Destinations timeline of the Backups page follows the search and the filters of the list.
+- **dashboard**: Latest executions names each run like the History does instead of showing Manual Action for a restore.
+- **dashboard**: Pages that read 1000 or more jobs or connections, like Backups and the Database Explorer, load instead of failing with an error of the database.
+- **docker**: A missing or malformed ENCRYPTION_KEY stops the start of the container before the database migrations run.
+- **Docker**: Names in the run log of a volume backup are shown escaped.
+- **Firebird**: A restore into a configured alias writes into the file of that alias instead of a file named after the alias.
+- **history**: The long name of an archive in the page of a restore run breaks inside its card instead of running out of it.
+- **MSSQL**: A restore of an older backup format no longer leaves its .bak files in the shared folder or overwrites a file there of the same name.
+- **MSSQL**: A backup restored onto another server under its own name, or one whose server name cannot be read, puts its files into the data folder of that server.
+- **MSSQL**: A second log file of a restore under a new name is called `<name>_log2.ldf`, so it no longer shares the name of the log of a database called `<name>_2`. A restore, also under the original name, refuses to place a file onto a file of another database.
+- **MySQL**: Backups of MySQL 26 and later with stored procedures and functions no longer fail on `SHOW PACKAGE STATUS`. DBackup now writes the routines of these servers itself, since the bundled `mariadb-dump` takes them for MariaDB. ([#203](https://github.com/Skyfay/DBackup/issues/203))
+- **OneDrive**: A folder or file name with `#`, `?` or `%` in it is read as that name.
+- **queue**: A waiting integrity check or check of backup copies is no longer started by the queue as if it were a backup.
+- **rate limits**: The limits saved in Settings count from the next request on, also when DBackup serves HTTPS with its own certificate, where the defaults applied before.
+- **restore**: A restore that fails in the restore tool or restores no entry of an archive sends the Restore failed notification.
+- **restore**: Two restores or listings of the same backup at once no longer share a temporary file.
+- **restore**: A key picked to open a backup that is no longer in the Vault asks for a key again instead of failing with an error.
+- **restore**: A backup whose index holds a damaged line no longer takes the server down while it is read.
+- **restore**: A failed decryption or decompression of an older whole-file backup no longer leaves a half written file in the temp folder.
+- **restore**: An index that points several files at one stored file is refused as damaged instead of restoring only the first of them.
+- **restore**: A restore whose destination fails ranged reads downloads the backup once, however many reads failed at the same moment, and removes that copy at the end.
+- **restore**: The warning about restoring a backup of a newer server version compares the versions part by part, so a backup of 26.9 restored onto 26.10 no longer gets it.
+- **retention**: A file without a backup record in the folder of a job no longer counts as a backup, so restored files cannot push real backups out. Retention never deletes such a file.
+- **retention**: Retention keeps an incremental chain as a whole while the metadata of one of its backups is missing or unreadable, or its full backup is gone, so it no longer deletes a full backup that later backups still need. Other backups and complete chains go as the policy says. ([#206](https://github.com/Skyfay/DBackup/issues/206)) Thanks @X1pheR ([#208](https://github.com/Skyfay/DBackup/pull/208))
+- **rsync**: A folder setting like `./backups` or `/srv//backups` no longer puts the folder in front of every listed backup.
+- **scheduler**: Saving a job or a setting no longer keeps the replaced schedules in memory.
+- **scheduler**: A scheduled system task that still runs is not started a second time.
+- **SFTP**: A directory source whose connection has the folder `.` now collects hidden files like `.htaccess` in its root and applies the exclude patterns to them. ([#214](https://github.com/Skyfay/DBackup/issues/214))
+- **SMB**: A backup into a folder that is more than one level deep and does not exist yet no longer fails.
+- **SSO**: Signing in through a provider whose issuer has a path, like Authentik or a Keycloak realm, no longer fails on a private address with `resolves to a non-publicly-routable address`.
+- **SSO**: A sign-in through a provider that fails, and the connect of a provider in the profile, lead back to the address the browser used. They no longer lead to the address the server listens on inside its container, like `0.0.0.0:3000`.
+- **SSO**: A sign-in or a **Link** under **Profile** that the provider cannot link, since it does not mark the email as verified, says so with **Email not confirmed**. It ended on the login page or the dashboard without a word before.
+- **SSO**: Sign-in providers now ask only for the scopes `openid profile email`, so Google no longer refuses the sign-in with `invalid_scope`. Providers saved before get these scopes when DBackup updates, and so do those of an older configuration file that is restored. ([#198](https://github.com/Skyfay/DBackup/issues/198))
+- **startup**: An ENCRYPTION_KEY with a character other than 0 to 9 and a to f stops the start with a clear message instead of failing at the first secret it encrypts.
+- **storage**: A backup takes the job, server and lock of the sidecar beside it, also when a backup of the same name lies in another folder.
+- **storage**: SMB, FTP, Dropbox, OneDrive and Rsync list a folder that does not exist yet as empty instead of failing. Google Drive no longer creates a folder by listing it.
+- **storage**: Two checks of backups in the same millisecond no longer overwrite each other's result.
+- **storage**: SFTP, FTP and Dropbox list their backups right when their folder is written with a leading `./`, double slashes or another case.
+- **storage**: Listing a WebDAV, SMB, SFTP, FTP, S3, Google Drive, OneDrive or Dropbox destination ends when a folder lists itself or a folder above it, or when the server repeats its pages.
+- **storage**: A backup that a later run overwrites at the same path now shows the time, size and checks of the newest run on the Backups page. ([#201](https://github.com/Skyfay/DBackup/issues/201))
+- **Telegram**: A message sent with the parse mode Markdown is written in Markdown, so a name with `_` or `*` no longer makes Telegram refuse it.
+- **ui**: History and the Database Explorer lead to the Overview for someone without the right to see them, instead of an error page.
+- **ui**: A button in a toast, like Open the run or Undo, works while a dialog or a side panel is open.
+- **users**: Changing the email of a user to one another account holds shows a plain sentence instead of the error of the database.
+- **vault**: Recovering a key the Vault already holds is written to the audit log when the key now opens the backups of another key too.
+- **vault**: Downloading a recovery kit is written to the audit log once it succeeded, with the names of its keys.
+
+### 🔒 Security
+
+- **adapters**: A password, key or token saved with a connection is no longer sent to a new host, port, SSH server or URL by Test connection, the folder browse, the database list or a save. A connection pointed elsewhere needs the secret typed again or a saved login.
+- **adapters**: The database lists, table reads, snapshot check and SFTP folder picker of a connection form answer only what the server said, never an error message of DBackup itself.
+- **adapters**: Only a platform admin points a Local Filesystem or a SQLite file at the folder of the database of DBackup, its TLS certificate or the configuration backup, and no backup run reads or writes there.
+- **api**: The database list and the folder browse of a saved connection answer a fixed sentence for a failure of DBackup itself instead of its error text.
+- **api**: A route, action or row of a bulk action that fails answers a fixed sentence and keeps the error itself for the log.
+- **api**: The rate limits under `/api/internal/rate-limit-config` answer only the middleware of the server itself.
+- **api**: Creating, importing and recovering an encryption key, the configuration restore from a destination, the template dialogs, the switches of a sign-in provider and the own preferences check their input before anything is stored.
+- **api**: Creating a connection through the API with an unknown kind or an adapter of another kind is refused instead of skipping the permission check.
+- **api**: Starting the authorization of a Dropbox, Google Drive or OneDrive login is refused to API keys.
+- **API keys**: Only the owner of an API key and a platform admin rotate it, enable it again, change its permissions or let it run longer. Anyone else who may change API keys only renames, disables or deletes it or lets it run out sooner.
+- **audit**: The CSV export quotes a cell with a semicolon or a tab, so no spreadsheet starts a formula from it.
+- **audit**: Folder and volume reads of saved connections, restore folder checks, token checks of cloud drives and Check now are written to the audit log.
+- **auth**: Adding a passkey needs a recent sign-in, and Reset 2FA also removes the passkeys of the account. Turning off a passkey as the second factor asks for the current password.
+- **auth**: The current password can no longer be checked from the browser outside the settings that ask for it, and showing the authenticator secret needs the right to manage it.
+- **auth**: The address of the client only counts when DBackup runs on its own server, so a client can no longer choose the address of the rate limits and the audit log.
+- **auth**: Deleting a passkey asks for the current password while a passkey is the second factor. The codes of an authenticator app are limited to five tries in 15 minutes for a signed-in account.
+- **auth**: Without `BETTER_AUTH_URL`, the session cookie is marked `Secure` while DBackup serves HTTPS itself, and the start warns when `BETTER_AUTH_URL` is missing or uses plain HTTP for another host.
+- **auth**: A provider no longer signs someone into an account whose email its owner set themselves, also before the update, until they link the provider from their own profile.
+- **auth**: Five wrong current passwords in 15 minutes lock the password change of an account for 15 minutes.
+- **auth**: An API route signed in by the session cookie refuses a change that comes from another site.
+- **auth**: The address of a sign-in provider is trusted only for its own sign-in, never as the target of a redirect.
+- **auth**: Confirming the authenticator app with a code needs the permission to manage the second factor, like turning it on.
+- **auth**: Turning off the passkey as second factor no longer turns off an authenticator app.
+- **auth**: Turning off the authenticator app no longer turns off the passkey as second factor.
+- **auth**: Switching the passkey as second factor on or off, or deleting the last passkey while it is one, also needs the right to manage the second factor when no authenticator app is set up.
+- **auth**: Deleting a group with members also needs the right to change users, since its members move.
+- **auth**: The page a sign-in provider link returns to no longer signs out whoever opens it without a link of their own.
+- **auth**: The own password changes only through the Profile page, which ends the other sessions.
+- **auth**: Nobody but a platform admin sets the password, resets the second factor, ends the sessions, changes the name or email of, or deletes an account whose group may do more than they may. The Users tab locks such an account with the reason.
+- **auth**: Nobody makes, edits, gives or takes a group that may do more than they may.
+- **auth**: Setting a password, resetting the second factor, ending sessions and deleting or changing another account answer with a fixed sentence when they fail, never with the words of the database.
+- **auth**: The browser can no longer unlink a sign-in provider or the password, or switch the passkey as second factor, around the profile permissions and the audit log.
+- **auth**: The own name and email change only as far as the profile permissions allow, also for someone who may change users. The own second factor is reset under Profile only.
+- **auth**: A code of the second factor no longer marks the browser as trusted, so every sign-in with a password asks for the second factor.
+- **Azure SQL**: A stored config can no longer move the connection into an SSH mode the adapter does not have.
+- **backup**: An incremental backup starts a full one when the index of the previous backup was changed at the destination.
+- **backup**: A backup that takes longer than the longest a run may take fails, also while it still reports progress, so one slow source cannot hold the runs of everyone else. The time is one day by default and set in Settings > General.
+- **backup**: Only a platform admin signed in to DBackup changes, schedules or starts the configuration backup, which an API key and a group with the right to change the settings no longer do.
+- **backup**: Only a platform admin changes or deletes the destination of the configuration backup, reveals, changes or signs in elsewhere with its saved logins, restores files into it and reveals or exports its key. A key is no longer tried on a configuration backup file by anyone else.
+- **backup**: A configuration backup at a destination restores only when it is encrypted.
+- **backup**: A directory source can no longer pack a file of the DBackup server into a backup through a crafted name or a link in its listing. Such entries are left out and named in the run log, and the run ends as Partial.
+- **backup**: Small files are bundled by the size they arrived with, never by the size the source listed.
+- **backup**: A directory source fails with a clear message when it lists more than 10 million entries, a name longer than 32 KB or names that add up to more than 2 GB.
+- **backups**: Locking a backup, trying a key on one, deleting several and restoring a configuration backup from a destination refuse a path that leaves the destination.
+- **cloud storage**: The page after authorizing Dropbox, Google Drive or OneDrive shows only DBackup's own messages, never text from the address.
+- **config backup**: A key the configuration backup was encrypted with before stays locked like the current one once another key is picked.
+- **connections**: A connection of a kind someone may not see answers like one that does not exist.
+- **connections**: Test connection keeps the server version with a saved connection only when it tested that connection.
+- **connections**: A failed SSH test answers a fixed sentence instead of the words of an error inside DBackup.
+- **connections**: Testing a connection or its SSH login, checking its access or its snapshots and reading databases, tables or rows from the fields of a form need the right to change that kind of connection.
+- **connections**: A connection is checked against the fields of its type before it is saved, also through the API, and every port must be a whole number from 1 to 65535.
+- **credentials**: Revealing a saved login and downloading the recovery kit fail when their audit entry cannot be written.
+- **credentials**: Only a platform admin saves an SSH login that uses the SSH agent of the server.
+- **credentials**: Someone who may only see connections, like a Viewer or a read-only API key, can no longer have a saved login sent to a host of their choosing by a connection test or the remote folder browse. Thanks @realtasty ([GHSA-xfw2-4542-cvr6](https://github.com/Skyfay/DBackup/security/advisories/GHSA-xfw2-4542-cvr6)) and @Santoshkumarpuppala ([GHSA-25xf-8j2m-jfvq](https://github.com/Skyfay/DBackup/security/advisories/GHSA-25xf-8j2m-jfvq))
+- **database**: The downloaded database holds no sessions or verification codes, and the temporary copies that hold keys are readable by DBackup alone.
+- **Database Explorer**: The MySQL and MariaDB client of the table browser no longer runs commands of its own, so a table or column name cannot start a program beside DBackup. The SQLite and MongoDB browsers search and sort only by real columns.
+- **deps**: Better Auth moves to 1.7 and minimatch to 11, and MSAL, `systeminformation`, `gaxios` and `deepmerge-ts`, which other packages pull in, to patched releases, so `pnpm audit` finds nothing. None of the advisories they close reached DBackup, which uses neither the Better Auth plugins nor the options they concern.
+- **deps**: Next.js is updated to 16.4.6 in the app and on the website, which closes two critical remote code executions without sign-in, in the image optimizer and in `use cache`. nodemailer, `basic-ftp`, zod and eight packages that others pull in move to patched releases.
+- **Docker**: A job's source names exactly one Docker volume, so a path like `/etc` no longer reaches folders of the host. A backup never stops the container DBackup runs in.
+- **Docker Volumes**: A restore into Docker Volumes needs a named volume and no longer takes the volume from the backup.
+- **email**: A channel set to STARTTLS refuses a server that does not offer it instead of sending the login unencrypted.
+- **encryption**: A backup that its run recorded as encrypted is no longer restored or downloaded when the file at the destination is not encrypted.
+- **encryption**: A backup is opened only with an authentication tag of full length.
+- **file backups**: An exclude pattern that would take very long to match, or a list of more than 256 patterns with a slash, brackets or braces, is refused when it is saved. A run leaves out such a pattern saved earlier with a warning in its log, and a restore takes only patterns a save would take.
+- **Firebird**: Backups and reads attach without the triggers of the database where the login may skip them, so a trigger of the database never runs with the login of DBackup.
+- **Firebird**: The host and port of a Firebird source are checked before they go into the connection string of gbak and isql.
+- **Firebird**: A restore no longer replaces a file named only by the backup. A database that is no alias of the target source needs a path picked for it.
+- **FTP**: FTPS checks the certificate of the server unless the new switch Trust the server certificate is on. Connections saved earlier keep accepting every certificate until the switch is turned off.
+- **history**: Cancelling a run needs the right that starts it, so a restore needs `storage:restore` and only a platform admin cancels a configuration restore. The History pages offer Cancel only on runs the viewer may cancel.
+- **jobs**: The folder of a directory source can no longer leave the folder its connection is set to. A job saved with such a folder fails its run until the folder is changed.
+- **logs**: The server log hides passwords, tokens and the logins in connection strings.
+- **MongoDB**: The password no longer shows in the process list while mongosh runs, and a restore under a new name escapes the name in the patterns of mongorestore.
+- **MongoDB**: mongodump and mongorestore read the password or the connection string from a temporary `--config` file instead of their arguments. This needs the MongoDB Database Tools 100.3.0 or newer.
+- **MySQL**: A restore under a new name writes a name with a backtick safely, and the Database Explorer quotes its values safely whatever the SQL mode of the server.
+- **MySQL**: A restore no longer runs shell commands or reads, writes or sends local files that a dump asks for. In direct mode a client that cannot turn these off is refused with its version.
+- **MySQL**: A restore target whose name holds a backtick is quoted as one name when the database is created, and the client gets the target as `--database`.
+- **MySQL**: A password with a line break or a NUL character is refused on save and before every run. Without a password the client tools read no option file of the DBackup server, and no client call sends local files to the server.
+- **notifications**: The generic webhook escapes names and messages for the Content-Type of its template, so a name can no longer change the payload. Teams shows names as plain text, never as links.
+- **notifications**: The custom headers of the generic webhook are stored encrypted and are no longer shown to someone who may only see the channel.
+- **notifications**: The generic webhook encodes the fields of a form body and escapes XML bodies. Discord and ntfy no longer take markup or line breaks from a name in a title.
+- **notifications**: Slack, Discord, Telegram, Gotify and ntfy show names of jobs and connections as plain text, never as links or mentions.
+- **PostgreSQL**: Queries of the catalog inside a database run with the catalog alone on the search path, and the Database Explorer names every function and operator of its reads in `pg_catalog`. The owner of a database cannot hand functions of their own to the login of DBackup that way.
+- **PostgreSQL**: The Database Explorer and the restore quote their values safely whatever the string setting of the server.
+- **PostgreSQL**: The tools get a database name of a job, a restore or the table browser always as a name, so a name that reads like a connection string no longer connects to another server.
+- **Recovery Kit**: The recovery script refuses an index that names a folder outside the output folder and never writes through a link.
+- **Recovery Kit**: The recovery script reads link paths with backslashes the way Linux and macOS do, and removes a link it laid that points out of the output folder.
+- **Recovery Kit**: Symbolic links that lead out of the output folder or lie inside another link of the backup are skipped instead of laid.
+- **Redis**: The password reaches redis-cli as `REDISCLI_AUTH` instead of `-a`, so it shows in no process list and in no command over SSH. This needs redis-cli 5 or newer.
+- **restore**: A configuration backup at a destination opens only with the key of the configuration backup or a key the admin picks, never with any other key of the Vault. A restore that brings back no account is refused.
+- **restore**: A restore never writes through a link that already stands at a file's name or in a folder below the restore folder.
+- **restore**: A restore to the original folder needs a backup that a run of the job recorded, and anything else needs the right to change the target connection. A restore over rsync or FTP no longer writes through a link in a folder below the restore folder.
+- **restore**: Trying a key on a backup waits for its share of memory like every other read of the index, so many tries at once no longer fill the memory of the server.
+- **restore**: Restores, downloads and checks of backups keep their temporary files in a folder only DBackup reads.
+- **restore**: A backup whose index lets files of a bundle overlap or reach past it is refused as damaged.
+- **restore**: A file restore refuses a target folder that leaves its connection with `..` or a part a storage reads as one.
+- **restore**: A restore into Docker Volumes without SSH is for a platform admin alone. A file restore into another place than the folder or volume the backup read needs the right to change the connection it writes into.
+- **restore**: Only a platform admin restores a `.meta.json`, a file into a config-backups folder or named like a configuration backup, or a file named like a backup or its index into a backup destination.
+- **restore**: A file restore no longer lays a symbolic link whose target is absolute or leads out of the folder it restores into, nor anything below another link of the same backup, and names each one in the log instead.
+- **restore**: A database name of a job, a restore target or a mapping that starts with a hyphen is refused, so no tool reads it as an option.
+- **restore**: Older multi-database backups and incremental chains no longer take a name stored in the backup as a path. A tampered backup can no longer write or read files outside the restore folder.
+- **restore**: A restore stops reading a backup that inflates past what DBackup ever writes and reports it as damaged. This covers bundles, entries that lie about their size, indexes far larger than their stored size and older whole-file backups.
+- **restore**: Restored files never get setuid, setgid or the sticky bit, and they get their owner back only in the place the backup was read from.
+- **restore**: A download of restored files names every entry inside one plain folder of its source.
+- **restore**: A destination that ignores byte ranges or sends more than a read asked for fails the read as a damaged backup.
+- **restore**: An older multi-database backup whose manifest is larger than 16 MB is refused as damaged before it is read.
+- **restore**: A restore checks the free space of the temporary folder before it starts, and the index of a backup is no longer downloaded to that folder.
+- **restore**: A file index whose fields hold values of another type than DBackup writes is refused as damaged.
+- **rsync**: A connection config can no longer set the address ssh dials or the options of the host key check itself, which could run a command on the DBackup server. Fields of that kind are refused when a connection is saved or tried.
+- **rsync**: A username with `:`, `/`, spaces or a leading hyphen is refused when the connection or its saved login is saved and before any command runs.
+- **rsync**: A folder or job name that starts with a hyphen is no longer read as an option of a command on the server.
+- **rsync**: The host and port of an rsync destination are checked before they reach ssh, so a stored value can no longer add ssh options or turn the transfer into a local copy.
+- **rsync**: A directory source no longer copies devices, pipes, owners, groups or links of the server, and links are still backed up as links.
+- **rsync**: Downloading or reading a backup no longer recreates a symbolic link of the remote server on the DBackup server, and the local rsync must take `--no-links`. A download from any destination that leaves anything but a regular file fails.
+- **rsync**: Downloading or reading a backup transfers one file at most, so a path that is a folder on the server fails instead of copying the folder.
+- **S3**: Listing a bucket stops reading one page of the answer past 16 MB instead of loading whatever the server sends.
+- **S3**: Error answers and answers without content from an S3 server are read only up to 1 MB.
+- **server**: Without `TRUSTED_PROXIES` only a reverse proxy on the same machine is trusted, so a device of the local network can no longer name its own address for the rate limits and the audit log.
+- **settings**: An uploaded TLS certificate is checked in full and against its key before it replaces the one the server starts with.
+- **setup**: A configuration backup uploaded at the first start unpacks to at most 2 GB, and only the last one checked is held.
+- **SMB**: A path, folder or file name with a semicolon, a double quote or a control character is refused before smbclient runs, so no name can run another smbclient command.
+- **SMB**: Shadow copies refuse a server, share or id that rpcclient would split into more than one command or read as an option.
+- **SMB**: The password reaches smbclient and rpcclient through the environment instead of their command line, where other users of the machine could read it.
+- **SMB**: A user name or domain with a `%` is refused, since smbclient reads what follows it as the password. Names a share lists with a slash, a backslash or of dots alone are left out of a directory source.
+- **SQLite**: A restore under a new name always lands in the folder of the source.
+- **SSH**: A private key that asks for an excessive cost to unlock it is refused instead of holding up the server.
+- **SSH**: A private key with a passphrase is unlocked once per process instead of at every connect, for SSH logins and SFTP destinations alike, so a key that is slow to unlock no longer holds up the server at every health check.
+- **SSH**: The passwords of PostgreSQL, Firebird and Redis no longer show in the process list of a server reached over SSH.
+- **SSH**: Temporary files on a remote host are created exclusively, so a file or link left under the same name fails the write instead of receiving a login.
+- **SSO**: The link that ends connecting a provider in the profile only accepts a token DBackup made, so a crafted link no longer signs someone out.
+- **SSO**: The link that ends connecting a provider in the profile only works in the browser that started it.
+- **SSO**: A sign-in through a provider no longer marks an email the owner of the account set themselves as verified, so the provider links no other identity to that account by its email.
+- **SSO**: An issuer with a wildcard, a question mark or a user part is refused when a provider is saved and never trusted.
+- **SSO**: Linking a sign-in provider to the own account from the browser needs the right to manage the own sign-in providers and always goes into the audit log.
+- **SSO**: Checking a sign-in provider answers a fixed sentence instead of the words of the failed request and writes an entry to the audit log.
+- **SSO**: Deleting a group writes an audit entry for every sign-in provider whose default group it changes.
+- **storage**: Only a platform admin downloads or restores a file that is encrypted with the key of the configuration backup.
+- **storage**: The PowerShell command of a download link escapes typographic quotes in the file name.
+- **storage**: At most two checks of a backup download it at once, and a check of a known size first makes sure the temporary folder has the space free.
+- **storage**: The OAuth callbacks and token checks of Google Drive, Dropbox and OneDrive show a fixed sentence instead of the error text of the provider or the server.
+- **storage**: Local Filesystem no longer follows a symbolic link out of its folder when it writes, reads, lists or deletes.
+- **storage**: Listing the folders of a Local Filesystem connection or the volumes of Docker without SSH needs the right to change jobs or to restore.
+- **storage**: A configuration backup on a destination is downloaded, opened and restored file by file only by a platform admin who is signed in, and never through a link.
+- **storage**: Connecting Google Drive, Dropbox or OneDrive finishes only for the person and the login that started it.
+- **storage**: Deleting in the Storage Explorer refuses the root folder of a destination.
+- **storage**: A download link opened without signing in only serves a file that was shared as a link.
+- **storage**: Local Filesystem no longer lays a symbolic link whose target leads out of its folder.
+- **storage**: The backup routes no longer list, download, delete, lock or verify files of a directory source.
+- **storage**: Deleting or locking a backup refuses a path that leaves the destination, like a `..` folder or a leading slash.
+- **storage**: The backup routes and the folder check of a restore refuse a path that leaves the destination through backslashes or percent escapes.
+- **storage**: Downloads stage their file in the temporary folder of DBackup under a random name.
+- **storage**: The folder browser of an SFTP, FTP or SMB connection no longer lists folders above the folder the connection is set to.
+- **storage**: The connection tests and reads of SMB and Rsync write their temporary files into a private folder under a random name. FTP writes none at all anymore.
+- **storage**: Temporary files of downloads, restores and the configuration backup get names nobody can guess, and a temporary file is never written through an existing file or link.
+- **storage**: Reading the metadata and the index of a backup stops at a size limit instead of loading whatever the destination sends. A listing leaves an oversized `.meta.json` out with a log line and reads the sidecars a few at a time.
+- **storage**: Listing a WebDAV folder stops reading the answer of the server past 256 MB.
+- **storage**: A download to a client that reads slowly no longer holds the whole file in the memory of the server.
+- **templates**: A naming pattern names one file, so a slash or a leading dot in it no longer writes or deletes files outside the folder of the run.
+- **templates**: Seeing which jobs and destinations a retention policy reaches, with the times of their backups, needs the right to see jobs.
+- **ui**: The pages allow no plugins, no forms to other sites and no framing, and avatars and the login image are served as images only.
+- **uploads**: A picture for a profile or the login page and a configuration backup that are larger than allowed are refused before they are read, also when they arrive without a length.
+- **users**: Two platform admins who delete each other at the same time no longer leave the instance without one.
+- **users**: Saving a user checks the name, email, time zone and date formats before storing them.
+- **vault**: Trying a key on a backup to bring it into the Vault also needs the right to see the backups.
+
+### 🎨 Improvements
+
+- **api**: Deleting a job over the API logs a failure and answers a refusal with its own status.
+- **api**: Pages, Server Actions and API routes read the database only through the services.
+- **audit**: A change of the group of a user names the user and the group. The entries of a new password, a reset second factor, ended sessions, a changed account, an unlinked sign-in provider and bulk changes, also of the alerts of several destinations, name what they changed.
+- **audit**: Changes of the own second factor, backup codes and passkeys, the old and new end of an edited API key and tests of an SSH login are written to the audit log.
+- **audit**: Ending the own sessions on the Profile page goes into the audit log.
+- **audit**: Browsing the folders of a connection form or of the server DBackup runs on, and the snapshot check, write an entry into the audit log.
+- **audit**: A wrong code of the second factor and a passkey that was turned down go into the audit log as failed sign-ins.
+- **audit**: The bulk actions of the API on jobs, connections and credential profiles name the records they changed, and reading the tables or rows of a database writes an entry.
+- **audit**: A key tried on a backup is written to the audit log also when it does not open the backup or matches a key the Vault holds already.
+- **auth**: Checking an API key no longer blocks the server while it hashes the key.
+- **auth**: A link into the dashboard opened while signed out leads back to its page after signing in.
+- **backup**: Bundles of small files are compressed without blocking the server.
+- **dashboard**: The Overview, the Timeline, the schedule picker, the History and the Connections page load much faster with many jobs and connections.
+- **dashboard**: The Jobs page and the Database Explorer load their lists a page at a time from the server, so they open quickly with many thousands of jobs and databases.
+- **dashboard**: Storage by destination on the Overview shows ten destinations per page with a pager below, instead of one long list.
+- **deps**: React, Tailwind CSS, the AWS SDK, the Dropbox SDK and the development tools move to their latest patch releases.
+- **docker**: A start that applies database migrations first keeps a copy of the database beside it. The three newest copies stay.
+- **history**: The Summary of a restore run tells each step like a backup does, with where it read from and how much, and a row for every database and folder it restored. A database row opens to its command and the lines of its tool.
+- **restore**: A restore of an older whole-file backup stops when the temp folder runs out of space instead of filling it, and large archive indexes are read one at a time.
+- **storage**: A destination listing reads only the `.meta.json` files beside its backups and keeps only the fields it shows.
+- **storage**: Downloading an older encrypted backup with its metadata builds the ZIP as a stream without compression and no longer holds up the server while it does.
+- **templates**: The built-in templates of older installations keep their dates as numbers like every other row.
+
+### 🔄 Changed
+
+- **API**: The job routes answer 400 for a field of the wrong type, like an object where an id belongs.
+- **api**: GET /api/sso-providers answers a signed-in person only and refuses API keys.
+- **api**: GET /api/users and GET /api/groups answer viewerPlatformAdmin in place of viewerSuperAdmin.
+- **api**: The recovery kit is requested with `POST /api/vault/recovery-kit` and the ids of the encryption profiles in the body.
+- **auth**: An instance without `BETTER_AUTH_URL` that serves HTTPS itself gives the session cookie a new name, so everyone signs in once more after the update.
+- **auth**: Switching passkey sign-in off refuses a passkey as the first factor on the server, not only on the login page. A passkey as second factor still works.
+- **auth**: The right to see the settings no longer lists the encryption keys and the templates.
+- **auth**: The SuperAdmin group became the group Admin with every permission, and its members became platform admins. Only platform admins manage the sign-in providers, restore a configuration and download the database.
+- **auth**: Restoring from Recently deleted and deleting for good need the new permission Tenant settings. Groups that could change the settings get it with the update.
+- **Docker**: The compose file of the quick start sets `TRUSTED_PROXIES=none`, for an install without a reverse proxy in front.
+- **MongoDB**: A connection to a single host talks to that host alone and no longer to the members of a replica set it announces.
+- **notifications**: Discord, Slack, Teams, Generic Webhook, Gotify and ntfy follow a redirect only to the same host. A send redirected to another host fails with a message naming where it led.
+- **Notifications**: The title of a backup notification, the email subject included, starts with the outcome again, like `Backup Successful: <job>`, `Backup Partial: <job>` and `Backup Failed: <job>`. The heading inside the email stays as it is. ([#209](https://github.com/Skyfay/DBackup/issues/209))
+- **queue**: Runs at the same time counts only backups, so a running restore or check of copies no longer holds a backup back.
+- **restore**: A full restore refuses a directory source without a target folder instead of writing into a folder named after the source.
+- **server**: `TRUSTED_PROXY_HEADER` names the header the trusted proxy writes, `x-forwarded-for` by default or `x-real-ip`, and the other header is ignored.
+- **server**: `pnpm start` runs the server of the Docker image instead of `next start`.
+- **server**: The log warns once when a forwarded header arrives from a private address while `TRUSTED_PROXIES` is unset.
+- **SMB**: The share address must have the form `//server/share` or `\\server\share` with a server name, an IPv4 address or an IPv6 address without brackets.
+- **SSO**: The sign-in providers list the linked people only to a platform admin and to whoever may see the accounts of the platform.
+- **storage**: Changing the alerts of a destination needs the right to manage destinations instead of the right to change the settings.
+- **vault**: The Credentials tab of the Vault needs the right to see the Vault as well as the saved logins, like the search.
+- **WebDAV**: A redirect to another host is no longer followed.
+
+### 📝 Documentation
+
+- **API keys**: Fixed the length of a key and the path of its service in the developer guide.
+- **docs**: New guides for tenants, shared databases and shared destinations and channels, for admins and for developers. The guides of users, groups, permissions, API keys with platform keys, SSO and the audit log describe platform admins and tenants.
+- **docs**: The permissions guide explains that changing a retention policy removes backups without the right to delete them.
+- **docs**: The AI transparency section of the README is now called "Development, Testing & Security". The docs home page shows the same text instead of an older version.
+- **docs**: Updating to 5.0 names in one table the setups that need a look before the update, with the details of each below and the way back.
+- **docs**: The AI transparency section of the README names the end-to-end tests among the checks behind the code.
+- **SSO**: The guide names the two settings of Pocket ID a sign-in needs, the allowed user groups of the client and verified emails.
+- **wiki**: The installation guide explains the beta versions, and the developer guide how to release one.
+
+### 🧪 Tests
+
+- **connections**: The tests of the connection form no longer leave an error behind now and then.
+- **e2e**: Browser tests cover signing in with a password, the code of an authenticator app or a backup code as the second factor, a passkey as the first or the second factor, and SSO through a Dex identity provider in the lab. The tests open DBackup at localhost, which a passkey needs, and forward that port to a remote lab host.
+- **e2e**: A lab service whose start failed on a host port that was taken gets a new container, so DBackup finds it by name again instead of failing every test that uses it.
+- **e2e**: A run trims the build cache of the Docker host to 10 GB after it built the image.
+- **lab**: The dev lab and the end-to-end tests now run PostgreSQL 19 as well.
+- **lab**: The dev lab and the end-to-end tests now include MySQL 26, and the MySQL dataset has a stored function beside its procedure.
+- **lint**: Lint guards keep direct database queries out of the routes and Next.js out of the services.
+- **restore**: The Smart Recovery test that tries every profile no longer fails now and then.
+- **SSH**: The tests of a new ed25519 key and of a key with a passphrase no longer fail now and then when ssh2 writes the key a byte short.
+- **SSO**: An end-to-end test signs in through the provider of a tenant that blocks the local network, refused until the range of the provider is allowed.
+- **tenants**: A test calls every Server Action like the sweep over the API routes does, with the ids of another tenant in its arguments, which it takes from the signature of each action. Nothing of the other tenant may be in a result, change, or end up linked from the first.
+- **tenants**: A test calls every API route as the admin of one tenant, with a session, with an API key and as someone of a platform group that reaches that tenant only, with the ids of another tenant in the path, the query and the body. Nothing of the other tenant may be in an answer, change, or end up linked from the first, and no request or process may use its servers or logins.
+- **tenants**: Tests pin two rules mutation testing found unguarded: a platform group gives its rights only in the tenants of its scope, also to someone who is a member of another tenant, and an upsert never finds the row of another tenant by its id, which the import of a configuration backup relies on.
+- **tests**: The unit tests run against an empty database and an encryption key of their own, so they never read the dev.db or .env of a checkout.
+
+### 🔧 CI/CD
+
+- **build**: The type check of the image build, the CI and the pnpm scripts runs with a heap of 6 GB, since the default of Node no longer fits.
+- **Docker**: The image takes the Prisma CLI from the lockfile, pins SqlPackage and keeps everything root runs out of reach of the app's user. The build leaves out every `.env` file except `.env.example`, and the build caches of TypeScript.
+- **docker**: The image build retries its downloads, so a mirror that drops the connection no longer fails it.
+- **e2e**: The end-to-end tests of MongoDB run on Ubuntu 22.04, since MongoDB 8.0 does not start on the kernel of the newer GitHub runners.
+- **lab**: The customer server of the end-to-end tests starts again after it was stopped hard, instead of restarting for good.
+- **release**: A tag with any suffix, like `v4.1.0-beta.1`, never moves `latest` or the major tag of the image and is published as a pre-release on GitHub.
+- **release**: `pnpm version:bump beta` sets the next beta without using up the changelog fragments, and `pnpm release:tag dev` tags it on dev.
+- **release**: The notes of a GitHub release come from `pnpm changelog:notes`, for a beta from the fragments with what is new since the beta before it. The workflow makes them before it builds an image.
+- **release**: A beta runs the end-to-end tests and keeps the CI image and the README on Docker Hub of the last release.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:v5.0.0`
+- **Also tagged as**: `latest`, `v5`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
 ## v4.0.2 - Rate Limit and Session Security, MySQL Restore Fixes, and a Faster Dashboard
 *Released: Oct 12, 2026*
 

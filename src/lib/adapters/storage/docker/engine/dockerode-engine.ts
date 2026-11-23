@@ -12,9 +12,20 @@ import http from "node:http";
 
 import type { ContainerInfo, DockerEngine, VolumeInfo } from "./types";
 import { COUNT_COMMAND } from "../temp-container";
+import { assertVolumeName } from "../volume-name";
 
 /** Where the mounted volumes appear inside a helper container. */
 export const MOUNT_ROOT = "/vol";
+
+/**
+ * A named volume mounted into a helper, typed as a volume. A string bind reads a source that starts
+ * with `/` as a folder of the host, a mount of type volume never does, and the name is checked first
+ * as well, see `volume-name.ts`.
+ */
+function volumeMount(name: string, target: string) {
+    assertVolumeName(name);
+    return { Type: "volume" as const, Source: name, Target: target };
+}
 
 /**
  * Reads `<volume> <count>` lines out of the helper's output.
@@ -123,6 +134,7 @@ export function createDockerodeEngine(options: DockerodeEngineOptions): DockerEn
         },
 
         async createVolume(name) {
+            assertVolumeName(name);
             await docker.createVolume({ Name: name });
         },
 
@@ -143,7 +155,7 @@ export function createDockerodeEngine(options: DockerodeEngineOptions): DockerEn
             const container = await docker.createContainer({
                 Image: helperImage,
                 Cmd: ["sh", "-c", `rm -rf ${MOUNT_ROOT}/..?* ${MOUNT_ROOT}/.[!.]* ${MOUNT_ROOT}/* 2>/dev/null; exit 0`],
-                HostConfig: { Binds: [`${name}:${MOUNT_ROOT}`] },
+                HostConfig: { Mounts: [volumeMount(name, MOUNT_ROOT)] },
             });
 
             try {
@@ -160,6 +172,8 @@ export function createDockerodeEngine(options: DockerodeEngineOptions): DockerEn
         },
 
         async containersUsingVolume(name) {
+            // The filter also matches the destination of a mount and the folder of a bind.
+            assertVolumeName(name);
             const list = await docker.listContainers({
                 all: true,
                 filters: { volume: [name] },
@@ -235,12 +249,13 @@ export function createDockerodeEngine(options: DockerodeEngineOptions): DockerEn
         },
 
         async createMountContainer(volumes, image, labels) {
+            const mounts = volumes.map((name) => volumeMount(name, `${MOUNT_ROOT}/${name}`));
             const container = await docker.createContainer({
                 Image: image,
                 // Run at most once, to count. The export works whether or not it ever ran.
                 Cmd: COUNT_COMMAND,
                 Labels: labels,
-                HostConfig: { Binds: volumes.map((name) => `${name}:${MOUNT_ROOT}/${name}`) },
+                HostConfig: { Mounts: mounts },
             });
             return container.id;
         },

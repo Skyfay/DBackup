@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import { Readable } from 'stream';
 import { createReadStream } from 'fs';
 import { prismaMock } from '@/lib/testing/prisma-mock';
 import { registry } from '@/lib/core/registry';
 import { restoreArchiveSnapshot } from '@/services/restore/archive-restore';
+import { createRestoreTracker } from '@/services/restore/restore-record';
 import { createTempDir } from '@/lib/adapters/database/common/tar-utils';
 import { createArchive } from '@/lib/archive/writer';
 import type { ArchiveSourceEntry, SourceFileEntry } from '@/lib/archive/types';
@@ -16,6 +18,12 @@ import type { StorageAdapter } from '@/lib/core/interfaces';
 vi.mock('@/lib/core/registry', () => ({
     registry: { get: vi.fn() },
 }));
+
+// The check of customers' databases runs against a real database in restore-customer-databases.test.ts.
+const confirmTargets = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => undefined));
+vi.mock('@/services/restore/customer-databases', () => ({ assertTargetsConfirmed: confirmTargets }));
+// A recorded run of the job of each source wrote these backups, see restore-recorded-origin.test.ts.
+vi.mock('@/services/restore/recorded-origin', () => ({ archiveReadSource: async () => true }));
 
 vi.mock('@/lib/adapters/config-resolver', () => ({
     // Mirrors the real resolver: it takes the stored adapter row and hands back the parsed
@@ -117,6 +125,8 @@ async function buildRemoteBackup(
     dirFiles?: Record<string, string>,
     /** POSIX metadata to record for every directory file, as a Docker volume source would. */
     dirMetadata?: { mode?: number; uid?: number; gid?: number },
+    /** Symbolic links of the directory source, by path, with their targets. */
+    dirLinks?: Record<string, string>,
 ) {
     const workDir = await createTempDir('archive-restore-test-');
     createdPaths.push(workDir);
@@ -142,6 +152,9 @@ async function buildRemoteBackup(
                 checksum: crypto.createHash('sha256').update(content).digest('hex'),
                 ...dirMetadata,
             });
+        }
+        for (const [relPath, target] of Object.entries(dirLinks ?? {})) {
+            index.push({ path: relPath, size: 0, mtime: new Date('2026-01-01').toISOString(), linkTarget: target });
         }
         entries.push({ kind: 'directory', jobSourceId: 'src-1', label: 'Test Directory', localPath: dirLocalPath, excludePatterns: [], files: index });
     }
@@ -184,6 +197,8 @@ describe('restoreArchiveSnapshot', () => {
     beforeEach(() => {
         storageTargetConfig.config = '{}';
         vi.clearAllMocks();
+        // No run of History wrote these backups, see `recorded-encryption.ts`.
+        prismaMock.execution.findMany.mockResolvedValue([]);
     });
 
     it('restores selected databases and directories successfully', async () => {
@@ -208,15 +223,80 @@ describe('restoreArchiveSnapshot', () => {
         expect(result.restoredDirectories).toEqual(['src-1']);
         expect(dbAdapter.prepareRestore).toHaveBeenCalledWith(expect.anything(), expect.arrayContaining(['db1_restored', 'db2']), expect.anything());
         expect(dbAdapter.restoreOne).toHaveBeenCalledTimes(2);
-        expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function), undefined);
+        expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function), { restoreRelativePath: 'a.txt' });
     });
 
-    it('hands the recorded permissions and owner to the restore target', async () => {
+    it('restores nothing for a customer when the index at the destination is no longer the one whose proof was checked', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['db1'], {});
+        const dbAdapter = makeFakeDbAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter, 'local-filesystem': makeFakeStorageAdapter() });
+        const input = makeInput({
+            targetSourceId: 'target-db-1',
+            databaseMapping: [{ originalName: 'db1', targetName: 'db1', selected: true }],
+            shared: { databaseName: 'db1', indexSha256: 'f'.repeat(64) },
+        });
+
+        await expect(restoreArchiveSnapshot(input, { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() })).rejects.toThrow(/changed at its destination/);
+        expect(dbAdapter.restoreOne).not.toHaveBeenCalled();
+    });
+
+    it('lays no link whose target is absolute or climbs out of the folder it restores into, and says so in the log', async () => {
+        const { sourceAdapter } = await buildRemoteBackup([], { 'conf/app.ini': 'ini' }, undefined, {
+            'conf/db': '/app/data/db',
+            'conf/up': '../../app/data',
+            'conf/same': './app.ini',
+        });
+        const createSymlink = vi.fn().mockResolvedValue(undefined);
+        const storageAdapter = makeFakeStorageAdapter({ createSymlink });
+        wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
+        const log = vi.fn();
+
+        const result = await restoreArchiveSnapshot(makeInput({
+            directoryMapping: [
+                { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore/dir', selected: true },
+            ],
+        }), { log, updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(createSymlink).toHaveBeenCalledTimes(1);
+        expect(createSymlink).toHaveBeenCalledWith(expect.anything(), '/restore/dir/conf/same', './app.ini', { restoreRelativePath: 'conf/same' });
+        expect(result.status).toBe('Partial');
+        const lines = log.mock.calls.map((call) => String(call[0]));
+        expect(lines).toContain("Symbolic link 'conf/db' -> '/app/data/db' was not restored: its target is absolute or leads out of the folder the restore writes into, so it was skipped.");
+        expect(lines.some((line) => line.startsWith("Symbolic link 'conf/up' -> '../../app/data' was not restored"))).toBe(true);
+    });
+
+    it('writes and links nothing below a link of the same backup, and names each one in the log', async () => {
+        const { sourceAdapter } = await buildRemoteBackup([], { 'x/ok.txt': 'o', 'x/y/f.txt': 'f' }, undefined, {
+            'x/y': '..',
+            'x/y/z': '..',
+        });
+        const createSymlink = vi.fn().mockResolvedValue(undefined);
+        const storageAdapter = makeFakeStorageAdapter({ createSymlink });
+        wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
+        const log = vi.fn();
+
+        const result = await restoreArchiveSnapshot(makeInput({
+            directoryMapping: [
+                { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore/dir', selected: true },
+            ],
+        }), { log, updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(vi.mocked(storageAdapter.upload).mock.calls.map((call) => call[2])).toEqual(['/restore/dir/x/ok.txt']);
+        expect(createSymlink.mock.calls.map((call) => call[1])).toEqual(['/restore/dir/x/y']);
+        expect(result.status).toBe('Partial');
+        const lines = log.mock.calls.map((call) => String(call[0]));
+        expect(lines).toContain("'x/y/z' of 'Test Directory' was not restored: its path runs through a symbolic link of the same backup, which a real folder never holds, so it was skipped.");
+        expect(lines.some((line) => line.startsWith("'x/y/f.txt' of 'Test Directory' was not restored"))).toBe(true);
+    });
+
+    it('hands the recorded permissions and owner to the place the backup read', async () => {
         // The end of the chain. A container volume restored without its mode and owner is
         // one a database will not start on, so the index has to reach upload().
         const { sourceAdapter } = await buildRemoteBackup([], { 'a.txt': 'AAAA' }, { mode: 0o600, uid: 1234, gid: 5678 });
         const storageAdapter = makeFakeStorageAdapter();
         wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
+        // The source the mapping names read this folder of the target.
+        prismaMock.jobSource.findUnique.mockResolvedValueOnce({ configId: 'target-storage-1', path: '/restore/dir' } as never);
 
         await restoreArchiveSnapshot(makeInput({
             directoryMapping: [
@@ -226,13 +306,32 @@ describe('restoreArchiveSnapshot', () => {
 
         expect(storageAdapter.upload).toHaveBeenCalledWith(
             expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function),
-            { mode: 0o600, uid: 1234, gid: 5678 },
+            { mode: 0o600, uid: 1234, gid: 5678, restoreRelativePath: 'a.txt' },
         );
     });
 
-    it('passes no options at all when the archive recorded no permissions', async () => {
-        // Every archive written before these fields existed is in this case. Passing an
-        // empty object instead would be a silent change in what every storage adapter sees.
+    it('hands the permission bits alone to any other place, never the owner or setuid', async () => {
+        // The index comes from the destination, so its numbers never pick the owner of a file elsewhere.
+        const { sourceAdapter } = await buildRemoteBackup([], { 'a.txt': 'AAAA' }, { mode: 0o4755, uid: 0, gid: 0 });
+        const storageAdapter = makeFakeStorageAdapter();
+        wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
+        prismaMock.jobSource.findUnique.mockResolvedValueOnce(null as never);
+
+        await restoreArchiveSnapshot(makeInput({
+            directoryMapping: [
+                { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore/dir', selected: true },
+            ],
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(storageAdapter.upload).toHaveBeenCalledWith(
+            expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function),
+            { mode: 0o755, restoreRelativePath: 'a.txt' },
+        );
+    });
+
+    it('passes no permissions when the archive recorded none, only the path below the folder of the restore', async () => {
+        // Every archive written before these fields existed is in this case. A mode, owner or
+        // group the archive never recorded would be a silent change in what every storage adapter sees.
         const { sourceAdapter } = await buildRemoteBackup([], { 'a.txt': 'AAAA' });
         const storageAdapter = makeFakeStorageAdapter();
         wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
@@ -245,8 +344,46 @@ describe('restoreArchiveSnapshot', () => {
 
         expect(storageAdapter.upload).toHaveBeenCalledWith(
             expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function),
-            undefined,
+            { restoreRelativePath: 'a.txt' },
         );
+    });
+
+    /** Restores `a.txt` of a backup with `dirMetadata` and returns the mode of the staged file its upload saw. */
+    async function stagedMode(dirMetadata?: { mode?: number }): Promise<{ folder: string; mode: number }> {
+        const { sourceAdapter } = await buildRemoteBackup([], { 'a.txt': 'AAAA' }, dirMetadata);
+        let seen = { folder: '', mode: 0 };
+        const storageAdapter = makeFakeStorageAdapter({
+            upload: vi.fn(async (_config: unknown, localPath: string) => {
+                seen = { folder: path.basename(path.dirname(localPath)), mode: (await fs.stat(localPath)).mode & 0o777 };
+                return true;
+            }),
+        });
+        wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
+        prismaMock.jobSource.findUnique.mockResolvedValueOnce(null as never);
+
+        await restoreArchiveSnapshot(makeInput({
+            directoryMapping: [
+                { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore/dir', selected: true },
+            ],
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+        return seen;
+    }
+
+    // An upload like rsync -a carries the mode of the staged file to the destination, so a staged
+    // file is not 0600. The 0700 of the private folder keeps it from other users.
+    it.skipIf(process.platform === 'win32')('stages a file with the mode the archive recorded for it, which rsync -a carries over', async () => {
+        const seen = await stagedMode({ mode: 0o640 });
+        expect(seen).toEqual({ folder: expect.stringMatching(/^dbackup-private-/), mode: 0o640 });
+    });
+
+    it.skipIf(process.platform === 'win32')('stages a file without a recorded mode with the default mode, not 0600', async () => {
+        const seen = await stagedMode();
+        // The mode a new file takes under the umask of this process.
+        const plain = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'dbackup-mode-')), 'plain');
+        await fs.writeFile(plain, 'x');
+        expect(seen.mode).toBe((await fs.stat(plain)).mode & 0o777);
+        expect(seen.mode).not.toBe(0o600);
+        await fs.rm(path.dirname(plain), { recursive: true, force: true });
     });
 
     it('sets the two restore stages according to what the snapshot holds', async () => {
@@ -340,6 +477,46 @@ describe('restoreArchiveSnapshot', () => {
 
         expect(result.status).toBe('Success');
         expect(result.restoredDatabases).toEqual(['db1']);
+    });
+
+    it('records every database and folder it restores, where each went and what it read, for the summary of the run', async () => {
+        const { sourceAdapter, archiveSize } = await buildRemoteBackup(['db1', 'db2'], { 'a.txt': 'AAAA', 'b.txt': 'BB' });
+        wire({ 'source-fs': sourceAdapter, mysql: makeFakeDbAdapter(), 'local-filesystem': makeFakeStorageAdapter() });
+        const record = createRestoreTracker();
+
+        await restoreArchiveSnapshot(makeInput({
+            targetSourceId: 'target-db-1',
+            databaseMapping: [
+                { originalName: 'db1', targetName: 'db1_restored', selected: true },
+                { originalName: 'db2', targetName: 'db2', selected: true },
+            ],
+            directoryMapping: [{ entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore/dir', selected: true }],
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn(), record });
+
+        const view = record.view(false);
+        expect(view.ranged).toBe(true);
+        expect(view.targetVersion).toBe('8.0');
+        expect(view.databases.map((entry) => [entry.name, entry.target, entry.state])).toEqual([['db1', 'db1_restored', 'done'], ['db2', 'db2', 'done']]);
+        expect(view.databases[0].bytes).toBe(Buffer.byteLength('-- dump of db1'));
+        expect(view.databases[0].startedAt).not.toBeNull();
+        expect(view.folders).toEqual([expect.objectContaining({
+            id: 'src-1', label: 'Test Directory', target: 'Local Restore Target:/restore/dir', adapterId: 'local-filesystem',
+            state: 'done', files: 2, total: 2, failed: 0, bytes: 6, totalBytes: 6,
+        })]);
+        // Only the entries it needed, never the whole archive.
+        expect(view.read).toBeGreaterThan(0);
+        expect(view.read).toBeLessThan(archiveSize);
+    });
+
+    it('records a database that failed as failed and the rest as restored', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['db1', 'db2']);
+        const dbAdapter = makeFakeDbAdapter({ restoreOne: vi.fn().mockRejectedValueOnce(new Error('disk full')).mockResolvedValueOnce(undefined) });
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+        const record = createRestoreTracker();
+
+        await restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn(), record });
+
+        expect(record.view(false).databases.map((entry) => entry.state)).toEqual(['failed', 'done']);
     });
 
     it('returns Partial when one database entry fails and the rest succeed', async () => {
@@ -436,6 +613,37 @@ describe('restoreArchiveSnapshot', () => {
         expect(log.mock.calls.some((c: unknown[]) => c[1] === 'warning' && String(c[0]).includes("'renamed' ignored"))).toBe(true);
     });
 
+    it('checks the names it really writes into for databases of customers before it touches the server', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop', 'blog']);
+        const dbAdapter = makeFakeDbAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+        confirmTargets.mockRejectedValueOnce(new Error('The restore would overwrite databases that customers hold now: shop.'));
+        const input = makeInput({ targetSourceId: 'target-db-1', targetDatabaseName: 'renamed' });
+
+        await expect(restoreArchiveSnapshot(input, { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() })).rejects.toThrow(/customers hold now: shop/);
+
+        // The plain name does not apply to two databases, so each goes back under its own.
+        expect(confirmTargets).toHaveBeenCalledWith(input, ['shop', 'blog']);
+        expect(dbAdapter.prepareRestore).not.toHaveBeenCalled();
+        expect(dbAdapter.restoreOne).not.toHaveBeenCalled();
+    });
+
+    it('checks each database again right before it writes it, and skips one that changed hands meanwhile', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop', 'blog']);
+        const dbAdapter = makeFakeDbAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+        // The check before staging passes, the one before writing shop refuses.
+        confirmTargets.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('shop is no longer yours, so nothing was restored.'));
+        const input = makeInput({ targetSourceId: 'target-db-1' });
+
+        const result = await restoreArchiveSnapshot(input, { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(confirmTargets.mock.calls.map((call) => call[1])).toEqual([['shop', 'blog'], ['shop'], ['blog']]);
+        expect(dbAdapter.restoreOne.mock.calls.map((c: unknown[]) => c[2])).toEqual(['blog']);
+        expect(result.restoredDatabases).toEqual(['blog']);
+        expect(result.errors[0]).toMatchObject({ entry: 'database:shop', error: expect.stringContaining('no longer yours') });
+    });
+
     it('lets the mapping win over a plain target name', async () => {
         const { sourceAdapter } = await buildRemoteBackup(['shop']);
         const dbAdapter = makeFakeDbAdapter();
@@ -467,6 +675,23 @@ describe('restoreArchiveSnapshot', () => {
         expect(seenPath.endsWith('.sql')).toBe(true);
         expect(seenContent).toBe('-- dump of shop');
         await expect(fs.access(seenPath)).rejects.toThrow();
+    });
+
+    it('stages the dump where only DBackup reads it, in the private folder and with 0600', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop']);
+        let seen = { folder: '', folderMode: 0, mode: 0 };
+        const dbAdapter = makeFakeDbAdapter({
+            restoreOne: vi.fn(async (_conf: unknown, filePath: string) => {
+                const folder = path.dirname(filePath);
+                seen = { folder: path.basename(folder), folderMode: (await fs.stat(folder)).mode & 0o777, mode: (await fs.stat(filePath)).mode & 0o777 };
+            }),
+        });
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+
+        await restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(seen.folder).toMatch(/^dbackup-private-/);
+        if (process.platform !== 'win32') expect(seen).toEqual(expect.objectContaining({ folderMode: 0o700, mode: 0o600 }));
     });
 
     it('refuses to restore a dump whose bytes do not match the recorded checksum', async () => {
@@ -563,7 +788,7 @@ describe('restoreArchiveSnapshot', () => {
         expect(result.restoredDirectories).toEqual(['src-1']);
         expect(result.restoredDatabases).toEqual([]);
         expect(dbAdapter.restoreOne).not.toHaveBeenCalled();
-        expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function), undefined);
+        expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function), { restoreRelativePath: 'a.txt' });
     });
 
     it('records an error (Partial) for a directory entry with no restore target specified', async () => {
@@ -580,6 +805,23 @@ describe('restoreArchiveSnapshot', () => {
         expect(result.restoredDatabases).toEqual(['db1']);
         expect(result.restoredDirectories).toHaveLength(0);
         expect(result.errors.some((e) => e.error.includes('No restore target specified'))).toBe(true);
+    });
+
+    it('writes nothing for a picked directory source without a folder, rather than into a folder named by the archive', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['db1'], { 'a.txt': 'A' });
+        const dbAdapter = makeFakeDbAdapter();
+        const storageAdapter = makeFakeStorageAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter, 'local-filesystem': storageAdapter });
+
+        const result = await restoreArchiveSnapshot(makeInput({
+            targetSourceId: 'target-db-1',
+            directoryMapping: [{ entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '  ', selected: true }],
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(result.status).toBe('Partial');
+        expect(result.restoredDirectories).toHaveLength(0);
+        expect(storageAdapter.upload).not.toHaveBeenCalled();
+        expect(result.errors).toContainEqual({ entry: 'directory:Test Directory', error: 'Pick the folder each restored directory source goes into.' });
     });
 
     it('skips files matching an exclude pattern instead of restoring them', async () => {
@@ -601,6 +843,47 @@ describe('restoreArchiveSnapshot', () => {
         // Excluded files were never meant to be written, so they are not failures.
         expect(result.status).toBe('Success');
         expect(result.errors).toHaveLength(0);
+    });
+
+    it('names a .meta.json and a file of the configuration backup as errors for a member and writes the rest', async () => {
+        const { sourceAdapter } = await buildRemoteBackup([], {
+            'keep.txt': 'A',
+            'Shop/Shop_2026.tar.meta.json': '{"locked":true}',
+            'config-backups/config_backup_2026.db.gz.enc': 'x',
+        });
+        const storageAdapter = makeFakeStorageAdapter();
+        wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
+        const mapping = [{ entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore', selected: true }];
+
+        const member = await restoreArchiveSnapshot(makeInput({
+            directoryMapping: mapping,
+            caller: { isPlatformAdmin: false, authMethod: 'session', tenantId: 'default', permissions: ['storage:restore'] },
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(vi.mocked(storageAdapter.upload).mock.calls.map((c: unknown[]) => c[2])).toEqual(['/restore/keep.txt']);
+        expect(member.status).toBe('Partial');
+        expect(member.errors.map((e) => e.entry).sort()).toEqual(['Test Directory/Shop/Shop_2026.tar.meta.json', 'Test Directory/config-backups/config_backup_2026.db.gz.enc']);
+
+        vi.mocked(storageAdapter.upload).mockClear();
+        const admin = await restoreArchiveSnapshot(makeInput({
+            directoryMapping: mapping,
+            caller: { isPlatformAdmin: true, authMethod: 'session', tenantId: 'default', permissions: [] },
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+        expect(admin.status).toBe('Success');
+        expect(vi.mocked(storageAdapter.upload).mock.calls).toHaveLength(3);
+    });
+
+    it('fails the run when every file of a member is one only a platform admin restores', async () => {
+        const { sourceAdapter } = await buildRemoteBackup([], { 'x.meta.json': '{}' });
+        const storageAdapter = makeFakeStorageAdapter();
+        wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
+
+        const result = await restoreArchiveSnapshot(makeInput({
+            directoryMapping: [{ entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore', selected: true }],
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(storageAdapter.upload).not.toHaveBeenCalled();
+        expect(result.status).toBe('Failed');
     });
 
     it('restores everything when no exclude pattern is given', async () => {

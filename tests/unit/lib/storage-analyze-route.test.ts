@@ -29,8 +29,12 @@ vi.mock("@/lib/prisma", () => ({
         adapterConfig: {
             findUnique: (...args: any[]) => mockFindUnique(...args),
         },
+        // Nobody shares the destination, so its tenant sees it as it is.
+        connectionShare: { count: async () => 0 },
     },
 }));
+
+vi.mock("@/services/sharing/provided", () => ({ providedConnection: vi.fn().mockResolvedValue(null) }));
 
 const mockResolveAdapterConfig = vi.fn();
 vi.mock("@/lib/adapters/config-resolver", () => ({
@@ -56,6 +60,10 @@ vi.mock("@/services/backup/archive-index-service", () => ({
 vi.mock("@/lib/temp-dir", () => ({
     getTempDir: () => "/tmp/dbackup-test",
 }));
+// The private folder the download of a backup goes into, see `privateTempDir`, at the same made-up place.
+vi.mock("@/lib/private-temp-dir", () => ({
+    privateTempPath: async (name: string) => `/tmp/dbackup-test/${name}`,
+}));
 
 vi.mock("fs", () => ({
     default: {
@@ -79,9 +87,9 @@ function createProps(id = "dest-1") {
 describe("POST /api/storage/[id]/analyze - combined (manifest v2) archives", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockGetAuthContext.mockResolvedValue({ userId: "user-1" });
+        mockGetAuthContext.mockResolvedValue({ userId: "user-1", tenantId: "acme" });
         mockResolveAdapterConfig.mockImplementation(async (config: unknown) => config);
-        mockFindUnique.mockResolvedValue({ id: "dest-1", type: "storage", adapterId: "local-filesystem", config: "{}" });
+        mockFindUnique.mockResolvedValue({ id: "dest-1", type: "storage", adapterId: "local-filesystem", config: "{}", tenantId: "acme" });
         mockRegistryGet.mockReturnValue({ id: "local-filesystem", type: "storage", download: mockDownload, read: mockRead });
         mockDownload.mockResolvedValue(true);
         // No sidecar metadata by default - forces the full download + manifest-read path.

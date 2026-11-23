@@ -5,6 +5,7 @@ import * as SheetPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { ignoringToasts } from "@/components/ui/outside-toasts"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -49,6 +50,7 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
@@ -74,6 +76,8 @@ function SheetContent({
           className
         )}
         {...props}
+        // A click on a toast, like its Open the run, leaves the panel open.
+        onInteractOutside={ignoringToasts(onInteractOutside)}
       >
         {children}
         {showCloseButton && (

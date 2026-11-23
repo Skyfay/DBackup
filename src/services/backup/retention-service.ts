@@ -1,5 +1,5 @@
 import { FileInfo } from '@/lib/core/interfaces';
-import { effectiveBackupTime } from '@/lib/core/backup-files';
+import { effectiveBackupTime, chainFolderOf } from '@/lib/core/backup-files';
 import { RetentionConfiguration } from '@/lib/core/retention';
 import { formatInTimeZone } from 'date-fns-tz';
 
@@ -90,19 +90,33 @@ export class RetentionService {
      * partially deleted underneath it.
      */
     private static protectIncompleteChains(files: FileWithReasons[], lockedFiles: FileInfo[]) {
-        const chainsToKeep = new Set<string>();
-
-        for (const entry of files) {
-            if (entry.keep && entry.file.chainId) chainsToKeep.add(entry.file.chainId);
+        // The physical chain-* folder is authoritative even when a FULL sidecar is
+        // unreadable. Flat legacy FULL backups must not become chain members.
+        const keyOf = (file: FileInfo): string | null => {
+            const folder = chainFolderOf(file.path);
+            return folder ? `folder:${folder}` : file.chainId ? `id:${file.chainId}` : null;
+        };
+        const groups = new Map<string, { keep: boolean; unsafe: boolean; typed: boolean; full: boolean }>();
+        for (const entry of [...files.map((item) => ({ file: item.file, keep: item.keep })),
+                             ...lockedFiles.map((file) => ({ file, keep: true }))]) {
+            const key = keyOf(entry.file);
+            if (!key) continue;
+            const group = groups.get(key) ?? { keep: false, unsafe: false, typed: false, full: false };
+            group.keep ||= entry.keep;
+            group.unsafe ||= entry.file.chainMetadataUnsafe === true;
+            group.typed ||= entry.file.chainType !== undefined;
+            group.full ||= entry.file.chainType === 'full';
+            groups.set(key, group);
         }
-        // A locked backup pins its whole chain too, for the same reason.
-        for (const locked of lockedFiles) {
-            if (locked.chainId) chainsToKeep.add(locked.chainId);
+        for (const group of groups.values()) {
+            // If sidecars are readable but a chain has no FULL, preserve the orphaned
+            // folder for operator recovery. Read-less adapters can still prune whole
+            // folders: lack of a readable sidecar alone is not an infinite block.
+            group.keep ||= group.unsafe || (group.typed && !group.full);
         }
-
         for (const entry of files) {
-            if (entry.keep || !entry.file.chainId) continue;
-            if (!chainsToKeep.has(entry.file.chainId)) continue;
+            const key = keyOf(entry.file);
+            if (entry.keep || !key || !groups.get(key)?.keep) continue;
             entry.keep = true;
             entry.reasons.push(CHAIN_KEEP_REASON);
         }

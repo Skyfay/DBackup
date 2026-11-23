@@ -1,6 +1,7 @@
 import type { ExecutionHost } from "@/lib/transport";
 import { MongoDBConfig } from "@/lib/adapters/definitions";
 import { TableInfo, ColumnInfo, TableDataOptions, TableDataResult } from "@/lib/core/interfaces";
+import { ValidationError } from "@/lib/logging/errors";
 import { withMongoMeta } from "./meta";
 
 
@@ -57,12 +58,26 @@ export async function getTables(
     }));
 }
 
+/**
+ * A column the reader searches or sorts by becomes a key of the filter or the sort. A key that
+ * starts with `$` is an operator there, and `$where` runs its value as JavaScript on the server, so
+ * a column is a field name and nothing else.
+ */
+function assertFieldName(field: unknown): void {
+    if (field === undefined || field === null || field === "") return;
+    if (typeof field !== "string" || field.startsWith("$") || field.includes("\0")) {
+        throw new ValidationError("The column to search or sort by is no field of the collection.");
+    }
+}
+
 export async function getTableData(
     config: MongoDBConfig,
     options: TableDataOptions,
     host: ExecutionHost,
 ): Promise<TableDataResult> {
     const { database, table, page, pageSize, sortBy, sortDir, search, searchColumn, matchMode } = options;
+    assertFieldName(searchColumn);
+    assertFieldName(sortBy);
 
     function buildMongoFilter(field: string, term: string): Record<string, unknown> {
         const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

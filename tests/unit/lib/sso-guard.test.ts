@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
     provider: vi.fn(),
     group: vi.fn(),
-    updateUser: vi.fn(),
+    createMembership: vi.fn(),
     log: vi.fn(),
 }));
 
@@ -12,7 +12,7 @@ vi.mock("@/lib/prisma", () => ({
     default: {
         ssoProvider: { findUnique: (...args: unknown[]) => mocks.provider(...args) },
         group: { findUnique: (...args: unknown[]) => mocks.group(...args) },
-        user: { update: (...args: unknown[]) => mocks.updateUser(...args) },
+        tenantMembership: { create: (...args: unknown[]) => mocks.createMembership(...args) },
     },
 }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.log(...args) } }));
@@ -73,20 +73,31 @@ describe("single sign-on as the saved providers decide it", () => {
         expect(mocks.provider).not.toHaveBeenCalled();
     });
 
-    it("puts someone a provider added into its group and says so in the log", async () => {
+    it("puts someone a provider added into its group in the home tenant and says so in the log", async () => {
         mocks.provider.mockResolvedValue({ name: "Authentik", defaultGroupId: "group-ops" });
         mocks.group.mockResolvedValue({ id: "group-ops", name: "Operators" });
 
         await placeSsoUser({ id: "tom", name: "Tom Weber", email: "tom@example.ch" }, CALLBACK);
 
-        expect(mocks.updateUser).toHaveBeenCalledWith({ where: { id: "tom" }, data: { groupId: "group-ops" } });
+        expect(mocks.createMembership).toHaveBeenCalledWith({ data: { userId: "tom", tenantId: "default", groupId: "group-ops" } });
         expect(mocks.log).toHaveBeenCalledWith(
             "tom",
             "CREATE",
             "USER",
             { name: "Tom Weber", email: "tom@example.ch", via: "sso", provider: "Authentik", providerId: "authentik-417", group: "Operators" },
-            "tom"
+            "tom",
+            { tenantId: "default" }
         );
+    });
+
+    it("puts someone a provider of a tenant added into that tenant, with its group there", async () => {
+        mocks.provider.mockResolvedValue({ name: "Acme Entra ID", defaultGroupId: "group-acme", tenantId: "acme" });
+        mocks.group.mockResolvedValue({ id: "group-acme", name: "Viewer" });
+
+        await placeSsoUser({ id: "lena", name: "Lena Graf", email: "lena@acme.ch" }, CALLBACK);
+
+        expect(mocks.createMembership).toHaveBeenCalledWith({ data: { userId: "lena", tenantId: "acme", groupId: "group-acme" } });
+        expect(mocks.log).toHaveBeenCalledWith("lena", "CREATE", "USER", expect.objectContaining({ group: "Viewer" }), "lena", { tenantId: "acme" });
     });
 
     it("leaves someone without a group when the group of the provider is gone", async () => {
@@ -95,7 +106,7 @@ describe("single sign-on as the saved providers decide it", () => {
 
         await placeSsoUser({ id: "tom", name: "Tom Weber", email: "tom@example.ch" }, CALLBACK);
 
-        expect(mocks.updateUser).not.toHaveBeenCalled();
+        expect(mocks.createMembership).not.toHaveBeenCalled();
         expect(mocks.log.mock.calls[0][3]).not.toHaveProperty("group");
     });
 

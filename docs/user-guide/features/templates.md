@@ -64,6 +64,8 @@ Token chips in the template dialog insert at the cursor. The preview shows a nam
 
 Literal text works without escaping, for example `prod_{db_name}-yyyy-MM-dd`. The letter pairs of the date tokens are replaced wherever they appear, though, so a word like `summary` turns into `su30ary`.
 
+A pattern names one file, never a folder. A pattern with a `/`, a `\` or a control character, or one that starts with a dot, is refused on save. A run turns any of them in a pattern saved before into `_`.
+
 The details of a template list the next file of each of its jobs, and **Names repeat** counts the jobs whose runs would get a name an earlier run already has.
 
 ### Default and Deleting

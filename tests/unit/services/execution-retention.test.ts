@@ -98,8 +98,8 @@ describe("Execution history cleanup", () => {
     function mockFindMany(newestByGroup: Record<string, { id: string; startedAt: Date }[]>, batches: { id: string }[][]) {
         prismaMock.execution.findMany.mockImplementation((async (args: FindManyArgs) => {
             if (args.orderBy) {
-                const where = args.where as { jobId: string | null; type: string };
-                return newestByGroup[`${where.jobId}:${where.type}`] ?? [];
+                const where = args.where as { tenantId: string; jobId: string | null; type: string };
+                return newestByGroup[`${where.tenantId}:${where.jobId}:${where.type}`] ?? [];
             }
             return batches.shift() ?? [];
         }) as never);
@@ -115,16 +115,16 @@ describe("Execution history cleanup", () => {
 
     it("keeps the newest runs of each job and of each run type without a job", async () => {
         groupBy.mockResolvedValue([
-            { jobId: "job-rare", type: "Backup" },
-            { jobId: null, type: "Restore" },
+            { tenantId: "default", jobId: "job-rare", type: "Backup" },
+            { tenantId: "default", jobId: null, type: "Restore" },
         ] as never);
         prismaMock.execution.findFirst.mockResolvedValue(null);
         mockFindMany(
             {
                 // A monthly job: its newest runs are all older than the cutoff.
-                "job-rare:Backup": [{ id: "rare-new", startedAt: old }, { id: "rare-older", startedAt: old }],
+                "default:job-rare:Backup": [{ id: "rare-new", startedAt: old }, { id: "rare-older", startedAt: old }],
                 // A restore from yesterday plus an old one. Only the old one needs protecting.
-                "null:Restore": [{ id: "restore-recent", startedAt: recent }, { id: "restore-old", startedAt: old }],
+                "default:null:Restore": [{ id: "restore-recent", startedAt: recent }, { id: "restore-old", startedAt: old }],
             },
             [[{ id: "deletable-1" }]]
         );
@@ -134,7 +134,7 @@ describe("Execution history cleanup", () => {
 
         expect(deleted).toBe(1);
         expect(prismaMock.execution.findMany).toHaveBeenCalledWith(expect.objectContaining({
-            where: { jobId: "job-rare", type: "Backup" },
+            where: { tenantId: "default", jobId: "job-rare", type: "Backup" },
             take: EXECUTION_HISTORY_KEEP_LATEST,
         }));
         const batchCall = prismaMock.execution.findMany.mock.calls.find(([args]) => !(args as FindManyArgs).orderBy);
@@ -150,10 +150,37 @@ describe("Execution history cleanup", () => {
         });
     });
 
+    it("keeps the newest restores of each tenant, so a busy tenant never uses up the quota of another", async () => {
+        groupBy.mockResolvedValue([
+            { tenantId: "default", jobId: null, type: "Restore" },
+            { tenantId: "acme", jobId: null, type: "Restore" },
+        ] as never);
+        prismaMock.execution.findFirst.mockResolvedValue(null);
+        mockFindMany(
+            {
+                "default:null:Restore": [{ id: "home-restore", startedAt: old }],
+                "acme:null:Restore": [{ id: "acme-restore", startedAt: old }],
+            },
+            [[]]
+        );
+
+        await deleteOldExecutions(30, NOW);
+
+        expect(groupBy).toHaveBeenCalledWith(expect.objectContaining({ by: ["tenantId", "jobId", "type"] }));
+        const batchCall = prismaMock.execution.findMany.mock.calls.find(([args]) => !(args as FindManyArgs).orderBy);
+        expect((batchCall![0] as FindManyArgs).where).toEqual({
+            AND: [
+                { startedAt: { lt: cutoff } },
+                { status: { notIn: ["Pending", "Running"] } },
+                { id: { notIn: ["home-restore", "acme-restore"] } },
+            ],
+        });
+    });
+
     it("keeps every run of the chain an incremental job is still extending", async () => {
-        groupBy.mockResolvedValue([{ jobId: "job-inc", type: "Backup" }] as never);
+        groupBy.mockResolvedValue([{ tenantId: "default", jobId: "job-inc", type: "Backup" }] as never);
         prismaMock.execution.findFirst.mockResolvedValue({ chainId: "chain-active" } as never);
-        mockFindMany({ "job-inc:Backup": [] }, [[]]);
+        mockFindMany({ "default:job-inc:Backup": [] }, [[]]);
 
         await deleteOldExecutions(30, NOW);
 

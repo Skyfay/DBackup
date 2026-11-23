@@ -29,6 +29,6 @@ The rules for an entry, like at most two sentences and no `;`, and which changes
 
 - `pnpm changelog:check` checks the files on their own.
 - `pnpm changelog:preview` prints the block the next release writes, thanks included.
-- `pnpm version:bump` writes that block into `docs/changelog.md` and deletes the files.
+- `pnpm version:bump` writes that block into `docs/changelog.md` and deletes the files. A beta (`pnpm version:bump beta`) leaves them for the release it previews, and the notes of its GitHub release come from them (`pnpm changelog:notes <tag>`).
 
 Preview and release need git and a logged-in GitHub CLI (`gh`) for the thanks. Without them they still run and name the files whose thanks has to be added by hand.

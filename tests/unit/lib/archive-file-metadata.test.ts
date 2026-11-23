@@ -61,21 +61,21 @@ describe("metadata field mapping", () => {
 
     it("survives a round trip in both directions", () => {
         const meta: FileMetadata = { mode: 0o750, uid: 1234, gid: 5678 };
-        expect(metadataFromIndex(file("a", 1, metadataToIndex(meta)))).toEqual(meta);
+        expect(metadataFromIndex(file("a", 1, metadataToIndex(meta)), true)).toEqual(meta);
     });
 
     it("reports undefined for a line written before the fields existed", () => {
         // Not an empty object: a restore from any archive written so far has to reach
         // upload() with exactly the arguments it always did, and `{}` is not `undefined`
         // to a test - or to an adapter that branches on the options being present.
-        expect(metadataFromIndex(file("a", 1))).toBeUndefined();
+        expect(metadataFromIndex(file("a", 1), true)).toBeUndefined();
     });
 
     it("keeps mode 0 apart from an absent mode", () => {
         // 0 is a real mode and falsy, so anything written with a truthiness check would
         // drop it. A file with no permission bits at all is unusual but not invalid.
         expect(metadataToIndex({ mode: 0, uid: 0, gid: 0 })).toEqual({ mo: 0, u: 0, g: 0 });
-        expect(metadataFromIndex(file("a", 1, { mo: 0, u: 0, g: 0 }))).toEqual({ mode: 0, uid: 0, gid: 0 });
+        expect(metadataFromIndex(file("a", 1, { mo: 0, u: 0, g: 0 }), true)).toEqual({ mode: 0, uid: 0, gid: 0 });
     });
 });
 
@@ -180,7 +180,7 @@ describe("archive round trip", () => {
 
         const line = index.files.find((f) => f.p === "data.bin")!;
         expect(line).toMatchObject({ mo: 0o600, u: 1234, g: 5678 });
-        expect(metadataFromIndex(line)).toEqual({ mode: 0o600, uid: 1234, gid: 5678 });
+        expect(metadataFromIndex(line, true)).toEqual({ mode: 0o600, uid: 1234, gid: 5678 });
     });
 
     it("writes no metadata keys at all for a source that reports none", async () => {

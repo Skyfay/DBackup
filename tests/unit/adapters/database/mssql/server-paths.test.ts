@@ -126,11 +126,39 @@ describe("buildMoveTargets", () => {
         ]);
     });
 
+    it("names a second log file apart from the log of a database called <name>_2", () => {
+        const shop = buildMoveTargets(
+            [dataFile(), logFile(), logFile({ logicalName: "Shop_log2", physicalName: "/var/opt/mssql/data/Shop_log2.ldf" })],
+            "Shop",
+            { data: "/var/opt/mssql/data" },
+        );
+        const shop2 = buildMoveTargets([dataFile(), logFile()], "Shop_2", { data: "/var/opt/mssql/data" });
+
+        expect(shop.map((t) => t.physicalPath)).toEqual([
+            "/var/opt/mssql/data/Shop.mdf",
+            "/var/opt/mssql/data/Shop.ldf",
+            "/var/opt/mssql/data/Shop_log2.ldf",
+        ]);
+        const own = new Set(shop.map((t) => t.physicalPath));
+        expect(shop2.some((t) => own.has(t.physicalPath))).toBe(false);
+    });
+
     it("rejects a rename it cannot place, naming the way out", () => {
         const filestream = dataFile({ logicalName: "Shop_fs", type: "S", physicalName: "/var/opt/mssql/data/Shop_fs" });
 
         expect(() => buildMoveTargets([filestream], "Shop_Copy", { data: "/var/opt/mssql/data" }))
             .toThrow(/original database name/);
+    });
+
+    it("names why the files move when they come from another server or one whose name could not be read", () => {
+        const filestream = dataFile({ logicalName: "Shop_fs", type: "S", physicalName: "D:\\SQLData\\Shop_fs" });
+
+        for (const [reason, words] of [["other", "comes from another server"], ["unknown", "comes from a server whose name could not be read"]] as const) {
+            expect(() => buildMoveTargets([filestream], "Shop", { data: "/var/opt/mssql/data" }, { reason })).toThrow(words);
+            expect(() => buildMoveTargets([filestream], "Shop", { data: "/var/opt/mssql/data" }, { reason })).not.toThrow(/original database name/);
+            // Without any folder to place a file in, the way out is the folders of the instance.
+            expect(() => buildMoveTargets([dataFile({ physicalName: "Shop.mdf" })], "Shop", {}, { reason })).toThrow(new RegExp(`server properties, since the backup ${words}`));
+        }
     });
 });
 

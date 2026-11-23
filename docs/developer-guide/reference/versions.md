@@ -6,7 +6,7 @@ This document lists the database engines and versions supported by DBackup.
 
 | Database | Supported Versions | Client Tool | Notes |
 | :--- | :--- | :--- | :--- |
-| **PostgreSQL** | 12, 13, 14, 15, 16, 17, 18 | `pg_dump` | Backward compatible |
+| **PostgreSQL** | 12, 13, 14, 15, 16, 17, 18, 19 | `pg_dump` | Backward compatible |
 | **MySQL** | 5.7, 8.0, 9.1 | `mariadb-dump` | Via mariadb-client |
 | **MariaDB** | 10.x, 11.x | `mariadb-dump` | Native support |
 | **MongoDB** | 4.x, 5.x, 6.x, 7.x, 8.x | `mongodump` | Standard operations |
@@ -22,12 +22,12 @@ DBackup's Docker image is built on `node:24-slim` (Debian 12 bookworm) and inclu
 | Package | Version | Supported Databases |
 | :--- | :--- | :--- |
 | `mariadb-client` | Debian 12 package, MariaDB 10.11 | MySQL 5.7+, MariaDB 10+ |
-| `postgresql-client-18` | 18.x from the PGDG repository | PostgreSQL 12-18 |
+| `postgresql-client-19` | 19.x from the PGDG repository | PostgreSQL 12-19 |
 | `mongodb-database-tools` | 100.16.1 | MongoDB 4-8 |
 | `sqlite3` | Debian 12 package | SQLite 3.x |
 | `redis-tools` | Debian 12 package | Redis, Valkey |
 | Firebird `gbak` and `isql` | 5.0.3 | Firebird 3-5 |
-| `sqlpackage` | Current release at build time, on the .NET 10 runtime | Azure SQL Database |
+| `sqlpackage` | 170.5.96, on the .NET 10 runtime | Azure SQL Database |
 
 The image has no MySQL client of its own. DBackup calls `mariadb-dump`, `mariadb` and `mariadb-admin` first, so MySQL servers are backed up with the MariaDB tools too.
 
@@ -40,12 +40,13 @@ The image has no MySQL client of its own. DBackup calls `mariadb-dump`, `mariadb
 - PostgreSQL 14 (EOL: 2026-11)
 - PostgreSQL 15 (EOL: 2027-11)
 - PostgreSQL 16 (EOL: 2028-11)
-- PostgreSQL 17 (Current)
-- PostgreSQL 18 (Beta)
+- PostgreSQL 17 (EOL: 2029-11)
+- PostgreSQL 18 (EOL: 2030-11)
+- PostgreSQL 19 (Current)
 
 ### Client Compatibility
 
-`pg_dump` from PostgreSQL 18 is backward compatible with older servers. This allows backing up PostgreSQL 12 servers with the latest client tools.
+`pg_dump` from PostgreSQL 19 is backward compatible with older servers. This allows backing up PostgreSQL 12 servers with the latest client tools.
 
 ### Dump Options
 
@@ -126,10 +127,12 @@ mongodump \
   --host hostname \
   --port 27017 \
   --username user \
-  --password *** \
   --authenticationDatabase admin \
+  --config=/tmp/<file>.yaml \
   --archive=backup.archive
 ```
+
+The file of `--config` holds `password:`, readable by its owner alone, and needs the Database Tools 100.3.0 or newer.
 
 ### Features
 
@@ -305,6 +308,7 @@ if (backupVersion > targetVersion) {
 | MySQL 8.0 | MySQL 5.7 | ⚠️ May fail |
 | PostgreSQL 15 | PostgreSQL 16 | ✅ Works |
 | PostgreSQL 16 | PostgreSQL 14 | ⚠️ May fail |
+| PostgreSQL 19 | PostgreSQL 12 | ✅ Works, pg_restore ignores one `transaction_timeout` error |
 
 ## Adding Support for New Versions
 
@@ -318,7 +322,7 @@ When a new database version is released:
 
 2. **Update Docker image** (if needed):
    ```dockerfile
-   RUN apk add --no-cache postgresql18-client
+   RUN apt-get install -y --no-install-recommends postgresql-client-19
    ```
 
 3. **Add the version to the dev lab**, see [Adding an Engine or Version](/developer-guide/reference/dev-lab#adding-an-engine-or-version)

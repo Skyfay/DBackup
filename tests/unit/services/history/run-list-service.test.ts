@@ -32,6 +32,11 @@ describe("buildRunWhere", () => {
         expect(buildRunWhere({ types: ["Backup"], statuses: ["Failed"] }, "statuses")).toEqual({ AND: [{ type: { in: ["Backup"] } }] });
         expect(buildRunWhere({})).toEqual({});
     });
+
+    it("narrows to the tenants of the Tenant filter of All tenants, except while it counts the tenants", () => {
+        expect(buildRunWhere({ tenantIds: ["acme", " "], statuses: ["Failed"] })).toEqual({ AND: [{ tenantId: { in: ["acme"] } }, { status: { in: ["Failed"] } }] });
+        expect(buildRunWhere({ tenantIds: ["acme"], statuses: ["Failed"] }, "tenantIds")).toEqual({ AND: [{ status: { in: ["Failed"] } }] });
+    });
 });
 
 describe("listRuns", () => {
@@ -64,6 +69,22 @@ describe("getRunFacets", () => {
             .mockResolvedValueOnce([{ jobId: "j1", _count: { _all: 4 } }, { jobId: null, _count: { _all: 1 } }] as never)
             .mockResolvedValueOnce([{ triggerType: "Manual", triggerLabel: "Manu", _count: { _all: 3 } }, { triggerType: "Scheduler", triggerLabel: "Scheduler", _count: { _all: 2 } }] as never);
         expect(await getRunFacets({})).toEqual({ type: { Backup: 5 }, status: { Failed: 2 }, job: { j1: 4 }, starter: { "manual:Manu": 3, schedule: 2 } });
+        // Inside a tenant every run is of that tenant, so nothing counts them by tenant.
+        expect(groupBy).toHaveBeenCalledTimes(4);
+    });
+
+    it("counts the runs of each tenant in All tenants, under the other filters but not its own", async () => {
+        groupBy.mockImplementation(async (args: { by: string[] }) =>
+            args.by[0] === "tenantId" ? [{ tenantId: "acme", _count: { _all: 7 } }, { tenantId: "globex", _count: { _all: 2 } }] : []);
+
+        const facets = await getRunFacets({ tenantIds: ["acme"], statuses: ["Failed"] }, true);
+
+        expect(facets.tenant).toEqual({ acme: 7, globex: 2 });
+        const byTenant = groupBy.mock.calls.find(([args]) => args.by[0] === "tenantId")![0];
+        expect(byTenant.where).toEqual({ AND: [{ status: { in: ["Failed"] } }] });
+        // The other filters count within the picked tenants.
+        const byType = groupBy.mock.calls.find(([args]) => args.by[0] === "type")![0];
+        expect(byType.where).toEqual({ AND: [{ tenantId: { in: ["acme"] } }, { status: { in: ["Failed"] } }] });
     });
 });
 

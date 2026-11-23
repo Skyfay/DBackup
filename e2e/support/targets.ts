@@ -4,7 +4,7 @@
  * `E2E_FAMILIES=postgres,mysql` narrows a run to those families, `ui` names the browser tests.
  */
 
-import { CUSTOMER, NOTIFY, STORAGE, databasesOf, type DatabaseService } from "../../lab/src/catalog";
+import { CUSTOMER, DEX, NOTIFY, STORAGE, databasesOf, type DatabaseService } from "../../lab/src/catalog";
 import type { LabConfig, SshLogin } from "../../lab/src/config";
 import { ENGINES, engineOf } from "../../lab/src/engines";
 import { sqliteDatabase } from "../../lab/src/engines/sqlite";
@@ -147,5 +147,5 @@ export function uiSelected(): boolean {
     return !names?.length || names.includes("ui");
 }
 
-/** The UI tests back up one database, PostgreSQL 18. */
-export const UI_SERVICES = ["postgres-18"];
+/** The UI tests back up one database, PostgreSQL 18, read the mail of a shared channel in Mailpit and sign in through Dex. */
+export const UI_SERVICES = ["postgres-18", NOTIFY.mailpit.service, DEX.service];

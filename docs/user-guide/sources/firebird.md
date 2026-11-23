@@ -36,11 +36,15 @@ A `USERNAME_PASSWORD` credential profile is required for the SYSDBA (or equivale
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
 | **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
-| **Host** | Firebird server hostname or IP | `localhost` | ✅ |
-| **Port** | Firebird server port | `3050` | ✅ |
+| **Host** | Firebird server hostname or IP, without spaces, `:` or a leading `-`, and no protocol like `inet`. A port may follow as `host/3051`, an IPv6 address goes in brackets | `localhost` | ✅ |
+| **Port** | Firebird server port, a whole number from 1 to 65535 | `3050` | ✅ |
 | **Login** | `USERNAME_PASSWORD` credential profile | - | ✅ |
 | **Aliases** | List of `{ name, path }` entries - the alias shown in DBackup and the `.fdb` path on the Firebird server | - | ✅ (at least one) |
 | **Extra options** | Extra `gbak` flags | - | ❌ |
+
+::: info Extra options are for platform admins
+In direct mode the dump tools run on the server DBackup runs on, where an option can name any file DBackup may write. So only a platform admin, signed in with a session in the home tenant, saves, changes or tests a direct connection with **Extra options**, and anyone else opens such a connection read-only and may still pick it in a job. Over SSH the options are open to everyone. See [Connections to the Server DBackup Runs On](/user-guide/admin/tenants#connections-to-the-server-dbackup-runs-on).
+:::
 
 ### SSH Mode Fields
 
@@ -94,6 +98,8 @@ Because a Firebird alias has no meaning without a matching file path, restore on
 :::
 
 Restoring always replaces the target file's contents (`gbak -rep`) - there's no separate "create only" step, so make sure you're restoring into the intended alias.
+
+A database of the backup whose name is no alias of the target source is restored only into a path you enter for it. DBackup never takes the name stored in the backup as the file to replace, since whoever can write to the destination chose that name.
 
 DBackup also blocks restoring a backup taken on a newer Firebird version onto an older target server, consistent with the version guard used by other adapters.
 

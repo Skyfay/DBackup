@@ -8,6 +8,7 @@
 
 import { resolveSelection } from "@/lib/archive/browse";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
+import { excludePatternsProblem } from "@/lib/exclude-pattern-rules";
 import { ValidationError } from "@/lib/logging/errors";
 import type { ArchiveIndex, IndexDatabaseLine, IndexFileLine } from "@/lib/archive/types";
 
@@ -43,6 +44,9 @@ export interface ResolvedContents {
  */
 export function resolveContents(index: ArchiveIndex, request: SelectionRequest): ResolvedContents {
     const patterns = (request.excludePatterns ?? []).filter((p) => p.trim().length > 0);
+    // Matched against every file of the archive in the one server process, so in the shapes a save takes.
+    const patternProblem = excludePatternsProblem(patterns);
+    if (patternProblem) throw new ValidationError(patternProblem, { field: "excludePatterns" });
     const keep = (file: IndexFileLine) => patterns.length === 0 || !matchesAnyExcludePattern(file.p, patterns);
 
     const hasSelections = !!request.selections && request.selections.length > 0;

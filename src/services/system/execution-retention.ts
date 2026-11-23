@@ -61,7 +61,8 @@ export async function purgeExecutionLogs(retentionDays: number, now: Date = new 
  *
  * - The newest runs of every job, so the job list, the missing-backup alert and anyone looking
  *   at a rarely scheduled job still see its recent results. Runs without a job (restores,
- *   system tasks, runs of deleted jobs) are grouped by type instead.
+ *   system tasks, runs of deleted jobs) are grouped by type instead, per tenant, so the runs of
+ *   one tenant never use up the quota of another.
  * - Every run of the chain each incremental job is currently extending. The chain planner reads
  *   the chain's full to work out its age, and losing it would force an unplanned full.
  *
@@ -69,7 +70,7 @@ export async function purgeExecutionLogs(retentionDays: number, now: Date = new 
  */
 async function collectProtectedRuns(cutoff: Date): Promise<{ ids: string[]; chainIds: string[] }> {
     const groups = await prisma.execution.groupBy({
-        by: ["jobId", "type"],
+        by: ["tenantId", "jobId", "type"],
         where: { startedAt: { lt: cutoff } },
     });
 
@@ -78,7 +79,7 @@ async function collectProtectedRuns(cutoff: Date): Promise<{ ids: string[]; chai
 
     for (const group of groups) {
         const newest = await prisma.execution.findMany({
-            where: { jobId: group.jobId, type: group.type },
+            where: { tenantId: group.tenantId, jobId: group.jobId, type: group.type },
             orderBy: { startedAt: "desc" },
             take: EXECUTION_HISTORY_KEEP_LATEST,
             select: { id: true, startedAt: true },

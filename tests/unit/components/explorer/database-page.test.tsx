@@ -11,6 +11,7 @@ const push = vi.fn();
 vi.mock("next/navigation", () => ({
     useRouter: () => ({ push, replace }),
     useSearchParams: () => search,
+    usePathname: () => "/dashboard/explorer/database",
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/auth/client", () => ({

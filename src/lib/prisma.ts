@@ -82,8 +82,10 @@ const prismaClientSingleton = () => {
         async $allOperations({ args, query, operation }) {
           const result = await query(args);
 
-          const readActions = ['findUnique', 'findFirst', 'findMany'];
-          if (!readActions.includes(operation) || !result) return result;
+          // Every operation that answers with records, the writes too: the SSO plugin of better-auth
+          // locks a provider with an update and compares the row it answers with the one it read.
+          const recordActions = ['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow', 'findMany', 'create', 'update', 'upsert', 'delete'];
+          if (!recordActions.includes(operation) || !result) return result;
 
           // Lazy import to avoid circular dependency (crypto.ts does not import prisma.ts)
           const { decrypt } = await import('./crypto');

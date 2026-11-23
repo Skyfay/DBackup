@@ -24,7 +24,8 @@ vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 // The services use the client of the app, here the one of the test database with its tenant filter.
-vi.mock("@/lib/prisma", () => ({ get default() { return app.client; } }));
+// better-auth reads the data model of the client once src/lib/auth loads, before beforeAll made it.
+vi.mock("@/lib/prisma", () => ({ get default() { return app.client ?? {}; } }));
 // No destination keeps a backup here, who holds what is the subject.
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCachedListing: vi.fn(async () => null) } }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));

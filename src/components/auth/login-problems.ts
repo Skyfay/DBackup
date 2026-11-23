@@ -29,6 +29,10 @@ const SSO_PROBLEMS: Record<string, LoginProblem> = {
         title: "Account not linked",
         text: "An account with this email exists, but it is not linked to this provider yet. An admin links it under Users & Groups.",
     },
+    sso_email_unconfirmed: {
+        title: "Email not confirmed",
+        text: "An account here has this email, but the provider does not confirm it, so DBackup does not link the two. The admin of the provider has it mark emails as verified, like Emails verified by default in Pocket ID.",
+    },
     sso_link_mismatch: {
         title: "Account not connected",
         text: "This identity belongs to another account. Sign in to the provider with the email of your DBackup account, then try again.",

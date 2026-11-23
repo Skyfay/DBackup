@@ -27,7 +27,7 @@ vi.mock("@/lib/prisma", () => ({
     default: {
         account: { count: vi.fn(async () => 2), findFirst: vi.fn(async () => mocks.credential) },
         passkey: { count: vi.fn(async () => mocks.passkeys) },
-        ssoProvider: { findUnique: vi.fn() },
+        ssoProvider: { findUnique: vi.fn(), findFirst: vi.fn(async () => null) },
     },
 }));
 vi.mock("@/services/auth/password-tries", () => ({ checkCurrentPassword: mocks.passwordCheck, PASSWORD_LOCKED: "Locked for a while." }));
@@ -161,5 +161,21 @@ describe("what a group lets someone change of the own profile", () => {
         expect(await togglePasskeyTwoFactor("u1", "yes" as unknown as boolean)).toEqual(invalid);
         expect(auth.api.unlinkAccount).not.toHaveBeenCalled();
         expect(mocks.service.togglePasskeyTwoFactor).not.toHaveBeenCalled();
+    });
+
+    it("unlinks by the id of the own account row, and refuses a login the account does not hold", async () => {
+        mocks.held = new Set(["profile:manage_sso"]);
+        const prisma = (await import("@/lib/prisma")).default as unknown as { account: { findFirst: ReturnType<typeof vi.fn> } };
+        const { auth } = await import("@/lib/auth");
+
+        prisma.account.findFirst.mockResolvedValueOnce({ id: "account-row-7" });
+        expect(await unlinkMySsoAccount("authentik", "subject-1")).toEqual({ success: true });
+        expect(prisma.account.findFirst).toHaveBeenCalledWith({ where: { userId: "u1", providerId: "authentik", accountId: "subject-1" }, select: { id: true } });
+        expect(auth.api.unlinkAccount).toHaveBeenCalledWith(expect.objectContaining({ body: { accountId: "account-row-7" } }));
+
+        vi.mocked(auth.api.unlinkAccount).mockClear();
+        prisma.account.findFirst.mockResolvedValueOnce(null);
+        expect(await unlinkMySsoAccount("authentik", "someone-else")).toEqual({ success: false, error: "This sign-in provider is not linked to your account." });
+        expect(auth.api.unlinkAccount).not.toHaveBeenCalled();
     });
 });

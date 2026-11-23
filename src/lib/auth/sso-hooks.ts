@@ -2,9 +2,9 @@ import { APIError } from "better-auth/api";
 import prisma from "@/lib/prisma";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { isSsoCallback, placeSsoUser, refuseClaimedSsoSignUp, refuseSsoSignUp, type SsoHookContext } from "./sso-guard";
+import { isSsoCallback, placeSsoUser, refuseClaimedSsoSignUp, refuseSsoSignUp, TENANT_DOMAIN_SIGN_UP_REFUSED, TENANT_SIGN_UP_REFUSED, type SsoHookContext } from "./sso-guard";
 import { recordSsoLink } from "./sso-link-audit";
-import { allowTenantSsoLink, joinSsoTenant, NOT_LINKED_URL, refuseSsoSession, tenantRefusalUrl } from "./sso-tenant-guard";
+import { allowTenantSsoLink, joinSsoTenant, NOT_LINKED_URL, refuseSsoSession, TENANT_REFUSED_URL, tenantRefusalUrl } from "./sso-tenant-guard";
 
 const log = logger.child({ module: "Auth" });
 
@@ -31,10 +31,23 @@ const callbackLinks = new WeakMap<Request, { accountId?: string; refusedUrl?: st
  */
 const addedUsers = new WeakMap<Request, { email: string; placed?: string }>();
 
+/** Where the login page says why a callback added nobody, by the message of the refusal of `sso-guard.ts`. */
+const SIGN_UP_REFUSED_URLS: Readonly<Record<string, string>> = {
+    "signup disabled": "/?error=sso_signup_disabled",
+    [TENANT_SIGN_UP_REFUSED]: TENANT_REFUSED_URL,
+    [TENANT_DOMAIN_SIGN_UP_REFUSED]: "/?error=sso_tenant_domain",
+};
+
 /** Before a user is added: the provider decides whether it adds them, never the browser. */
 export async function beforeSsoUser(user: { email?: string | null }, context: SsoDatabaseHookContext): Promise<void> {
-    await refuseSsoSignUp(context, user);
-    await refuseClaimedSsoSignUp(context, user);
+    try {
+        await refuseSsoSignUp(context, user);
+        await refuseClaimedSsoSignUp(context, user);
+    } catch (error) {
+        // On a callback the refusal redirects to the login page itself, see `beforeSsoLink`.
+        const url = error instanceof APIError && isSsoCallback(context?.path) ? SIGN_UP_REFUSED_URLS[String(error.body?.message)] : undefined;
+        throw (url && context?.redirect?.(url)) || error;
+    }
     if (context?.request && user.email) addedUsers.set(context.request, { email: user.email.toLowerCase() });
 }
 
@@ -70,8 +83,9 @@ async function placeNewUser(userId: string, context: SsoDatabaseHookContext): Pr
 /**
  * Before an account is linked to a provider: a provider links no account it may not sign in. On a
  * callback the refusal throws, since better-auth goes on after a link that returned nothing, marks
- * the email as verified, which `allowTenantSsoLink` reads, and starts a session. better-auth answers
- * a failed link with an error of its own, which `refusedSsoLinkRedirect` replaces with the reason.
+ * the email as verified, which `allowTenantSsoLink` reads, and starts a session. It throws the
+ * redirect to the login page with the reason itself, since better-auth keeps the status of the error
+ * a callback ends with, also where an after hook answers with a redirect, see `refusedSsoLinkRedirect`.
  */
 export async function beforeSsoLink(account: { userId: string; accountId?: string }, context: SsoDatabaseHookContext): Promise<false | undefined> {
     const callback = isSsoCallback(context?.path);
@@ -80,7 +94,7 @@ export async function beforeSsoLink(account: { userId: string; accountId?: strin
     if (!callback) return allowed ? undefined : false;
     const refusedUrl = allowed ? undefined : ((await tenantRefusalUrl(account.userId, context)) ?? NOT_LINKED_URL);
     if (context?.request) callbackLinks.set(context.request, { accountId: account.accountId, refusedUrl });
-    if (refusedUrl) throw new APIError("FORBIDDEN", { message: "account not linked" });
+    if (refusedUrl) throw context?.redirect?.(refusedUrl) ?? new APIError("FORBIDDEN", { message: "account not linked" });
     return undefined;
 }
 

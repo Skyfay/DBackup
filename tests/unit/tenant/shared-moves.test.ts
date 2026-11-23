@@ -28,7 +28,8 @@ vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 // The services use the client of the app, here the one of the test database with its tenant filter.
-vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
+// better-auth reads the data model of the client once src/lib/auth loads, before beforeAll made it.
+vi.mock("@/lib/prisma", () => ({ get default() { return holder.client ?? {}; } }));
 // Every backup of these listings was written by a run of the server's tenant with the times of its
 // sidecar, which the proof of a copy asks. Its own tests are shared-backup-listing.test.ts and shared-copy-proof.test.ts.
 vi.mock("@/services/tenant/shared-copy-proof", async (importOriginal) => {

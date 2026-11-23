@@ -215,6 +215,11 @@ export const auth = betterAuth({
         // Secure cookies whenever the browser reaches DBackup over HTTPS, also where BETTER_AUTH_URL
         // is unset or http:// behind a proxy, see secure-cookies.ts.
         useSecureCookies: secureCookiesFor(process.env),
+        // better-auth compares its tables with the Prisma client before every request and refuses
+        // them all on a difference. DBackup writes the sign-in providers itself, with required
+        // columns of its own and without the organizations of the SSO plugin. The migrations keep
+        // the schema, and tests/unit/lib/auth-schema.test.ts compares it with better-auth instead.
+        database: { validateSchema: false },
     },
     trustedOrigins: async (request) => {
         // Refresh trusted providers on every auth request

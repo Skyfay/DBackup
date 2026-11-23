@@ -12,8 +12,12 @@ const { ssoProblem } = await import("@/components/auth/login-problems");
 
 /** The problem the login page shows after better-auth sends a refused sign-in to the error route. */
 const problemAfter = async (error: string) => {
-    const response = await GET(new NextRequest(`http://localhost/api/auth/error/error?error=${encodeURIComponent(error)}`));
-    const code = new URL(response.headers.get("location") ?? "").searchParams.get("error") ?? "";
+    // The address the server listens on, which the browser cannot reach, like inside a container.
+    const response = await GET(new NextRequest(`http://0.0.0.0:3000/api/auth/error/error?error=${encodeURIComponent(error)}`));
+    const location = response.headers.get("location") ?? "";
+    // By its path alone, so the browser stays on the address it used.
+    expect(location.startsWith("/?")).toBe(true);
+    const code = new URL(location, "http://dbackup.example").searchParams.get("error") ?? "";
     return { code, problem: ssoProblem(code) };
 };
 
@@ -37,5 +41,26 @@ describe("the login page after a sign-in a provider refused for a tenant", () =>
 
         expect(code).toBe("sso_error");
         expect(problem.title).toBe("Sign-in failed");
+    });
+});
+
+describe("a sign-in or a link the provider could not link, since it does not confirm the email", () => {
+    it("says on the login page that the provider does not confirm the email", async () => {
+        const { code, problem } = await problemAfter("account not linked");
+
+        expect(code).toBe("sso_email_unconfirmed");
+        expect(problem.title).toBe("Email not confirmed");
+    });
+
+    it("brings the reason of a link under Profile back to the profile, by its path alone", async () => {
+        const response = await GET(new NextRequest("http://0.0.0.0:3000/api/auth/error/error?next=profile&error=account+not+linked"));
+
+        expect(response.headers.get("location")).toBe("/dashboard/profile?part=security&linkError=sso_email_unconfirmed");
+    });
+
+    it("goes to the login page for any other next", async () => {
+        const response = await GET(new NextRequest("http://0.0.0.0:3000/api/auth/error/error?next=https%3A%2F%2Fevil.example&error=account+not+linked"));
+
+        expect(response.headers.get("location")).toBe("/?error=sso_email_unconfirmed");
     });
 });

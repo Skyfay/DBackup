@@ -20,7 +20,8 @@ const holder = vi.hoisted(() => ({ client: undefined as unknown, base: undefined
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
-vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
+// better-auth reads the data model of the client once src/lib/auth loads, before beforeAll made it.
+vi.mock("@/lib/prisma", () => ({ get default() { return holder.client ?? {}; } }));
 // The entries go into the test database as the audit service would write them, into the log of the
 // tenant of the origin, else of the home tenant the change ran in.
 vi.mock("@/services/audit-service", () => ({

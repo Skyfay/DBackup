@@ -43,3 +43,24 @@ describe("the login page after a sign-in a provider refused for a tenant", () =>
         expect(problem.title).toBe("Sign-in failed");
     });
 });
+
+describe("a sign-in or a link the provider could not link, since it does not confirm the email", () => {
+    it("says on the login page that the provider does not confirm the email", async () => {
+        const { code, problem } = await problemAfter("account not linked");
+
+        expect(code).toBe("sso_email_unconfirmed");
+        expect(problem.title).toBe("Email not confirmed");
+    });
+
+    it("brings the reason of a link under Profile back to the profile, by its path alone", async () => {
+        const response = await GET(new NextRequest("http://0.0.0.0:3000/api/auth/error/error?next=profile&error=account+not+linked"));
+
+        expect(response.headers.get("location")).toBe("/dashboard/profile?part=security&linkError=sso_email_unconfirmed");
+    });
+
+    it("goes to the login page for any other next", async () => {
+        const response = await GET(new NextRequest("http://0.0.0.0:3000/api/auth/error/error?next=https%3A%2F%2Fevil.example&error=account+not+linked"));
+
+        expect(response.headers.get("location")).toBe("/?error=sso_email_unconfirmed");
+    });
+});

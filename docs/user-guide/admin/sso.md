@@ -117,6 +117,13 @@ Create an OAuth2/OpenID provider and an application for DBackup. The **Applicati
 
 Create an OpenID Connect client with **Client authentication** on, and copy its secret from the **Credentials** tab. For Keycloak before version 18, include `/auth` in the URL, like `https://auth.example.com/auth`.
 
+### Pocket ID
+
+Create an OIDC client named DBackup under **Administration → OIDC Clients** with the callback URL of the panel, and copy its client ID and secret into DBackup. Two settings of Pocket ID decide who gets in:
+
+- **Allowed User Groups** on the **Access** tab of the client. A new client lets only the groups picked there sign in, none at first, so every sign-in ends at Pocket ID with `You are not allowed to access this service`. Pick **All Users** or the groups of the people who sign in to DBackup.
+- **Emails verified by default** under **Application Configuration → Email**. Without it Pocket ID marks no email as verified, so DBackup links no account by its email and the sign-in ends with **Email not confirmed**, also through **Link** under **Profile**. It marks the email of a user made from then on and of a user whose email changes, not of the users there before. Someone new still signs up without it.
+
 ### Any OpenID Connect provider
 
 It asks for the issuer, the authorization, token and user info endpoints, and the JWKS endpoint if the provider has one. The discovery document of the provider, at `{issuer}/.well-known/openid-configuration`, lists all of them.
@@ -166,6 +173,10 @@ The client secret is wrong. For Authelia, DBackup needs the plaintext secret, no
 ### Account not found
 
 The provider does not add new people, and nobody in DBackup has the email the provider sent. Create the user under **Users** first, or switch on **Add new people on their first sign-in**.
+
+### Email not confirmed
+
+An account in DBackup has the email the provider sent, but the provider does not mark it as verified (`email_verified`), so DBackup does not link the two. **Link** under **Profile** needs the same. Have the provider mark the emails of its people as verified, like **Emails verified by default** in [Pocket ID](#pocket-id).
 
 ### Reached over HTTPS, endpoints over HTTP
 

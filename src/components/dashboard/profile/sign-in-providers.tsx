@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Link2, Loader2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { getMySsoConnections, initiateSsoConnect, unlinkMySsoAccount, type ConnectableProvider, type SsoConnection } from "@/app/actions/auth/sso-connections";
+import { ssoProblem } from "@/components/auth/login-problems";
 import { ProviderTile } from "@/components/oidc/provider-logo";
 import { DateDisplay } from "@/components/utils/date-display";
 import { Button } from "@/components/ui/button";
@@ -16,9 +17,13 @@ import { logger } from "@/lib/logging/logger";
 
 const log = logger.child({ component: "sign-in-providers" });
 
+/** Where a link the provider could not make ends, which brings its reason back to the profile. */
+const LINK_ERROR_URL = "/api/auth/error/error?next=profile";
+
 /**
  * The single sign-on accounts linked to the viewer, each to unlink, and the providers they can link
- * besides. Linking goes through the provider and comes back with `?connected=1`.
+ * besides. Linking goes through the provider and comes back with `?connected=1`, or with `?linkError=`
+ * and a code of the login page when the provider could not be linked.
  */
 export function SignInProviders({ canManage }: { canManage: boolean }) {
     const router = useRouter();
@@ -49,10 +54,17 @@ export function SignInProviders({ canManage }: { canManage: boolean }) {
 
     // Back from linking a provider: one message, and the address without the marker.
     useEffect(() => {
-        if (searchParams.get("connected") !== "1") return;
-        toast.success("Provider linked");
+        const failed = searchParams.get("linkError");
+        if (searchParams.get("connected") !== "1" && !failed) return;
+        if (failed) {
+            const problem = ssoProblem(failed);
+            toast.error(problem.title, { description: problem.text });
+        } else {
+            toast.success("Provider linked");
+        }
         const params = new URLSearchParams(searchParams.toString());
         params.delete("connected");
+        params.delete("linkError");
         const query = params.toString();
         router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
         // Only the address it came back with counts.
@@ -89,7 +101,7 @@ export function SignInProviders({ canManage }: { canManage: boolean }) {
                 return;
             }
             // The browser goes to the provider, so the spinner stays until it leaves.
-            await authClient.signIn.sso({ providerId, callbackURL: result.callbackURL, requestSignUp: false });
+            await authClient.signIn.sso({ providerId, callbackURL: result.callbackURL, errorCallbackURL: LINK_ERROR_URL, requestSignUp: false });
         } catch (error) {
             log.warn("Linking a provider failed", { providerId }, wrapError(error));
             toast.error("The provider could not be linked.");

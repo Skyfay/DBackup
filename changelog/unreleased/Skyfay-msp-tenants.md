@@ -1,3 +1,5 @@
+> 🔒 **Security Update:** This release fixes two vulnerabilities in DBackup's own code ([GHSA-xfw2-4542-cvr6](https://github.com/Skyfay/DBackup/security/advisories/GHSA-xfw2-4542-cvr6), [GHSA-25xf-8j2m-jfvq](https://github.com/Skyfay/DBackup/security/advisories/GHSA-25xf-8j2m-jfvq)). Update as soon as possible.
+
 > ⚠️ **Before updating:** Most installations update without doing anything. [Updating to 5.0](https://docs.dbackup.app/user-guide/updating-to-5) names in one table the setups that need a look, like a reverse proxy, SSH connections or email with STARTTLS, and how to go back.
 
 > ⚠️ **Breaking:** Some actions need more rights or a platform admin, and the API answers `viewerPlatformAdmin` instead of `viewerSuperAdmin`. The same page lists every change for groups and API users.
@@ -111,6 +113,7 @@
 - **api**: The rate limits under `/api/internal/rate-limit-config` answer only the middleware of the server itself.
 - **api**: Creating, importing and recovering an encryption key, the configuration restore from a destination, the template dialogs, the switches of a sign-in provider and the own preferences check their input before anything is stored.
 - **connections**: Testing a connection or its SSH login, checking its access or its snapshots and reading databases, tables or rows from the fields of a form need the right to change that kind of connection.
+- **credentials**: Someone who may only see connections, like a Viewer or a read-only API key, can no longer have a saved login sent to a host of their choosing by a connection test or the remote folder browse. Thanks @realtasty ([GHSA-xfw2-4542-cvr6](https://github.com/Skyfay/DBackup/security/advisories/GHSA-xfw2-4542-cvr6)) and @Santoshkumarpuppala ([GHSA-25xf-8j2m-jfvq](https://github.com/Skyfay/DBackup/security/advisories/GHSA-25xf-8j2m-jfvq))
 - **storage**: A configuration backup on a destination is downloaded, opened and restored file by file only by a platform admin who is signed in, and never through a link.
 - **PostgreSQL**: The tools get a database name of a job, a restore or the table browser always as a name, so a name that reads like a connection string no longer connects to another server.
 - **storage**: Connecting Google Drive, Dropbox or OneDrive finishes only for the person and the login that started it.

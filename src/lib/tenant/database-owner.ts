@@ -29,21 +29,43 @@ export interface RuleFact {
     createdAt: Date;
 }
 
-/** The compiled patterns, since every backup of a server asks the rules of its databases again. */
-const matchers = new Map<string, Minimatch>();
+/** The compiled patterns, since every backup of a server asks the rules of its databases again. Null for one it cannot use. */
+const matchers = new Map<string, Minimatch | null>();
 const MATCHERS_MAX = 1000;
 
-/** Whether a name matches the pattern of a rule, like `shop_*`. Names are compared as they are. */
+/** How many patterns the braces of one may expand to. `{shop,blog}_*` is two, twenty braces hold 100000 in memory. */
+const EXPANSIONS_MAX = 64;
+
+/** The compiled pattern, or null for one minimatch refuses or whose braces expand to more than `EXPANSIONS_MAX`. */
+function matcherOf(trimmed: string): Minimatch | null {
+    let matcher = matchers.get(trimmed);
+    if (matcher === undefined) {
+        if (matchers.size >= MATCHERS_MAX) matchers.clear();
+        try {
+            matcher = new Minimatch(trimmed, { dot: true, nocomment: true, nonegate: true });
+            if (matcher.set.length > EXPANSIONS_MAX) matcher = null;
+        } catch {
+            matcher = null;
+        }
+        matchers.set(trimmed, matcher);
+    }
+    return matcher;
+}
+
+/** Whether names can be checked against a pattern at all, which a new rule needs. */
+export function isUsablePattern(pattern: string): boolean {
+    const trimmed = pattern.trim();
+    return trimmed !== "" && matcherOf(trimmed) !== null;
+}
+
+/**
+ * Whether a name matches the pattern of a rule, like `shop_*`. Names are compared as they are. A
+ * pattern `isUsablePattern` refuses matches nothing, so a rule saved before it existed gives nothing away.
+ */
 export function matchesPattern(pattern: string, databaseName: string): boolean {
     const trimmed = pattern.trim();
     if (!trimmed) return false;
-    let matcher = matchers.get(trimmed);
-    if (!matcher) {
-        if (matchers.size >= MATCHERS_MAX) matchers.clear();
-        matcher = new Minimatch(trimmed, { dot: true, nocomment: true, nonegate: true });
-        matchers.set(trimmed, matcher);
-    }
-    return matcher.match(databaseName);
+    return matcherOf(trimmed)?.match(databaseName) ?? false;
 }
 
 /** What a glob reads as more than itself, so the text before the first one is a fixed start. */

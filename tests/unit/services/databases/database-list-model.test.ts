@@ -36,6 +36,12 @@ describe("a page of the Databases tab", () => {
         expect(names(page({ sort: "size", desc: false }))).toEqual(["legacy", "shop", "shop_archive", "erp", "analytics"]);
     });
 
+    it("sorts by size when the request names a method every object has", () => {
+        for (const sort of ["constructor", "__defineGetter__", "toString"]) {
+            expect(names(page({ sort: sort as never }))).toEqual(["analytics", "erp", "shop", "shop_archive", "legacy"]);
+        }
+    });
+
     it("sorts by name, server, tables and the last backup when asked", () => {
         expect(names(page({ sort: "database", desc: false }))).toEqual(["analytics", "erp", "legacy", "shop", "shop_archive"]);
         expect(names(page({ sort: "server", desc: false }))[0]).toBe("erp");

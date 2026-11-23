@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
-import { holderAt, matchesPattern, ownerAt } from "@/lib/tenant/database-owner";
+import { holderAt, isUsablePattern, matchesPattern, ownerAt } from "@/lib/tenant/database-owner";
 import { OUTSIDE_REACH, reachCovers, TENANT_BEYOND_REACH, type PlatformReach } from "@/lib/tenant/sharing-reach";
 import { assertChangesReached, assertReached, assertRuleEndReached, assertRuleReached } from "./assignment-reach";
 import { movesOf } from "./database-moves";
@@ -276,6 +276,7 @@ export const databaseAssignmentService = {
         const pattern = input.pattern.trim();
         if (!pattern) throw new ValidationError("Enter a pattern, like shop_*.");
         if (pattern.length > PATTERN_MAX) throw new ValidationError(`A pattern can have at most ${PATTERN_MAX} characters.`);
+        if (!isUsablePattern(pattern)) throw new ValidationError("This pattern has too many braces to check names against. Use fewer.");
         // Before anything tells a tenant beyond the reach apart from one that does not exist.
         assertReached(reach, input.tenantId, OUTSIDE_REACH.give);
         await assertCustomer(input.tenantId, source);

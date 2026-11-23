@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { followMoves, matchesPattern, movedAwayAt, ownerAt, type AssignmentFact, type RuleFact } from "@/lib/tenant/database-owner";
+import { followMoves, isUsablePattern, matchesPattern, movedAwayAt, ownerAt, type AssignmentFact, type RuleFact } from "@/lib/tenant/database-owner";
 
 const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
@@ -84,6 +84,21 @@ describe("the pattern of a rule", () => {
     it("matches nothing when it is empty, and never negates", () => {
         expect(matchesPattern("  ", "shop")).toBe(false);
         expect(matchesPattern("!shop", "blog")).toBe(false);
+    });
+
+    it("reads braces that name a few alternatives", () => {
+        expect(isUsablePattern("{shop,blog}_*")).toBe(true);
+        expect(matchesPattern("{shop,blog}_*", "blog_eu")).toBe(true);
+    });
+
+    it("matches nothing with braces minimatch refuses or that expand past what a check reads, instead of failing every check of the server", () => {
+        const refused = "{*a,*b}".repeat(12);
+        const huge = "{a,b}".repeat(7);
+        expect(isUsablePattern(refused)).toBe(false);
+        expect(isUsablePattern(huge)).toBe(false);
+        expect(isUsablePattern("  ")).toBe(false);
+        expect(matchesPattern(refused, "aa")).toBe(false);
+        expect(matchesPattern(huge, "aaaaaaa")).toBe(false);
     });
 });
 

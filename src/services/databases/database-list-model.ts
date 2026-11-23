@@ -83,14 +83,18 @@ const clean = (values: string[] | undefined) => (values ?? []).map((value) => va
 /** The names in the order of the table: by their letters whatever the case, with numbers by their value. */
 const byName = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 
+type Compare = (a: Entry, b: Entry) => number;
+
 /** What a sort compares of two entries, ascending. A database without a size or tables comes before any that has one. */
-const COMPARE: Record<DatabaseSort, (a: Entry, b: Entry) => number> = {
+const BY_SORT: Record<DatabaseSort, Compare> = {
     size: (a, b) => (a.database.sizeInBytes ?? -1) - (b.database.sizeInBytes ?? -1),
     tables: (a, b) => (a.database.tableCount ?? -1) - (b.database.tableCount ?? -1),
     last: (a, b) => (a.database.lastBackup ? Date.parse(a.database.lastBackup.at) : 0) - (b.database.lastBackup ? Date.parse(b.database.lastBackup.at) : 0),
     database: (a, b) => byName.compare(a.name, b.name),
     server: (a, b) => byName.compare(a.serverName, b.serverName),
 };
+/** The same as a map, so a sort the request names never reaches a method of `Object`, like `constructor`. */
+const COMPARE = new Map(Object.entries(BY_SORT) as [DatabaseSort, Compare][]);
 
 function tally(counts: Record<string, number>, values: readonly string[]) {
     for (const value of values) counts[value] = (counts[value] ?? 0) + 1;
@@ -147,7 +151,7 @@ export function pageOfDatabases(databases: ExplorerDatabase[], servers: ServerBr
 
     const sort = query.sort ?? "size";
     const desc = query.desc ?? true;
-    const compare = COMPARE[sort] ?? COMPARE.size;
+    const compare = COMPARE.get(sort) ?? BY_SORT.size;
     const shown = found
         .filter((entry) => passes(entry))
         .sort((a, b) => (desc ? compare(b, a) : compare(a, b)) || a.index - b.index);

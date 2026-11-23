@@ -212,3 +212,11 @@ describe("a deleted customer", () => {
         expect(daysOf(await sharedOverview("initech", NOW), "crm")).toEqual(["2026-07-10"]);
     });
 });
+
+describe("a new rule", () => {
+    it("is refused with braces that expand to more names than a check reads, and gives nothing away", async () => {
+        const pattern = "{*a,*b}".repeat(12);
+        await expect(asHome(() => databaseAssignmentService.addRule("srv-a", { pattern, tenantId: "globex" }, NOW))).rejects.toBeInstanceOf(ValidationError);
+        expect(await base.databaseAssignmentRule.count({ where: { pattern } })).toBe(0);
+    });
+});

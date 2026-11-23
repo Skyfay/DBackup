@@ -1,7 +1,3 @@
-> ⚠️ **Before updating:** An email channel set to STARTTLS no longer falls back to an unencrypted connection, so a mail server that offers no STARTTLS needs the setting None.
-
-> ⚠️ **Before updating:** Every SSH connection now pins the host key of its server on the first connect after the update. A server that is reinstalled later, or another server of a cluster behind the same name, is refused until its key is trusted or the check is turned off in the connection.
-
 ### ✨ Features
 
 - **SSH**: DBackup pins the host key of an SSH server on the first connect and refuses a server that presents another one, for SFTP, rsync, databases in SSH mode and Docker Volumes over SSH. Each connection shows the pinned key and has a switch to turn the check off.

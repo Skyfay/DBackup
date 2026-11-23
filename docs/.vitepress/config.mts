@@ -95,6 +95,7 @@ export default defineConfig({
           items: [
             { text: 'Introduction', link: '/user-guide/getting-started' },
             { text: 'Installation', link: '/user-guide/installation' },
+            { text: 'Updating to 5.0', link: '/user-guide/updating-to-5' },
             { text: 'First Steps', link: '/user-guide/first-steps' }
           ]
         },

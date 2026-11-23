@@ -133,9 +133,12 @@ async function runIsql(
  */
 export const NO_DB_TRIGGERS = ["-nodbtriggers"];
 
-/** Whether gbak or isql refused the switch of `NO_DB_TRIGGERS` for the login, rather than failing for another reason. */
+/**
+ * Whether gbak or isql refused the switch of `NO_DB_TRIGGERS` for the login, rather than failing for
+ * another reason. Firebird 4 and 5 name the privilege, Firebird 3 only says who may.
+ */
 export function refusedTriggerSwitch(output: string): boolean {
-    return /IGNORE_DB_TRIGGERS|nodbtriggers|database triggers/i.test(output);
+    return /IGNORE_DB_TRIGGERS|nodbtriggers|database triggers|SYSDBA or owner of the database/i.test(output);
 }
 
 /** Runs a single SQL statement against a database alias via isql, returning raw stdout. */

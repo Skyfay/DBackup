@@ -1,6 +1,6 @@
 > ⚠️ **Before updating:** An email channel set to STARTTLS no longer falls back to an unencrypted connection, so a mail server that offers no STARTTLS needs the setting None.
 
-> ⚠️ **Before updating:** Every SSH connection now pins the host key of its server on the first connect after the update. A server that is reinstalled later is refused until its new key is trusted in the connection.
+> ⚠️ **Before updating:** Every SSH connection now pins the host key of its server on the first connect after the update. A server that is reinstalled later, or another server of a cluster behind the same name, is refused until its key is trusted or the check is turned off in the connection.
 
 ### ✨ Features
 
@@ -11,7 +11,7 @@
 - **Database Explorer**: The MySQL and MariaDB client of the table browser no longer runs commands of its own, so a table or column name cannot start a program beside DBackup. The SQLite and MongoDB browsers search and sort only by real columns.
 - **Recovery Kit**: The recovery script refuses an index that names a folder outside the output folder and never writes through a link.
 - **SSH**: A private key that asks for an excessive cost to unlock it is refused instead of holding up the server.
-- **file backups**: An exclude pattern that would take very long to match is refused when it is saved and before a run reads it.
+- **file backups**: An exclude pattern that would take very long to match, or a list of more than 256 patterns with a slash, brackets or braces, is refused when it is saved. A run leaves out such a pattern saved earlier with a warning in its log, and a restore takes only patterns a save would take.
 - **restore**: A restore to the original folder needs a backup that a run of the job recorded, and anything else needs the right to change the target connection. A restore over rsync or FTP no longer writes through a link in a folder below the restore folder.
 - **storage**: Only a platform admin downloads or restores a file that is encrypted with the key of the configuration backup.
 - **email**: A channel set to STARTTLS refuses a server that does not offer it instead of sending the login unencrypted.

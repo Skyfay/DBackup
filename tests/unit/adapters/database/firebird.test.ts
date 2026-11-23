@@ -116,6 +116,17 @@ describe.each<HostKind>(["direct", "ssh"])("Firebird over a %s host", (kind) => 
             expect(host.calls.exec.map((argv) => argv.includes("-nodbtriggers"))).toEqual([true, false]);
         });
 
+        it("reads with the triggers for a login of Firebird 3, which only says who may skip them", async () => {
+            const host = firebirdHost(kind, {
+                onExec: (argv) => (argv.includes("-nodbtriggers") ? { code: 1, stderr: "Statement failed, SQLSTATE = 28000\nUnable to perform operation.  You must be either SYSDBA or owner of the database" } : { stdout: "  12  \n" }),
+            });
+
+            expect(await getDatabasesWithStats(baseConfig as never, host)).toEqual([
+                { name: "shop", path: "/var/lib/firebird/shop.fdb", tableCount: 12 },
+            ]);
+            expect(host.calls.exec.map((argv) => argv.includes("-nodbtriggers"))).toEqual([true, false]);
+        });
+
         it("falls back to a path-only entry when the query fails", async () => {
             const host = firebirdHost(kind, { onExec: () => ({ code: 1, stderr: "unavailable database" }) });
 

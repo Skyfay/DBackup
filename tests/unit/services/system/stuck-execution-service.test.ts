@@ -38,11 +38,12 @@ const updateMany = prisma.execution.updateMany as ReturnType<typeof vi.fn>;
 
 const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000);
 
-function execution(overrides: Partial<{ id: string; heartbeatMinutesAgo: number | null; startedMinutesAgo: number }> = {}) {
-    const { id = 'exec-1', heartbeatMinutesAgo = 5, startedMinutesAgo = 600 } = overrides;
+function execution(overrides: Partial<{ id: string; jobId: string | null; type: string; heartbeatMinutesAgo: number | null; startedMinutesAgo: number }> = {}) {
+    const { id = 'exec-1', jobId = 'job-1', type = 'Backup', heartbeatMinutesAgo = 5, startedMinutesAgo = 600 } = overrides;
     return {
         id,
-        jobId: 'job-1',
+        jobId,
+        type,
         metadata: heartbeatMinutesAgo === null
             ? null
             : JSON.stringify({ stage: 'Collecting Files', [HEARTBEAT_KEY]: minutesAgo(heartbeatMinutesAgo).toISOString() }),
@@ -149,6 +150,18 @@ describe('sweepStuckExecutions', () => {
         expect(abortExecution).toHaveBeenCalledWith('exec-1');
         const logs = JSON.parse(updateMany.mock.calls[0][0].data.logs) as LogEntry[];
         expect(logs.at(-1)?.message).toContain('the longest a run may take');
+    });
+
+    it('leaves a long restore or system task alone, which holds no slot, and still ends one that stopped reporting', async () => {
+        findMany.mockResolvedValue([
+            execution({ id: 'restore-1', jobId: null, type: 'Restore', heartbeatMinutesAgo: 1, startedMinutesAgo: DEFAULT_MAX_RUN_MINUTES * 2 }),
+            execution({ id: 'check-1', jobId: null, type: 'System', heartbeatMinutesAgo: 1, startedMinutesAgo: DEFAULT_MAX_RUN_MINUTES * 2 }),
+        ]);
+        expect((await sweepStuckExecutions()).cancelled).toBe(0);
+
+        findMany.mockResolvedValue([execution({ id: 'restore-1', jobId: null, type: 'Restore', heartbeatMinutesAgo: DEFAULT_STUCK_TIMEOUT_MINUTES + 30 })]);
+        expect((await sweepStuckExecutions()).cancelled).toBe(1);
+        expect(abortExecution).toHaveBeenCalledWith('restore-1');
     });
 
     it('leaves a long run alone when the longest run is set to no limit, and still ends one with the stuck time off', async () => {

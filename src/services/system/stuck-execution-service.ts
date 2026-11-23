@@ -19,7 +19,8 @@ export const DEFAULT_STUCK_TIMEOUT_MINUTES = 360;
  * System setting holding the longest a run may hold its slot, in minutes, progress or not. `0`
  * turns it off. A source that trickles a byte now and then reports progress and never counts as
  * stuck, so without this a run of one tenant could hold the slot of every tenant for as long as
- * its server keeps it alive.
+ * its server keeps it alive. A restore or a system task holds no slot, see `QUEUED_RUNS`, and runs
+ * as long as it takes.
  */
 export const MAX_RUN_SETTING = "execution.maxRunMinutes";
 
@@ -113,7 +114,7 @@ export async function sweepStuckExecutions(): Promise<StuckExecutionSweep> {
     await endOrphanedFollowers();
     const running = await prisma.execution.findMany({
         where: { status: "Running", AND: [LEADING_RUNS] },
-        select: { id: true, jobId: true, metadata: true, logs: true, startedAt: true },
+        select: { id: true, jobId: true, type: true, metadata: true, logs: true, startedAt: true },
     });
 
     const cutoff = Date.now() - timeoutMinutes * 60_000;
@@ -123,7 +124,9 @@ export async function sweepStuckExecutions(): Promise<StuckExecutionSweep> {
     for (const execution of running) {
         const idleSince = lastProgressAt(execution);
         const idle = timeoutMinutes > 0 && idleSince.getTime() <= cutoff;
-        const tooLong = maxRunMinutes > 0 && execution.startedAt.getTime() <= oldest;
+        // Only a run the queue started holds a slot, like `QUEUED_RUNS` counts them.
+        const holdsSlot = execution.jobId !== null || execution.type === "Backup";
+        const tooLong = maxRunMinutes > 0 && holdsSlot && execution.startedAt.getTime() <= oldest;
         if (!idle && !tooLong) continue;
 
         const idleMinutes = Math.round((Date.now() - idleSince.getTime()) / 60_000);

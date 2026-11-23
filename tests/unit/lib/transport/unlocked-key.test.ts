@@ -4,11 +4,22 @@
  * every tenant shares. It is unlocked once per process and kept without the passphrase, in a form
  * ssh2 reads at no cost, so a health check that logs in every minute pays it once.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { utils } from "ssh2";
 
 import { buildConnectConfig } from "@/lib/transport/ssh-connection";
 import { unlockedPrivateKey } from "@/lib/transport/unlocked-key";
+import { connectSFTP } from "@/lib/adapters/storage/sftp";
+
+const sftpLogins = vi.hoisted(() => [] as Record<string, unknown>[]);
+vi.mock("ssh2-sftp-client", () => ({
+    default: class {
+        async connect(options: Record<string, unknown>) {
+            sftpLogins.push(options);
+        }
+        async end() {}
+    },
+}));
 
 const publicOf = (key: string, passphrase?: string) => {
     const parsed = utils.parseKey(key, passphrase);
@@ -41,6 +52,15 @@ describe.each(["ed25519", "ecdsa", "rsa"] as const)("an encrypted %s key", (type
 
         expect(config.passphrase).toBeUndefined();
         expect(publicOf(String(config.privateKey))).toBe(publicOf(pair.private, "dummy-pass"));
+    });
+
+    it("goes to an SFTP destination the same way, without the passphrase", async () => {
+        sftpLogins.length = 0;
+        await connectSFTP({ host: "example.test", port: 22, username: "backup", privateKey: pair.private, passphrase: "dummy-pass" } as never).catch(() => {});
+
+        expect(sftpLogins).toHaveLength(1);
+        expect(sftpLogins[0].passphrase).toBeUndefined();
+        expect(sftpLogins[0].privateKey).toBe(unlockedPrivateKey(pair.private, "dummy-pass"));
     });
 });
 

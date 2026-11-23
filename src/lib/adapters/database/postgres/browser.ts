@@ -1,7 +1,7 @@
 import type { ExecutionHost } from "@/lib/transport";
 import { PostgresConfig } from "@/lib/adapters/definitions";
 import { TableInfo, ColumnInfo, TableDataOptions, TableDataResult } from "@/lib/core/interfaces";
-import { PSQL, buildConnectionArgs, pgEnv, dbArg, sqlLiteral } from "./args";
+import { PSQL, buildConnectionArgs, catalogEnv, pgEnv, dbArg, sqlLiteral } from "./args";
 
 /** Sanitize a PostgreSQL identifier for double-quote quoting. */
 function escapePgIdentifier(name: string): string {
@@ -99,7 +99,8 @@ export async function getTables(config: PostgresConfig, database: string, host: 
     const psql = await host.which(...PSQL);
     const result = await host.exec(
         [psql, ...buildConnectionArgs(config), "-d", dbArg(database), "-t", "-A", "-F", "\t", "-c", tablesQuery(database)],
-        { env: pgEnv(config.password) },
+        // Names only the catalog, so no object of the owner of the database runs in the session of the login.
+        { env: catalogEnv(config.password) },
     );
     if (result.code !== 0) {
         throw new Error(`Failed to list tables: ${result.stderr.trim()}`);
@@ -115,31 +116,37 @@ export async function getTableData(
     const { database, table, page, pageSize, sortBy, sortDir, search, searchColumn, matchMode } = options;
     const offset = (page - 1) * pageSize;
     const tblId = `"${escapePgIdentifier(table)}"`;
+    // The table is found by the search path of the database, like the user expects. Every function,
+    // type and operator is named in pg_catalog, so one of the owner of the database by the same name
+    // earlier in that path never runs in the session of the login.
+    const column = (name: string) => `"${escapePgIdentifier(name)}"::pg_catalog.text`;
     const whereClause = (search && searchColumn)
         ? matchMode === "equals"
-            ? ` WHERE "${escapePgIdentifier(searchColumn)}"::text = ${pgLiteral(search)}`
+            ? ` WHERE ${column(searchColumn)} OPERATOR(pg_catalog.=) ${pgLiteral(search)}`
             : matchMode === "starts"
-            ? ` WHERE "${escapePgIdentifier(searchColumn)}"::text ILIKE ${pgLiteral(`${search}%`)}`
+            ? ` WHERE ${column(searchColumn)} OPERATOR(pg_catalog.~~*) ${pgLiteral(`${search}%`)}`
             : matchMode === "ends"
-            ? ` WHERE "${escapePgIdentifier(searchColumn)}"::text ILIKE ${pgLiteral(`%${search}`)}`
-            : ` WHERE "${escapePgIdentifier(searchColumn)}"::text ILIKE ${pgLiteral(`%${search}%`)}`
+            ? ` WHERE ${column(searchColumn)} OPERATOR(pg_catalog.~~*) ${pgLiteral(`%${search}`)}`
+            : ` WHERE ${column(searchColumn)} OPERATOR(pg_catalog.~~*) ${pgLiteral(`%${search}%`)}`
         : "";
     const sortClause = sortBy
         ? ` ORDER BY "${escapePgIdentifier(sortBy)}" ${sortDir === "desc" ? "DESC" : "ASC"} NULLS LAST`
         : "";
 
     const colQuery = columnsQuery(database, table);
-    const countQuery = `SELECT COUNT(*) FROM ${tblId}${whereClause}`;
+    const countQuery = `SELECT pg_catalog.COUNT(*) FROM ${tblId}${whereClause}`;
     const dataQuery = `SELECT * FROM ${tblId}${whereClause}${sortClause} LIMIT ${pageSize} OFFSET ${offset}`;
 
     const psql = await host.which(...PSQL);
     const base = [psql, ...buildConnectionArgs(config), "-d", dbArg(database), "-t", "-A", "-F", "\t"];
     const env = pgEnv(config.password);
+    // The columns query names only the catalog, see `getTables`.
+    const catalog = catalogEnv(config.password);
 
     // Three concurrent queries. Over SSH each one is a separate channel, which
     // the transport caps so a wide fan-out cannot exhaust the server session limit.
     const [colResult, countResult, dataResult] = await Promise.all([
-        host.exec([...base, "-c", colQuery], { env }),
+        host.exec([...base, "-c", colQuery], { env: catalog }),
         host.exec([...base, "-c", countQuery], { env }),
         host.exec([...base, "-c", dataQuery], { env }),
     ]);

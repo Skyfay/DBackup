@@ -9,8 +9,7 @@ import {
     StorageReadOptions,
     UploadOptions,
 } from "@/lib/core/interfaces";
-import { normalizeSshPrivateKey } from "@/lib/transport/pkcs8-compat";
-import { assertKeyCost } from "@/lib/transport/key-cost";
+import { loginKey } from "@/lib/transport/unlocked-key";
 import { hostKeyOf, sshHostKeyCheck } from "@/lib/transport/host-key";
 import { createConnectionPool } from "@/lib/adapters/storage/common/connection-pool";
 import { relativeToPrefix } from "@/lib/adapters/storage/common/prefix";
@@ -74,17 +73,8 @@ const DISCONNECT_TIMEOUT_MS = 5000;
  * concept.
  */
 export const connectSFTP = async (config: SFTPConfig, onDisconnect?: (reason: string) => void): Promise<Client> => {
-    // PKCS#8 encrypted keys (BEGIN ENCRYPTED PRIVATE KEY) are not supported by
-    // ssh2-sftp-client. Decrypt them in-memory via Node.js crypto first.
-    let privateKey = config.privateKey;
-    // ssh2 derives the key of an encrypted file on the event loop, so its cost is bounded first.
-    assertKeyCost(privateKey);
-    if (privateKey?.includes("BEGIN ENCRYPTED PRIVATE KEY")) {
-        if (!config.passphrase) {
-            throw new Error("This private key is passphrase-protected. Please provide the passphrase.");
-        }
-        privateKey = normalizeSshPrivateKey(privateKey, config.passphrase);
-    }
+    // Bounded, decrypted where ssh2 cannot read the key, and unlocked once per process, see `loginKey`.
+    const key = loginKey(config.privateKey, config.passphrase);
     // Second constructor argument, not an afterthought: SftpClient is not an EventEmitter, so
     // these callbacks are the only supported way to hear that a connection dropped - which a
     // pool must know before handing it to the next transfer. Passing them also replaces the
@@ -112,9 +102,8 @@ export const connectSFTP = async (config: SFTPConfig, onDisconnect?: (reason: st
             port: config.port,
             username: config.username,
             password: config.password,
-            privateKey,
-            // passphrase only needed for non-PKCS#8-encrypted keys
-            passphrase: privateKey !== config.privateKey ? undefined : config.passphrase,
+            privateKey: key.privateKey,
+            passphrase: key.passphrase,
             hostVerifier: check.verifier,
             ...(check.algorithms ? { algorithms: check.algorithms } : {}),
             ...CONNECTION_TUNING,

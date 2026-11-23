@@ -28,7 +28,7 @@ Someone who may only read the settings sees every value and a line on top that s
 | **Time zone** | The clock of every schedule, of the file names and of the retention. The line below it says what 03:00 there is in UTC. | UTC |
 | **Runs at the same time** | How many backups run at once, in every tenant together. A restore, an integrity check or a check of copies runs beside them and takes none of these runs. | 1 |
 | **Fail a run that stops reporting after** | Fails a backup or restore that reports no progress for this long, so it gives its run back. **Never** turns it off. | 6 hours |
-| **Fail a run that takes longer than** | Fails a backup that runs longer than this, also while it still reports progress, so one slow source cannot hold the runs of everyone else. **No limit** turns it off. | 1 day |
+| **Fail a run that takes longer than** | Fails a backup that runs longer than this, also while it still reports progress, so one slow source cannot hold the runs of everyone else. A restore or an integrity check holds no run and is never cut short for its length. **No limit** turns it off. | 1 day |
 | **Look for new versions** | Asks GitHub for the newest release, marks a new version with a blue dot on the right of the header and reports it once a day. Off, DBackup never asks. | On |
 | **Show Quick Setup in the sidebar** | Keeps Quick Setup in the sidebar. It shows by itself while no database is set up. | Off |
 

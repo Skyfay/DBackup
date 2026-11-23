@@ -341,7 +341,8 @@ By default only a proxy on the same machine is trusted, `127.0.0.0/8` and `::1`.
 
 | Setup | `TRUSTED_PROXIES` |
 | :--- | :--- |
-| A proxy on the same host, outside Docker | Leave it unset |
+| DBackup and the proxy on the same host outside Docker, or the container with `network_mode: host` | Leave it unset |
+| A proxy on the host in front of the container | The gateway of the Docker network, like `172.17.0.1`, or `private` |
 | A proxy in a Docker network or the LAN, also Cloudflare Tunnel | Its address, like `172.18.0.2`, or `private` |
 | Cloudflare in front of a proxy on your host, without Tunnel | `private,cloudflare` |
 | Cloudflare in front of DBackup itself, without a proxy | `cloudflare` |

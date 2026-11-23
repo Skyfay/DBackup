@@ -93,6 +93,8 @@ export function addressOf(adapterId: string, config: Config): Set<string> {
         const url = schemeAndPort(view[key]);
         if (url) parts.add(`${key}:${url}`);
     }
+    // Cloudflare D1 dials only the fixed API, its account is where the token reaches.
+    if (adapterId === "cloudflare-d1" && !isEmpty(view.accountId)) parts.add(`account:${text(view.accountId).toLowerCase()}`);
     return parts;
 }
 

@@ -209,3 +209,43 @@ describe("a restore into D1", () => {
         await expect(CloudflareD1Adapter.restoreOne!(config, dumpPath, "shop", host)).rejects.toThrow(/arrived damaged/);
     });
 });
+
+/** An import into a new database `copy` whose polls answer with `pollAnswer`. */
+function importingNew(pollAnswer: (poll: number) => ReturnType<typeof ok>) {
+    let polls = 0;
+    const fake = fakeCloudflare((call) => {
+        if (call.method === "PUT") return { headers: { etag: `"${md5(call.uploaded ?? "")}"` } };
+        if (call.method === "POST" && call.path === "/d1/database") return ok({ uuid: NEW_ID, name: "copy" });
+        if (call.path === `/d1/database/${NEW_ID}/import`) {
+            const action = (call.body as { action: string }).action;
+            if (action === "init") return ok({ upload_url: "https://abc.r2.cloudflarestorage.com/up?sig=1", filename: "f.sql" });
+            if (action === "ingest") return ok({ status: "active", at_bookmark: "bm" });
+            return pollAnswer(++polls);
+        }
+        return listing({})(call);
+    });
+    return { ...fake, polls: () => polls };
+}
+
+describe("a restore that loses track of Cloudflare", () => {
+    it("polls again after a failure on the way and finishes", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true, advanceTimeDelta: 1_000 });
+        try {
+            const dumpPath = path.join(dir, "dump.sql");
+            fs.writeFileSync(dumpPath, DUMP);
+            const fake = importingNew((poll) => (poll === 1 ? refused(503, 0, "unavailable") : ok({ status: "complete", result: { num_queries: 3 } })));
+            await CloudflareD1Adapter.restoreOne!(config, dumpPath, "copy", host);
+            expect(fake.polls()).toBe(2);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("keeps a database it created when the import was handed over and the polling broke off, since Cloudflare may still finish it", async () => {
+        const dumpPath = path.join(dir, "dump.sql");
+        fs.writeFileSync(dumpPath, DUMP);
+        const fake = importingNew(() => refused(400, 7400, "bookmark unknown"));
+        await expect(CloudflareD1Adapter.restoreOne!(config, dumpPath, "copy", host)).rejects.toThrow(/may still finish it/);
+        expect(fake.calls.some((call) => call.method === "DELETE")).toBe(false);
+    });
+});

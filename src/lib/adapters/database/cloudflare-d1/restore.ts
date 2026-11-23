@@ -1,11 +1,9 @@
-import fs from "fs";
-import { pipeline } from "stream/promises";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
 import type { LogLevel, LogType } from "@/lib/core/logs";
 import { AdapterError } from "@/lib/logging/errors";
 import type { CloudflareD1Config } from "@/lib/adapters/definitions";
 import { d1Request, databaseIdOf, findDatabase, listDatabases, query, type D1Connection, type D1Database } from "./api";
-import { importDatabase } from "./jobs";
+import { importDatabase, importMayContinue } from "./jobs";
 import { INTERNAL_OBJECT_FILTER, quoteIdentifier } from "./sql";
 
 type OnLog = (msg: string, level?: LogLevel, type?: LogType, details?: string) => void;
@@ -20,8 +18,8 @@ type D1RestoreConfig = CloudflareD1Config & D1Connection & {
  *
  * Replacing never deletes the database itself. A Worker binds a D1 database by its ID, and a new
  * database gets a new ID, so the restore drops the objects inside and keeps the database. The drops
- * go into the same file as the dump, ahead of it, and D1 runs an import as one transaction: an
- * import that fails leaves the target exactly as it was, never half empty.
+ * go into the same import as the dump, streamed ahead of it, and D1 runs an import as one
+ * transaction: an import that fails leaves the target exactly as it was, never half empty.
  *
  * Before it replaces anything, the restore writes the current Time Travel bookmark of the target
  * into the log, with the command that goes back to it.
@@ -53,15 +51,6 @@ async function dropStatements(config: D1Connection, uuid: string): Promise<strin
     return (result?.results ?? [])
         .sort((a, b) => rank(a) - rank(b))
         .map((object) => `DROP ${object.type === "trigger" ? "TRIGGER" : object.type === "view" ? "VIEW" : "TABLE"} IF EXISTS ${quoteIdentifier(object.name)};`);
-}
-
-/** The dump with the drops ahead of it, in a file beside it. */
-async function withDropsAhead(dumpPath: string, drops: string[]): Promise<string> {
-    const combined = `${dumpPath}.replace.sql`;
-    const out = fs.createWriteStream(combined);
-    out.write(["PRAGMA defer_foreign_keys=TRUE;", ...drops, ""].join("\n"));
-    await pipeline(fs.createReadStream(dumpPath), out);
-    return combined;
 }
 
 /** Where a new database goes: what the connection says, or like the database the backup came from. */
@@ -100,9 +89,11 @@ export const restoreOne: NonNullable<DatabaseAdapter["restoreOne"]> = async (con
         log(`${targetDbName} does not exist yet`);
         const created = await createDatabase(connection, targetDbName, originalDbName, log);
         try {
-            const outcome = await importDatabase(connection, created.uuid, filePath, log);
+            const outcome = await importDatabase(connection, created.uuid, { filePath }, log);
             log(`Restored ${targetDbName} (${outcome.queries ?? "?"} statements)`);
         } catch (error: unknown) {
+            // Cloudflare may still finish an import it was handed, so that database stays.
+            if (importMayContinue(error)) throw error;
             // The database came from this restore and holds nothing, so it does not stay behind.
             await deleteDatabase(connection, created.uuid).catch(() => log(`Could not delete the empty database ${targetDbName} again, delete it in the Cloudflare dashboard.`, "warning"));
             throw error;
@@ -121,13 +112,9 @@ export const restoreOne: NonNullable<DatabaseAdapter["restoreOne"]> = async (con
     const drops = await dropStatements(connection, uuid);
     log(drops.length > 0 ? `Replacing ${targetDbName}: dropping its ${drops.length} objects and importing the backup in one transaction` : `${targetDbName} is empty, importing the backup`);
 
-    const importPath = drops.length > 0 ? await withDropsAhead(filePath, drops) : filePath;
-    try {
-        const outcome = await importDatabase(connection, uuid, importPath, log);
-        log(`Restored ${targetDbName} (${outcome.queries ?? "?"} statements)`);
-    } finally {
-        if (importPath !== filePath) await fs.promises.rm(importPath, { force: true });
-    }
+    const prefix = drops.length > 0 ? ["PRAGMA defer_foreign_keys=TRUE;", ...drops, ""].join("\n") : undefined;
+    const outcome = await importDatabase(connection, uuid, { filePath, prefix }, log);
+    log(`Restored ${targetDbName} (${outcome.queries ?? "?"} statements)`);
 };
 
 /**

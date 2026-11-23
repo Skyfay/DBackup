@@ -1,6 +1,6 @@
 import { AdapterError } from "@/lib/logging/errors";
 import { d1Request, databaseIdOf, isPermissionRefusal, type D1Connection } from "./api";
-import { downloadTo, md5Of, signedUrlOf, uploadFrom } from "./transfer";
+import { downloadTo, md5Of, signedUrlOf, uploadFrom, type ImportBody } from "./transfer";
 
 /**
  * The export and the import of D1, both long running work that Cloudflare does on its side and
@@ -11,10 +11,13 @@ import { downloadTo, md5Of, signedUrlOf, uploadFrom } from "./transfer";
  */
 
 /** The pause between two polls. Cloudflare holds a poll for a moment itself. */
-const POLL_PAUSE_MS = 500;
+const POLL_PAUSE_MS = 1_000;
 
 /** No export or import runs longer than this. */
 const MAX_DURATION_MS = 6 * 60 * 60 * 1000;
+
+/** How often a poll that failed on the way is tried again, with a pause that doubles each time. */
+const POLL_RETRIES = 5;
 
 type Log = (message: string, level?: "info" | "warning" | "error") => void;
 
@@ -36,9 +39,31 @@ interface PollAnswer {
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** A line of Cloudflare for the run log, without any URL, which could be a signed one. */
 function relay(answer: PollAnswer, log: Log): void {
     for (const line of answer.messages ?? []) {
-        if (typeof line === "string" && line.trim()) log(`Cloudflare: ${line.trim()}`);
+        if (typeof line === "string" && line.trim()) log(`Cloudflare: ${line.trim().replace(/https?:\/\/\S+/gi, "[URL]")}`);
+    }
+}
+
+/** Whether a failed call is worth another try: the network, a rate limit or a server error, not a refusal. */
+function isTransient(error: unknown): boolean {
+    if (isPermissionRefusal(error)) return false;
+    const status = (error as { context?: { status?: number } })?.context?.status;
+    return status === undefined || status === 429 || status >= 500;
+}
+
+/** One poll, tried again a few times when it fails on the way, since the work at Cloudflare goes on. */
+async function poll(config: D1Connection, operation: string, path: string, body: unknown, log: Log): Promise<PollAnswer> {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return (await d1Request<PollAnswer>(config, operation, "POST", path, body)).result;
+        } catch (error: unknown) {
+            if (attempt >= POLL_RETRIES || !isTransient(error)) throw error;
+            const wait = 2_000 * 2 ** attempt;
+            log(`Polling the ${operation} failed, trying again in ${wait / 1000} s`, "warning");
+            await pause(wait);
+        }
     }
 }
 
@@ -81,7 +106,7 @@ export async function exportDatabase(config: D1Connection, uuid: string, destina
             throw new AdapterError("cloudflare-d1", "export", `Cloudflare answered the export with the status "${answer.status ?? "none"}" and no bookmark to poll.`);
         }
         await pause(POLL_PAUSE_MS);
-        ({ result: answer } = await d1Request<PollAnswer>(config, "export", "POST", path, { output_format: "polling", current_bookmark: answer.at_bookmark }));
+        answer = await poll(config, "export", path, { output_format: "polling", current_bookmark: answer.at_bookmark }, log);
         relay(answer, log);
     }
 
@@ -102,24 +127,33 @@ export interface ImportOutcome {
 }
 
 /**
- * Imports a SQL dump into one database: start, upload, ingest, poll.
+ * Whether an import failed in a way that leaves open what Cloudflare did: it was handed over and
+ * then the polling broke off. Cloudflare may still finish it, so a database made for it stays.
+ */
+export function importMayContinue(error: unknown): boolean {
+    return (error as { context?: { importMayContinue?: boolean } })?.context?.importMayContinue === true;
+}
+
+/**
+ * Imports SQL into one database: start, upload, ingest, poll. The body is a dump file, with SQL
+ * put ahead of it when the restore replaces a database.
  *
- * D1 runs the whole file in one transaction, so a failed import leaves the database as it was. A
- * file Cloudflare already holds (the same MD5) needs no upload, `init` then starts the import
+ * D1 runs the whole body in one transaction, so a failed import leaves the database as it was. A
+ * body Cloudflare already holds (the same MD5) needs no upload, `init` then starts the import
  * itself and answers its state right away.
  */
-export async function importDatabase(config: D1Connection, uuid: string, filePath: string, log: Log): Promise<ImportOutcome> {
+export async function importDatabase(config: D1Connection, uuid: string, body: ImportBody, log: Log): Promise<ImportOutcome> {
     const id = databaseIdOf(uuid);
     const path = `/d1/database/${id}/import`;
     const started = Date.now();
-    const etag = await md5Of(filePath);
+    const etag = await md5Of(body);
 
     let { result: answer } = await d1Request<PollAnswer>(config, "import", "POST", path, { action: "init", etag });
 
     if (answer.upload_url) {
         const url = signedUrlOf(answer.upload_url, "import");
         log(`Uploading the dump to ${url.hostname}`);
-        await uploadFrom(url, filePath, etag);
+        await uploadFrom(url, body, etag);
         if (typeof answer.filename !== "string" || !answer.filename) {
             throw new AdapterError("cloudflare-d1", "import", "Cloudflare answered the import without a file name.");
         }
@@ -129,16 +163,26 @@ export async function importDatabase(config: D1Connection, uuid: string, filePat
     }
     relay(answer, log);
 
-    while (answer.status !== "complete" && answer.status !== "error") {
-        if (Date.now() - started > MAX_DURATION_MS) {
-            throw new AdapterError("cloudflare-d1", "import", "The import did not finish within 6 hours.");
+    try {
+        while (answer.status !== "complete" && answer.status !== "error") {
+            if (Date.now() - started > MAX_DURATION_MS) {
+                throw new AdapterError("cloudflare-d1", "import", "The import did not finish within 6 hours.");
+            }
+            if (!answer.at_bookmark) {
+                throw new AdapterError("cloudflare-d1", "import", `Cloudflare answered the import with the status "${answer.status ?? "none"}" and no bookmark to poll.`);
+            }
+            await pause(POLL_PAUSE_MS);
+            answer = await poll(config, "import", path, { action: "poll", current_bookmark: answer.at_bookmark }, log);
+            relay(answer, log);
         }
-        if (!answer.at_bookmark) {
-            throw new AdapterError("cloudflare-d1", "import", `Cloudflare answered the import with the status "${answer.status ?? "none"}" and no bookmark to poll.`);
-        }
-        await pause(POLL_PAUSE_MS);
-        ({ result: answer } = await d1Request<PollAnswer>(config, "import", "POST", path, { action: "poll", current_bookmark: answer.at_bookmark }));
-        relay(answer, log);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message.replace(/^\[cloudflare-d1\] [a-z-]+: /, "") : String(error);
+        throw new AdapterError(
+            "cloudflare-d1",
+            "import",
+            `Lost track of the import, Cloudflare may still finish it: ${message} Check the database in the Cloudflare dashboard before restoring again.`,
+            { context: { importMayContinue: true } },
+        );
     }
 
     if (answer.status === "error") {

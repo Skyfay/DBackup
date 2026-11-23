@@ -46,23 +46,43 @@ export async function downloadTo(url: URL, destinationPath: string): Promise<num
     return (await fs.promises.stat(destinationPath)).size;
 }
 
-/** The MD5 of a file in hex, the `etag` the import of D1 asks for. */
-export async function md5Of(filePath: string): Promise<string> {
+/**
+ * What an import uploads: SQL text put ahead of a file, then the file. Streamed from both, so the
+ * dump is never written a second time to disk.
+ */
+export interface ImportBody {
+    filePath: string;
+    prefix?: string;
+}
+
+function streamOf(body: ImportBody): Readable {
+    return Readable.from((async function* () {
+        if (body.prefix) yield Buffer.from(body.prefix, "utf8");
+        for await (const chunk of fs.createReadStream(body.filePath)) yield chunk as Buffer;
+    })());
+}
+
+async function sizeOf(body: ImportBody): Promise<number> {
+    return Buffer.byteLength(body.prefix ?? "", "utf8") + (await fs.promises.stat(body.filePath)).size;
+}
+
+/** The MD5 of an import body in hex, the `etag` the import of D1 asks for. */
+export async function md5Of(body: ImportBody): Promise<string> {
     const hash = createHash("md5");
-    await pipeline(fs.createReadStream(filePath), hash);
+    await pipeline(streamOf(body), hash);
     return hash.digest("hex");
 }
 
 /**
- * Streams a file to a presigned URL with PUT, as Wrangler does. R2 answers the MD5 of what it got as
- * the ETag, which has to be the one the import was started with.
+ * Streams an import body to a presigned URL with PUT, as Wrangler does. R2 answers the MD5 of what it
+ * got as the ETag, which has to be the one the import was started with.
  */
-export async function uploadFrom(url: URL, filePath: string, etag: string): Promise<void> {
-    const { size } = await fs.promises.stat(filePath);
+export async function uploadFrom(url: URL, body: ImportBody, etag: string): Promise<void> {
+    const size = await sizeOf(body);
     const response = await fetch(url, {
         method: "PUT",
         headers: { "Content-Length": String(size) },
-        body: Readable.toWeb(fs.createReadStream(filePath)) as unknown as BodyInit,
+        body: Readable.toWeb(streamOf(body)) as unknown as BodyInit,
         duplex: "half",
         redirect: "error",
         signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),

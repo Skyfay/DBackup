@@ -34,7 +34,7 @@ async function ensureLabDatabase(connection: { accountId: string; token: string 
     try {
         const file = path.join(folder, "shop.sql");
         await writeFile(file, readFileSync(path.join(REPO_ROOT, "lab", "datasets", "sqlite.sql"), "utf8"));
-        await importDatabase(connection, uuid, file, () => undefined);
+        await importDatabase(connection, uuid, { filePath: file }, () => undefined);
         log.push(`filled the D1 database ${LAB_D1_DATABASE} with the dataset of SQLite`);
     } finally {
         await rm(folder, { recursive: true, force: true });

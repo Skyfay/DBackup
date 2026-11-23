@@ -18,6 +18,12 @@ const SAFE = "9007199254740991";
 /** The most rows one page shows, whatever the caller asks. */
 const MAX_PAGE_SIZE = 500;
 
+/** The largest answer a read of the Explorer takes, well below the bound of the backup path. */
+const BROWSE_RESPONSE_LIMIT = 16 * 1024 * 1024;
+
+/** The bytes of a BLOB a page shows as hex, the rest is only counted. */
+const BLOB_PREVIEW_BYTES = 1024;
+
 const LISTED = `type IN ('table', 'view') AND ${INTERNAL_OBJECT_FILTER}`;
 
 export const getTables: NonNullable<DatabaseAdapter["getTables"]> = async (config, database) => {
@@ -63,10 +69,11 @@ async function columnsOf(connection: D1Connection, uuid: string, table: string):
     }));
 }
 
-/** A column as the page shows it: a large integer as text, a BLOB as hex. */
+/** A column as the page shows it: a large integer as text, a BLOB as hex, a long one cut with its size. */
 function shownValue(column: string): string {
     const col = quoteIdentifier(column);
-    return `CASE WHEN typeof(${col}) = 'integer' AND (${col} > ${SAFE} OR ${col} < -${SAFE}) THEN CAST(${col} AS TEXT) WHEN typeof(${col}) = 'blob' THEN 'x''' || hex(${col}) || '''' ELSE ${col} END`;
+    const blob = `'x''' || hex(substr(${col}, 1, ${BLOB_PREVIEW_BYTES})) || '''' || CASE WHEN length(${col}) > ${BLOB_PREVIEW_BYTES} THEN '... (' || length(${col}) || ' bytes)' ELSE '' END`;
+    return `CASE WHEN typeof(${col}) = 'integer' AND (${col} > ${SAFE} OR ${col} < -${SAFE}) THEN CAST(${col} AS TEXT) WHEN typeof(${col}) = 'blob' THEN ${blob} ELSE ${col} END`;
 }
 
 export const getTableData: NonNullable<DatabaseAdapter["getTableData"]> = async (config, options) => {
@@ -99,7 +106,7 @@ export const getTableData: NonNullable<DatabaseAdapter["getTableData"]> = async 
 
     const [countResult] = await query<{ n: number }>(connection, db.uuid, `SELECT count(*) AS n${from}`, params.length ? params : undefined);
     const select = columns.length > 0 ? columns.map((column) => shownValue(column.name)).join(", ") : "*";
-    const [data] = await rawQuery(connection, db.uuid, `SELECT ${select}${from}${order} LIMIT ${pageSize} OFFSET ${offset}`, params.length ? params : undefined);
+    const [data] = await rawQuery(connection, db.uuid, `SELECT ${select}${from}${order} LIMIT ${pageSize} OFFSET ${offset}`, params.length ? params : undefined, BROWSE_RESPONSE_LIMIT);
 
     const names = columns.length > 0 ? columns.map((column) => column.name) : data?.results?.columns ?? [];
     const rows = (data?.results?.rows ?? []).map((values) => Object.fromEntries(names.map((name, index) => [name, values[index] ?? null])));

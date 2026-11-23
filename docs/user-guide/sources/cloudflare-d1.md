@@ -56,6 +56,10 @@ Cloudflare answers no queries on a database while its export runs. A small datab
 
 Databases are picked by name and looked up on every run, so a database that was deleted and created again under the same name is backed up under its new ID.
 
+::: info Rows read count against the account
+Cloudflare bills rows read to the account. Besides the export, the check for large integers reads every table once per backup, and the [Database Explorer](/user-guide/features/database-explorer) counts the rows of every table it lists and reads the rows of each page it shows. On the free plan these count against the daily limit.
+:::
+
 ### Large integers
 
 SQLite stores integers with 64 bits, but the export of Cloudflare writes them through JavaScript numbers, which hold an integer exactly only up to 2^53 (9,007,199,254,740,991). A larger one lands in the dump rounded, and one near 2^63 comes back from a restore as a floating point number. This is a limit of Cloudflare's export that DBackup cannot work around. It mostly concerns IDs like those of Discord or Twitter stored as `INTEGER`. Store them as `TEXT` to keep them exact.

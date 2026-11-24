@@ -201,7 +201,11 @@ export async function dumpDatabases(ctx: RunnerContext, workDir: string): Promis
                     dbName,
                     dest,
                     host,
-                    (msg, level, type, details) => ctx.log(msg, level, type, details)
+                    (msg, level, type, details) => ctx.log(msg, level, type, details),
+                    (total) => {
+                        dump.transfer = { total, startedAt: new Date().toISOString() };
+                        report();
+                    }
                 );
             } catch (error) {
                 dump.state = "failed";

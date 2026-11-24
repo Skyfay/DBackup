@@ -52,6 +52,32 @@ describe("the databases of the dump step", () => {
         expect(erp.command).toMatch(/^BACKUP DATABASE/);
     });
 
+    it("follows the fetch of a .bak SQL Server already finished, not its 100 percent", () => {
+        const entries = [
+            line("00:01", "Dumping database: erp"),
+            line("00:05", "SQL Server: 90 percent processed."),
+            line("00:09", "SQL Server: 100 percent processed."),
+        ];
+        const records: DumpRecord[] = [{
+            name: "erp", state: "dumping", bytes: 2_000_000_000, startedAt: "2026-09-27T15:00:01.000Z", endedAt: null,
+            transfer: { total: 8_000_000_000, startedAt: "2026-09-27T15:00:10.000Z" },
+        }];
+        // 2 GB arrived in 20 seconds, so the other 6 GB take another minute.
+        const [erp] = buildDumps({ entries, records, names: [], previous: new Map(), live: true, now: Date.parse("2026-09-27T15:00:30.000Z") });
+
+        expect(erp.progress).toMatchObject({ share: 0.25, exact: true, etaMs: 60_000 });
+        expect(erp.progress!.text).toBe("1.9 GB of 7.5 GB fetched at 95.4 MB/s");
+    });
+
+    it("reads the fetch back from the metadata of a run, and drops one that is not whole", () => {
+        const [whole, broken] = dumpRecordsOf([
+            { name: "a", state: "dumping", bytes: 1, startedAt: null, endedAt: null, transfer: { total: 10, startedAt: "2026-09-27T15:00:10.000Z" } },
+            { name: "b", state: "dumping", bytes: 1, startedAt: null, endedAt: null, transfer: { total: "10" } },
+        ]);
+        expect(whole.transfer).toEqual({ total: 10, startedAt: "2026-09-27T15:00:10.000Z" });
+        expect(broken).not.toHaveProperty("transfer");
+    });
+
     it("measures a tool that tells nothing against the dump of the last backup, and says so", () => {
         const records: DumpRecord[] = [
             { name: "postgres", state: "done", bytes: 7_900_000, startedAt: "2026-09-27T15:00:00.000Z", endedAt: "2026-09-27T15:00:01.000Z" },

@@ -330,13 +330,18 @@ export interface DatabaseAdapter extends BaseAdapter {
      * Dumps a single named database to a plain local file, without any TAR/manifest
      * wrapping. Every backup is a seekable archive holding one entry per database, and this
      * is how each entry is produced. Throws on failure.
+     *
+     * An adapter whose engine writes the dump on the server first, like SQL Server, calls
+     * `onTransfer` with the size of that file when it starts to fetch it to `destinationPath`.
+     * The run then shows the transfer against that size, not the finished work of the engine.
      */
     dumpOne?(
         config: AdapterConfig,
         dbName: string,
         destinationPath: string,
         host: ExecutionHost,
-        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+        onTransfer?: (totalBytes: number) => void
     ): Promise<{ size: number }>;
 
     /**

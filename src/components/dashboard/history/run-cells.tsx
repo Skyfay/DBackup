@@ -57,8 +57,10 @@ export function LiveBar({ percent, className }: { percent: number | null; classN
 
 export function RunStatusCell({ row }: { row: RunRow }) {
     const tone = row.status === "Failed" ? "text-destructive" : row.status === "Partial" ? "text-warning" : "text-muted-foreground";
+    // The table sizes its columns by their content, so a long error would stretch the column.
+    // The note stops at a fixed width here, the whole text is in its title and on the page of the run.
     return (
-        <div className="min-w-0">
+        <div className="min-w-0 max-w-72">
             <ExecutionStatusBadge status={row.status} />
             {row.status === "Running" ? (
                 <div className="mt-1.5 flex items-center gap-2">

@@ -8,6 +8,12 @@ describe("connectionAddress", () => {
         expect(connectionAddress("postgres", config({ host: "db-01.internal", port: 5432, user: "backup" }))).toBe("db-01.internal:5432");
     });
 
+    it("names the start of the Cloudflare account of D1, which has no host, and never its token", () => {
+        const address = connectionAddress("cloudflare-d1", config({ accountId: "0123456789abcdef0123456789abcdef", token: "secret-token" }));
+        expect(address).toBe("Account 01234567...");
+        expect(connectionAddress("cloudflare-d1", config({ token: "secret-token" }))).toBeNull();
+    });
+
     it("adds the database index for Redis", () => {
         expect(connectionAddress("redis", config({ host: "cache-01", port: 6379 }))).toBe("cache-01:6379, DB 0");
     });

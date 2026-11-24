@@ -217,12 +217,6 @@ export async function requireDatabase(config: D1Connection, name: string, operat
     return { ...db, uuid: databaseIdOf(db.uuid) };
 }
 
-/** The details of one database, its size among them. */
-export async function getDatabase(config: D1Connection, uuid: string): Promise<D1Database> {
-    const { result } = await d1Request<D1Database>(config, "get", "GET", `/d1/database/${databaseIdOf(uuid)}`);
-    return result;
-}
-
 /** Runs SQL through the query endpoint, rows as objects. */
 export async function query<Row = Record<string, unknown>>(
     config: D1Connection,
@@ -232,12 +226,6 @@ export async function query<Row = Record<string, unknown>>(
     responseLimit?: number,
 ): Promise<D1QueryResult<Row>[]> {
     const { result } = await d1Request<D1QueryResult<Row>[]>(config, "query", "POST", `/d1/database/${databaseIdOf(uuid)}/query`, params ? { sql, params } : { sql }, responseLimit);
-    return Array.isArray(result) ? result : [];
-}
-
-/** Runs several statements as one batch, which D1 runs in one transaction. */
-export async function batch(config: D1Connection, uuid: string, statements: { sql: string; params?: unknown[] }[]): Promise<D1QueryResult[]> {
-    const { result } = await d1Request<D1QueryResult[]>(config, "query", "POST", `/d1/database/${databaseIdOf(uuid)}/query`, { batch: statements });
     return Array.isArray(result) ? result : [];
 }
 

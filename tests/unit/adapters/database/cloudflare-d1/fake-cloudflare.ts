@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { vi } from "vitest";
 
 /**
@@ -78,3 +79,25 @@ export function fakeCloudflare(route: (call: Call) => Answer | undefined, option
 }
 
 export const config = { accountId: ACCOUNT, token: "test-token", database: "", checkValues: false, newDatabaseLocation: "auto" };
+
+/** A dump as Cloudflare's export writes it. */
+export const DUMP = "PRAGMA defer_foreign_keys=TRUE;\nCREATE TABLE t (id INTEGER PRIMARY KEY);\nINSERT INTO \"t\" VALUES(1);\n";
+
+export const md5 = (text: string) => createHash("md5").update(text).digest("hex");
+
+/** The list of databases the account answers, by name and ID. */
+export const listing = (names: Record<string, string>, jurisdiction?: string) => (call: Call): Answer | undefined =>
+    call.method === "GET" && call.path.startsWith("/d1/database?")
+        ? ok(Object.entries(names).map(([name, uuid]) => ({ name, uuid, jurisdiction: jurisdiction ?? null })))
+        : undefined;
+
+/** Answers the import flow into one database, the upload with the MD5 of what arrived. */
+export function importing(uuid: string, outcome: Record<string, unknown> = { status: "complete", result: { num_queries: 3 } }) {
+    return (call: Call): Answer | undefined => {
+        if (call.method === "PUT") return { headers: { etag: `"${md5(call.uploaded ?? "")}"` } };
+        if (call.path !== `/d1/database/${uuid}/import`) return undefined;
+        const action = (call.body as { action: string }).action;
+        if (action === "init") return ok({ upload_url: "https://abc.r2.cloudflarestorage.com/up?sig=1", filename: "f.sql" });
+        return ok(outcome);
+    };
+}

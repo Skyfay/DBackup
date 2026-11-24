@@ -56,4 +56,62 @@ describe("the Database Explorer of a D1 database", () => {
         await CloudflareD1Adapter.getTableData!(config, { database: "shop", table: "orders", page: 1, pageSize: 1_000_000 }, host);
         expect((calls.find((call) => call.path.endsWith("/raw"))?.body as { sql: string }).sql).toContain("LIMIT 500 OFFSET 0");
     });
+
+    it("shows a BLOB cut to its first KB with its size, so a page stays small", async () => {
+        const { calls } = shop();
+        await CloudflareD1Adapter.getTableData!(config, { database: "shop", table: "orders", page: 1, pageSize: 10 }, host);
+        const sql = (calls.find((call) => call.path.endsWith("/raw"))?.body as { sql: string }).sql;
+        expect(sql).toContain(`hex(substr("note", 1, 1024))`);
+        expect(sql).toContain(`' bytes)'`);
+    });
+
+    it("matches a search exactly, at the start or at the end, as the page asks", async () => {
+        const { calls } = shop();
+        for (const matchMode of ["equals", "starts", "ends"] as const) {
+            await CloudflareD1Adapter.getTableData!(config, { database: "shop", table: "orders", page: 1, pageSize: 10, search: "abc", searchColumn: "note", matchMode }, host);
+        }
+        const searches = calls.filter((call) => call.path.endsWith("/raw")).map((call) => call.body as { sql: string; params: unknown[] });
+        expect(searches.map((search) => search.params)).toEqual([["abc"], ["abc%"], ["%abc"]]);
+        expect(searches[0].sql).toContain(`WHERE "note" = ?`);
+        expect(searches[1].sql).toContain(`WHERE "note" LIKE ?`);
+    });
+});
+
+describe("the tables of a D1 database", () => {
+    /** A database with the objects given, whose counts answer `counts`. */
+    function objects(list: { name: string; type: string }[], counts: () => ReturnType<typeof ok>) {
+        return fakeCloudflare((call) => {
+            if (call.method === "GET") return ok([{ uuid: DB_ID, name: "shop" }]);
+            const { sql } = call.body as { sql: string };
+            if (sql.startsWith("SELECT name, type FROM sqlite_master")) return ok([{ success: true, results: list }]);
+            if (sql.includes("UNION ALL") || sql.startsWith("SELECT count(*) AS n FROM")) return counts();
+            return undefined;
+        });
+    }
+
+    it("lists tables with their rows and views without, leaving out what belongs to SQLite and Cloudflare", async () => {
+        const { calls } = objects(
+            [{ name: "customers", type: "table" }, { name: "open_orders", type: "view" }, { name: "orders", type: "table" }],
+            () => ok([{ success: true, results: [{ n: 3 }, { n: 7 }] }]),
+        );
+        expect(await CloudflareD1Adapter.getTables!(config, "shop", host)).toEqual([
+            { name: "customers", type: "table", rowCount: 3 },
+            { name: "open_orders", type: "view" },
+            { name: "orders", type: "table", rowCount: 7 },
+        ]);
+        const listed = (calls.find((call) => (call.body as { sql?: string } | undefined)?.sql?.startsWith("SELECT name, type"))?.body as { sql: string }).sql;
+        expect(listed).toContain("NOT LIKE 'sqlite\\_%'");
+        expect(listed).toContain("NOT LIKE '\\_cf\\_%'");
+    });
+
+    it("still lists the tables when counting their rows fails, like on a virtual table", async () => {
+        objects([{ name: "notes_fts", type: "table" }], () => ({ status: 400, json: { success: false, errors: [{ code: 7500, message: "no such module: fts5" }] } }));
+        expect(await CloudflareD1Adapter.getTables!(config, "shop", host)).toEqual([{ name: "notes_fts", type: "table" }]);
+    });
+
+    it("asks for no counts in a database of views only", async () => {
+        const { calls } = objects([{ name: "v", type: "view" }], () => ok([]));
+        expect(await CloudflareD1Adapter.getTables!(config, "shop", host)).toEqual([{ name: "v", type: "view" }]);
+        expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
+    });
 });

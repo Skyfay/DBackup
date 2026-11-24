@@ -13,6 +13,7 @@ Database adapters handle the dump and restore operations for different database 
 | SQLite | `sqlite` | None (file copy) | ✅ | `sqlite` |
 | MSSQL | `mssql` | None (TDS protocol) | ✅ (TDS tunnelled) | `bak` |
 | Azure SQL Database | `azure-sql` | `sqlpackage` | ❌ (public PaaS endpoint) | `bacpac` |
+| Cloudflare D1 | `cloudflare-d1` | None (REST API of Cloudflare) | ❌ (public API) | `sql` |
 | Redis | `redis` | `redis-cli` | ✅ | `rdb` |
 | Firebird | `firebird` | `gbak`, `isql` | ✅ | `fbk` |
 
@@ -24,7 +25,7 @@ Each adapter declares the format of its dump in `DB_FORMAT_BY_ADAPTER` in `src/l
 
 | Format | Extension | Adapters | Stored as-is |
 |--------|-----------|----------|--------------|
-| `sql` | `.sql` | MySQL, MariaDB | |
+| `sql` | `.sql` | MySQL, MariaDB, Cloudflare D1 | |
 | `custom` | `.dump` | PostgreSQL | ✅ unless compression is `NONE` |
 | `archive` | `.archive` | MongoDB | ✅ (`--gzip`) |
 | `bak` | `.bak` | MSSQL | |
@@ -125,6 +126,7 @@ Each database adapter can optionally return size and table count information. Th
 | **MongoDB** | Native `sizeOnDisk` from `listDatabases` command | `listCollections().length` per database |
 | **MSSQL** | `sys.master_files` (`SUM(size) * 8 * 1024`) | `COUNT(*)` from `INFORMATION_SCHEMA.TABLES` |
 | **Azure SQL Database** | `sys.database_files` (`SUM(size) * 8 * 1024`, data files only), one connection per database | `COUNT(*)` from `sys.tables`, same connection |
+| **Cloudflare D1** | `file_size` of the database list, one API call for all | `num_tables` of the same list |
 | **SQLite** | Not supported | Not supported |
 | **Redis** | Not supported | Not supported |
 

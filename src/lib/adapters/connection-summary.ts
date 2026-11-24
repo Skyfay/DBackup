@@ -45,6 +45,8 @@ export function connectionAddress(adapterId: string, configJson: string): string
         }
         case "sqlite":
             return text(config.path) || null;
+        case "cloudflare-d1":
+            return config.accountId ? `Account ${text(config.accountId).slice(0, 8)}...` : null;
         case "local-filesystem":
             return text(config.basePath) || null;
         case "docker-volume": {

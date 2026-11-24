@@ -122,6 +122,17 @@ export const AzureSQLSchema = z.object({
     requestTimeout: z.coerce.number().default(300000).describe("Timeout in ms for catalog queries. The export itself is never timed out."),
 });
 
+/** Where a restore puts a D1 database it creates, see `cloudflare-d1/restore.ts`. */
+export const D1_NEW_DATABASE_LOCATIONS = ["auto", "eu", "fedramp", "weur", "eeur", "wnam", "enam", "apac", "oc"] as const;
+
+export const CloudflareD1Schema = z.object({
+    accountId: z.string().trim().regex(/^[0-9a-fA-F]{32}$/, "The account ID is the 32 hex characters shown in the Cloudflare dashboard").describe("Account ID of the Cloudflare account that holds the D1 databases"),
+    token: z.string().optional().describe("API token with the permission D1 Edit"),
+    database: z.union([z.string(), z.array(z.string())]).default(""),
+    checkValues: z.boolean().default(true).describe("Warn before each backup about integers beyond 2^53 and values too long to import back into D1. Reads every table once more"),
+    newDatabaseLocation: z.enum(D1_NEW_DATABASE_LOCATIONS).default("auto").describe("Where a restore under a new name creates the database"),
+});
+
 export const FirebirdSchema = z.object({
     // The host goes in front of `:path` in the connection string of gbak and isql, see `firebird/host.ts`.
     host: z.string().superRefine((value, ctx) => {
@@ -167,8 +178,9 @@ export type MSSQLConfig = z.infer<typeof MSSQLSchema>;
 export type AzureSQLConfig = z.infer<typeof AzureSQLSchema>;
 export type RedisConfig = z.infer<typeof RedisSchema>;
 export type FirebirdConfig = z.infer<typeof FirebirdSchema>;
+export type CloudflareD1Config = z.infer<typeof CloudflareD1Schema>;
 
-export type DatabaseConfig = MySQLConfig | MariaDBConfig | PostgresConfig | MongoDBConfig | SQLiteConfig | MSSQLConfig | AzureSQLConfig | RedisConfig | FirebirdConfig;
+export type DatabaseConfig = MySQLConfig | MariaDBConfig | PostgresConfig | MongoDBConfig | SQLiteConfig | MSSQLConfig | AzureSQLConfig | RedisConfig | FirebirdConfig | CloudflareD1Config;
 
 // Generic type alias for dialect base class (accepts any database config)
 export type AnyDatabaseConfig = DatabaseConfig;

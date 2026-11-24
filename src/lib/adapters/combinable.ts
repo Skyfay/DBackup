@@ -14,6 +14,7 @@ export const COMBINABLE_WITH_DIRECTORIES: readonly string[] = [
     "firebird",
     "mssql",
     "azure-sql",
+    "cloudflare-d1",
     "sqlite",
 ];
 

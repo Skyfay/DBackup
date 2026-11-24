@@ -69,6 +69,7 @@ Nothing locks you in. Every database backup is a standard dump and every file ba
 | SQLite | 3.x | Local, SSH | Yes |
 | Microsoft SQL Server | 2017, 2019, 2022, Azure SQL Edge | Direct, SSH | Yes |
 | Azure SQL Database (beta) | Single database, elastic pool | Direct | Yes, drops the target first |
+| Cloudflare D1 (beta) | Every D1 database of an account | API token | Yes, replaces the tables |
 | Firebird (beta) | 3.x, 4.x, 5.x | Direct, SSH | Yes, through configured aliases |
 
 **Destinations**: local filesystem, Amazon S3 and S3-compatible storage like Cloudflare R2, Hetzner, MinIO or Wasabi, Google Drive, Dropbox, OneDrive, SFTP, FTP/FTPS, WebDAV, SMB and rsync over SSH. Each of them can also be a source for file backups, and so can Docker volumes.

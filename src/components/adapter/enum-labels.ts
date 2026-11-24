@@ -10,6 +10,18 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
     storageClass: { STANDARD: "Standard", STANDARD_IA: "Standard, infrequent access", GLACIER: "Glacier", DEEP_ARCHIVE: "Glacier Deep Archive" },
     // Cloudflare R2
     jurisdiction: { default: "Standard", eu: "EU", fedramp: "FedRAMP" },
+    // Cloudflare D1, where a restore creates a new database
+    newDatabaseLocation: {
+        auto: "Automatic",
+        eu: "EU jurisdiction",
+        fedramp: "FedRAMP jurisdiction",
+        weur: "Western Europe (hint)",
+        eeur: "Eastern Europe (hint)",
+        wnam: "Western North America (hint)",
+        enam: "Eastern North America (hint)",
+        apac: "Asia-Pacific (hint)",
+        oc: "Oceania (hint)",
+    },
     // Email
     secure: { none: "None (insecure)", ssl: "SSL / TLS", starttls: "STARTTLS" },
 };

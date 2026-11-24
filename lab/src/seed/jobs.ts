@@ -21,6 +21,8 @@ interface JobSpec {
     retentionPolicyId?: string;
     notify?: string[];
     incremental?: boolean;
+    /** The databases the job backs up, all of the source when left out. */
+    databases?: string[];
 }
 
 const JOBS: JobSpec[] = [
@@ -33,6 +35,8 @@ const JOBS: JobSpec[] = [
     { name: "Lab Firebird 5 to Rsync", source: "firebird-5", destinations: ["rsync"] },
     { name: "Lab PostgreSQL 12 over SSH to Local", source: "postgres-12-ssh", destinations: ["local"] },
     { name: "Lab SQLite to Local", source: "sqlite", destinations: ["local"] },
+    // Only the database of the lab, the test account may hold others.
+    { name: "Lab Cloudflare D1 to Local", source: "cloudflare-d1", destinations: ["local"], databases: ["dbackup-lab-shop"] },
     { name: "Lab Files incremental to Local", source: "files", destinations: ["local"], incremental: true },
 ];
 
@@ -72,7 +76,7 @@ export async function seedJobs(connections: SeededConnections, nativeHosts: stri
             enabled: false,
             ...(job.incremental
                 ? { sources: [{ configId: sourceId, priority: 0, path: "/" }], backupMode: "INCREMENTAL", fullEveryDays: 7 }
-                : { sourceId, databases: [] }),
+                : { sourceId, databases: job.databases ?? [] }),
             destinations: destinationIds.map((configId, priority) => ({
                 configId: configId!,
                 priority,

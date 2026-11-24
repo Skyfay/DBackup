@@ -122,6 +122,8 @@ export const FAMILIES: Family[] = [
     { name: "customer", targets: customerTargets() },
     // The destinations and channels, with SQLite inside DBackup as the source.
     { name: "storage", targets: [], services: [...STORAGE_SERVICES, ...NOTIFY_SERVICES] },
+    // Cloudflare D1, which runs at Cloudflare and needs no service of the lab, see `cloud.spec.ts`.
+    { name: "cloud", targets: [] },
 ];
 
 /** The services of the lab a family needs. */

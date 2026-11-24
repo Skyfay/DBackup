@@ -23,6 +23,7 @@ export const DB_FORMAT_BY_ADAPTER: Record<string, DumpFormat> = {
     firebird: "fbk",
     mssql: "bak",
     "azure-sql": "bacpac",
+    "cloudflare-d1": "sql",
     redis: "rdb",
     valkey: "rdb",
     sqlite: "sqlite",

@@ -27,7 +27,7 @@ export interface ArchiveListing {
 }
 
 /** Source types whose backups restore into a server, which the restore page asks a target for. */
-const SERVER_ADAPTERS = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'azure-sql', 'redis', 'valkey', 'firebird'];
+const SERVER_ADAPTERS = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'azure-sql', 'cloudflare-d1', 'redis', 'valkey', 'firebird'];
 
 /** The adapters a downloaded dump is offered to when the caller does not name its type. */
 const GUESSED_ADAPTERS = ["mysql", "postgres", "mongodb"];

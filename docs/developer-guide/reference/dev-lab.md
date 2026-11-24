@@ -107,6 +107,7 @@ The lab reads the first config it finds: the file in `DBACKUP_LAB_CONFIG`, then 
 | `profile` | `core` for the oldest and newest version of each engine, `full` for every version | `core` |
 | `docker` | The Docker host of the whole lab: its [docker context](https://docs.docker.com/engine/manage-resources/contexts/), the address DBackup reaches its ports under, and an `ssh` login for SQL Server, see [A Remote Docker Host](#a-remote-docker-host) | this machine |
 | `native` | Servers without Docker by name: their address, an `ssh` login that may run the setup as root, and the `login` of their sources, see [A Native Server](#a-native-server) | none |
+| `cloudflareD1` | The `accountId` and `token` of a Cloudflare account just for tests, see [Cloudflare D1](#cloudflare-d1). A token of `env:NAME` is read from that environment variable | none |
 
 Every field is checked, and one the lab does not know is refused, so a typo does not go unnoticed.
 
@@ -133,6 +134,12 @@ Most servers DBackup backs up run their databases from the packages of their dis
 The seed then adds every database of the server as a source in SSH mode. The end-to-end tests do not need such a server: the container `customer` of `lab/compose/e2e.yml` installs the same packages and stands in for it. Ubuntu has no `mariadb-dump`, so the MySQL source also covers the fallback to `mysqldump`.
 
 MongoDB 5 and later need a CPU with AVX. A virtual machine with a generic CPU model has none, so give it the CPU type of its host, or MongoDB 8.0 does not start there, in a container or from the packages.
+
+## Cloudflare D1
+
+D1 runs at Cloudflare and nowhere else, so no container stands in for it. With `cloudflareD1` in the config, the seed makes sure the account holds the database `dbackup-lab-shop` with the SQLite dataset, adds the source **Lab Cloudflare D1** with a Token profile and the job **Lab Cloudflare D1 to Local**, which backs up that database only. Without it the lab has no D1 source, and `lab:status` says so.
+
+Use a Cloudflare account of its own for this, with an API token that has **Account > D1 > Edit**. Cloudflare cannot limit a D1 token to single databases, so a token of an account with real databases could change every one of them. The free plan is enough.
 
 ## Adding an Engine or Version
 

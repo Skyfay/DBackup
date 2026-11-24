@@ -647,6 +647,10 @@
         "versions": "Einzeldatenbank, Pool für elastische Datenbanken",
         "text": "Ein BACPAC-Export per SqlPackage. Eine Wiederherstellung ersetzt die Zieldatenbank."
       },
+      "cloudflare-d1": {
+        "versions": "Jede D1-Datenbank eines Accounts",
+        "text": "Der SQL-Export von Cloudflare über die API, mit einem API-Token und ohne Installation. Eine Wiederherstellung ersetzt die Tabellen und behält die ID der Datenbank."
+      },
       "firebird": {
         "versions": "Versionen 3, 4 und 5",
         "text": "Backups mit gbak, wiederhergestellt über Aliase, die Sie auf dem Server einrichten."

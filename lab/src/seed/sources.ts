@@ -10,6 +10,7 @@ import { STORAGE, databasesOf, sourceName } from "../catalog";
 import { ENGINES, engineOf } from "../engines";
 import { ensureCredential, type ConnectionSpec } from "./records";
 import { ensureFilesFolder, ensureLocalSqlite } from "./setup";
+import { seedCloudflareD1 } from "./cloudflare-d1";
 
 export type Note = (spec: ConnectionSpec, key: string) => Promise<void>;
 
@@ -103,6 +104,8 @@ export async function seedSources(config: LabConfig, note: Note, log: string[]):
         config: { mode: "ssh", path: `${STORAGE.ssh.home}/shop.db`, host: address, port: STORAGE.ssh.port },
         sshCredentialId: sshHost,
     }, "sqlite-ssh");
+
+    await seedCloudflareD1(config, note, log);
 
     await note({
         name: "Lab Files",

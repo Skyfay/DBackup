@@ -242,6 +242,8 @@ export const DIALED_HOSTS: Readonly<Record<string, HostsOf>> = {
     mssql,
     // SqlPackage gets `tcp:<host>,<port>` and the driver the same server name, see `sqlServerHost`.
     "azure-sql": (config) => [sqlServerHost(config.host)].filter(present),
+    // The API of Cloudflare and the R2 bucket of its exports, both fixed, see `cloudflare-d1/transfer.ts`.
+    "cloudflare-d1": none,
     redis,
     valkey: redis,
     // `host/port` and `[v6]/port` by the host, see `firebirdHosts`.

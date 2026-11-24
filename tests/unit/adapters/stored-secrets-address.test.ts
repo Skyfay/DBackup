@@ -60,6 +60,19 @@ describe("a database source", () => {
     });
 });
 
+describe("a Cloudflare D1 source", () => {
+    const account = "0123456789abcdef0123456789abcdef";
+    const stored = { accountId: account, token: "cf-token" };
+
+    it("keeps its token for the same account, also written in capitals", () => {
+        expect(merge("cloudflare-d1", { accountId: account.toUpperCase(), checkValues: false }, stored).token).toBe("cf-token");
+    });
+
+    it("never sends the saved token to another account, which the fixed API host alone does not tell apart", () => {
+        refused("cloudflare-d1", { accountId: "fedcba9876543210fedcba9876543210" }, stored, LOGIN_FOR_NEW_ADDRESS);
+    });
+});
+
 describe("a source over SSH", () => {
     const stored = {
         host: "127.0.0.1", port: 3306, password: "db-pw",

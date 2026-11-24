@@ -65,6 +65,7 @@ const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
   valkey: valkeyIcon,
   mssql: mssqlIcon,
   "azure-sql": azureIcon,
+  "cloudflare-d1": cloudflareIcon,
   firebird: firebirdIcon,
   // Storage
   "local-filesystem": harddiskIcon,

@@ -9,7 +9,7 @@ import { getCustomerDatabases } from "@/app/actions/tenant/database-assignments"
 import { buildDbRows, copyName, type CustomerHolders, type DbChoice, type ServerDatabase } from "./restore-model";
 
 /** Adapters that run a server DBackup can list the databases of. The rest restore into a file, like SQLite. */
-const SERVER_ADAPTERS = ["mysql", "mariadb", "postgres", "mongodb", "mssql", "azure-sql", "redis", "valkey", "firebird"];
+const SERVER_ADAPTERS = ["mysql", "mariadb", "postgres", "mongodb", "mssql", "azure-sql", "cloudflare-d1", "redis", "valkey", "firebird"];
 
 /** Whether the picked server can take the backup, and what the page says about it. */
 export interface Compatibility {

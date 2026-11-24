@@ -159,6 +159,7 @@ export async function status(config: LabConfig, workspace: string, write: Write)
         `${bold("Config")}       ${config.source}, profile ${config.profile}`,
         `${bold("Docker host")}  ${config.docker.name} (${config.docker.address})`,
         `${bold("Workspace")}    ${workspace}`,
+        `${bold("Cloudflare")}   ${config.cloudflareD1 ? `D1 account ${config.cloudflareD1.accountId.slice(0, 8)}...` : "no cloudflareD1 in the config, the lab has no D1 source"}`,
     ];
     for (const line of renderStatus(header, sections)) write(line);
     return !sections.some((section) => section.rows.some((row) => row.mark === "fail"));

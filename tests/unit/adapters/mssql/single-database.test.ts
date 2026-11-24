@@ -108,6 +108,35 @@ describe("MSSQL single-database backup", () => {
         expect(host.calls.removed).toEqual([host.calls.getFile[0].hostPath]);
     });
 
+    it("tells the size of the .bak on the server when it starts to fetch it", async () => {
+        const host = sshHostThatDelivers();
+        const sizes: number[] = [];
+        host.stat = async () => ({ size: 8_000_000_000, isDirectory: false });
+
+        await dumpOne(config() as never, "shop", join(workDir, "0001.bak"), host, undefined, (total) => sizes.push(total));
+
+        expect(sizes).toEqual([8_000_000_000]);
+    });
+
+    it("still fetches a .bak whose size the server does not tell, without a transfer to follow", async () => {
+        const host = sshHostThatDelivers();
+        const sizes: number[] = [];
+
+        await dumpOne(config() as never, "shop", join(workDir, "0001.bak"), host, undefined, (total) => sizes.push(total));
+
+        expect(host.calls.getFile).toHaveLength(1);
+        expect(sizes).toEqual([]);
+    });
+
+    it("tells the size of the .bak it copies from a shared mount", async () => {
+        serverWritesBackup();
+        const sizes: number[] = [];
+
+        await dumpOne(config() as never, "shop", join(workDir, "0001.bak"), createFakeHost({ kind: "direct" }), undefined, (total) => sizes.push(total));
+
+        expect(sizes).toEqual([7]);
+    });
+
     it("removes the server-side .bak even when fetching it fails", async () => {
         const host = createFakeHost({ kind: "ssh" });
         host.getFile = async () => { throw new Error("No such file"); };

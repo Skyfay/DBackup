@@ -112,6 +112,11 @@ export interface DumpState {
     bytes: number | null;
     startedAt: string | null;
     endedAt: string | null;
+    /**
+     * The fetch of a dump the engine wrote on its server first, like a SQL Server .bak, with the
+     * size it has there. While it is set, `bytes` counts what has arrived of `total`.
+     */
+    transfer?: { total: number; startedAt: string } | null;
 }
 
 export interface RunnerContext {

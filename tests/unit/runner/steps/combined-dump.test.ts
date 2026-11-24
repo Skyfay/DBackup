@@ -393,8 +393,8 @@ describe('executeCombinedDump', () => {
         createdTempFiles.push(ctx.tempFile!);
 
         expect(dbAdapter.dumpOne).toHaveBeenCalledTimes(2);
-        expect(dbAdapter.dumpOne).toHaveBeenCalledWith(expect.anything(), 'auto1', expect.any(String), expect.anything(), expect.any(Function));
-        expect(dbAdapter.dumpOne).toHaveBeenCalledWith(expect.anything(), 'auto2', expect.any(String), expect.anything(), expect.any(Function));
+        expect(dbAdapter.dumpOne).toHaveBeenCalledWith(expect.anything(), 'auto1', expect.any(String), expect.anything(), expect.any(Function), expect.any(Function));
+        expect(dbAdapter.dumpOne).toHaveBeenCalledWith(expect.anything(), 'auto2', expect.any(String), expect.anything(), expect.any(Function), expect.any(Function));
     });
 
     it('reports where each database stands, so the page of the run fills a row for each', async () => {

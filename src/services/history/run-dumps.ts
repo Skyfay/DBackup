@@ -18,6 +18,14 @@ export interface DumpRecord {
     bytes: number | null;
     startedAt: string | null;
     endedAt: string | null;
+    /** The fetch of a dump the engine wrote on its server, see DumpState. */
+    transfer?: { total: number; startedAt: string } | null;
+}
+
+function transferOf(value: unknown): DumpRecord["transfer"] {
+    const transfer = value as { total?: unknown; startedAt?: unknown } | null | undefined;
+    if (!transfer || typeof transfer.total !== "number" || typeof transfer.startedAt !== "string") return null;
+    return { total: transfer.total, startedAt: transfer.startedAt };
 }
 
 const STATES = ["waiting", "dumping", "done", "failed"];
@@ -27,12 +35,14 @@ export function dumpRecordsOf(value: unknown): DumpRecord[] {
     return value.flatMap((raw): DumpRecord[] => {
         const entry = raw as Partial<DumpRecord> | null;
         if (!entry || typeof entry.name !== "string" || !STATES.includes(entry.state as string)) return [];
+        const transfer = transferOf(entry.transfer);
         return [{
             name: entry.name,
             state: entry.state as DumpRecord["state"],
             bytes: typeof entry.bytes === "number" ? entry.bytes : null,
             startedAt: typeof entry.startedAt === "string" ? entry.startedAt : null,
             endedAt: typeof entry.endedAt === "string" ? entry.endedAt : null,
+            ...(transfer ? { transfer } : {}),
         }];
     });
 }
@@ -140,6 +150,22 @@ function factsOf(outputs: RunOutput[]): string | null {
 
 /** How far a database is that dumps right now, counted by its tool or measured against its last dump. */
 function progressOf(outputs: RunOutput[], record: DumpRecord | undefined, startedAt: string | null, lastBytes: number | null, now: number): RunDumpProgress | null {
+    // A dump the engine finished on its server and that travels here now. Its engine already
+    // said 100 percent, so only the bytes that arrived tell how far it is.
+    if (record?.transfer) {
+        const { total, startedAt: since } = record.transfer;
+        const bytes = record.bytes ?? 0;
+        const share = total > 0 ? Math.min(bytes / total, 1) : null;
+        const elapsed = now - (time(since) ?? now);
+        const rate = elapsed > 0 && bytes > 0 ? bytes / elapsed : null;
+        return {
+            share,
+            exact: true,
+            text: `${formatBytes(bytes, 1)} of ${formatBytes(total, 1)} fetched${rate ? ` at ${formatBytes(rate * 1000, 1)}/s` : ""}`,
+            part: null,
+            etaMs: rate ? Math.max(0, Math.round((total - bytes) / rate)) : null,
+        };
+    }
     const mongo = outputs.find((output) => output.source === "mongodump")?.lines ?? [];
     const lines = mongo.map((line) => ({ line, match: line.message.match(MONGO_PROGRESS) })).filter((entry) => entry.match !== null);
     const last = lines.at(-1);

@@ -9,6 +9,7 @@ import { joinServerPath } from "./server-paths";
 import fs from "fs/promises";
 import path from "path";
 import { assertSharedFolderOffOwnData } from "./shared-folder";
+import { formatBytes } from "@/lib/utils";
 
 type MSSQLDumpOneConfig = MSSQLConfig & {
     detectedVersion?: string;
@@ -53,7 +54,8 @@ export async function dumpOne(
     dbName: string,
     destinationPath: string,
     host: ExecutionHost,
-    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+    onTransfer?: (totalBytes: number) => void
 ): Promise<{ size: number }> {
     const log = (msg: string, level: LogLevel = "info", type: LogType = "general", details?: string) =>
         onLog?.(msg, level, type, details);
@@ -89,8 +91,14 @@ export async function dumpOne(
             if (msg.message) log(`SQL Server: ${msg.message}`, "info", "general");
         });
 
+        // SQL Server reports 100 percent once the .bak is written, but a large one still has to
+        // travel here, which can take longer than the backup did. Its size lets the run show that.
         if (useSSH) {
-            log(`Downloading: ${serverBakPath} → ${destinationPath}`);
+            const remote = await host.stat(serverBakPath).catch(() => null);
+            log(remote
+                ? `Downloading ${formatBytes(remote.size)}: ${serverBakPath} → ${destinationPath}`
+                : `Downloading: ${serverBakPath} → ${destinationPath}`);
+            if (remote) onTransfer?.(remote.size);
             try {
                 await host.getFile(serverBakPath, destinationPath);
             } catch (error: unknown) {
@@ -98,8 +106,10 @@ export async function dumpOne(
             }
         } else {
             // With a shared mount the file SQL Server wrote is already visible here.
-            const visible = await fs.stat(sharedPath).then(() => true, () => false);
+            const visible = await fs.stat(sharedPath).catch(() => null);
             if (!visible) throw missingOnMountError(sharedPath);
+            log(`Copying ${formatBytes(visible.size)} from the shared folder: ${sharedPath} → ${destinationPath}`);
+            onTransfer?.(visible.size);
             await fs.copyFile(sharedPath, destinationPath);
         }
 

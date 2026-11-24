@@ -76,6 +76,8 @@ export function parseJobDatabases(databasesJson: string | null | undefined): str
     }
 }
 
+const WATCH_INTERVAL_MS = 800;
+
 /**
  * Shows how far a running dump has got, by watching its file grow.
  *
@@ -88,17 +90,21 @@ export function parseJobDatabases(databasesJson: string | null | undefined): str
  * would never end it and free its slot of the queue.
  */
 export function watchDumpSize(ctx: RunnerContext, file: string, label: string, onBytes?: (bytes: number) => void): () => void {
-    const startedAt = Date.now();
+    // The pace counts from when the file showed up, within the last tick. An engine that writes on
+    // its server first, like SQL Server, creates it here only once the fetch starts, and a pace
+    // from the start of the dump would count the whole backup on the server as a slow transfer.
+    let appearedAt: number | null = null;
     let lastSize = 0;
     const timer = setInterval(() => {
         fs.stat(file).then((stats) => {
+            appearedAt ??= Date.now() - WATCH_INTERVAL_MS;
             if (stats.size === lastSize) return;
             lastSize = stats.size;
-            const elapsed = (Date.now() - startedAt) / 1000;
+            const elapsed = (Date.now() - appearedAt) / 1000;
             const speed = elapsed > 0 ? Math.round(stats.size / elapsed) : 0;
-            ctx.updateDetail(`${label}: ${formatBytes(stats.size)} dumped - ${formatBytes(speed)}/s`);
+            ctx.updateDetail(`${label}: ${formatBytes(stats.size)} written - ${formatBytes(speed)}/s`);
             onBytes?.(stats.size);
         }, () => { /* not written yet */ });
-    }, 800);
+    }, WATCH_INTERVAL_MS);
     return () => clearInterval(timer);
 }

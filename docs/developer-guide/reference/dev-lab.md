@@ -131,7 +131,7 @@ Most servers DBackup backs up run their databases from the packages of their dis
 - One login for OpenSSH and every database, with the user and password of `login`. MySQL keeps `auth_socket` for root, as Ubuntu installs it.
 - OpenSSH on an extra port, 2222 by default, where a wrong password fails like on any server. Use that port in `login` when port 22 of the server is not OpenSSH.
 
-The seed then adds every database of the server as a source in SSH mode. The end-to-end tests do not need such a server: the container `customer` of `lab/compose/e2e.yml` installs the same packages and stands in for it. Ubuntu has no `mariadb-dump`, so the MySQL source also covers the fallback to `mysqldump`.
+The seed then adds every database of the server as a source in SSH mode, and a paused job each for its PostgreSQL, MySQL and MongoDB. MongoDB is reached over SSH only here, so its job is the one run of the lab that calls `mongodump` through SSH. The end-to-end tests do not need such a server: the container `customer` of `lab/compose/e2e.yml` installs the same packages and stands in for it. Ubuntu has no `mariadb-dump`, so the MySQL source also covers the fallback to `mysqldump`.
 
 MongoDB 5 and later need a CPU with AVX. A virtual machine with a generic CPU model has none, so give it the CPU type of its host, or MongoDB 8.0 does not start there, in a container or from the packages.
 

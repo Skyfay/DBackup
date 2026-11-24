@@ -4,4 +4,4 @@
 
 ### 📝 Documentation
 
-- **Cloudflare D1**: New source guide with the token setup, the lock during an export and the integers the export of Cloudflare rounds.
+- **Cloudflare D1**: New source guide with the token setup, the lock during an export and import, and the values the export of Cloudflare cannot carry.

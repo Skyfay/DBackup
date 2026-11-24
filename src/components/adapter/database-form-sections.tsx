@@ -51,9 +51,9 @@ const SWITCHES: Record<string, { title: string; description: string }> = {
     disableSsl: { title: "Disable SSL", description: "For development databases with a self-signed certificate." },
     encrypt: { title: "Encrypt the connection", description: "Required by Azure SQL and most hosted servers." },
     trustServerCertificate: { title: "Trust the server certificate", description: "Accepts a self-signed certificate, for development servers." },
-    checkLargeIntegers: {
-        title: "Check for large integers",
-        description: "Warns in the run log when a column holds an integer beyond 2^53, which the export of Cloudflare rounds. Reads every table once more before the export.",
+    checkValues: {
+        title: "Check the values before each backup",
+        description: "Warns in the run log about integers beyond 2^53, which the export of Cloudflare rounds, and about values too long to import back into D1. Reads every table once more before the export.",
     },
 };
 

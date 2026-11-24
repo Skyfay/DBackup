@@ -129,7 +129,7 @@ export const CloudflareD1Schema = z.object({
     accountId: z.string().trim().regex(/^[0-9a-fA-F]{32}$/, "The account ID is the 32 hex characters shown in the Cloudflare dashboard").describe("Account ID of the Cloudflare account that holds the D1 databases"),
     token: z.string().optional().describe("API token with the permission D1 Edit"),
     database: z.union([z.string(), z.array(z.string())]).default(""),
-    checkLargeIntegers: z.boolean().default(true).describe("Warn before each backup when a column holds an integer beyond 2^53, which the export of Cloudflare rounds. Reads every table once more"),
+    checkValues: z.boolean().default(true).describe("Warn before each backup about integers beyond 2^53 and values too long to import back into D1. Reads every table once more"),
     newDatabaseLocation: z.enum(D1_NEW_DATABASE_LOCATIONS).default("auto").describe("Where a restore under a new name creates the database"),
 });
 

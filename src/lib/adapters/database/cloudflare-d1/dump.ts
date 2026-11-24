@@ -4,7 +4,7 @@ import { AdapterError } from "@/lib/logging/errors";
 import { formatBytes } from "@/lib/utils";
 import { requireDatabase, type D1Connection } from "./api";
 import { exportDatabase } from "./jobs";
-import { warnAboutLargeIntegers } from "./large-integers";
+import { warnAboutRiskyValues } from "./value-check";
 import type { CloudflareD1Config } from "@/lib/adapters/definitions";
 
 type OnLog = (msg: string, level?: LogLevel, type?: LogType, details?: string) => void;
@@ -21,8 +21,8 @@ export const dumpOne: NonNullable<DatabaseAdapter["dumpOne"]> = async (config, d
     const connection = config as CloudflareD1Config & D1Connection;
 
     const db = await requireDatabase(connection, dbName, "dump");
-    if (connection.checkLargeIntegers !== false) {
-        await warnAboutLargeIntegers(connection, db.uuid, dbName, log);
+    if (connection.checkValues !== false) {
+        await warnAboutRiskyValues(connection, db.uuid, dbName, log);
     }
 
     log(`Exporting ${dbName}. Cloudflare locks the database until the export ends, it serves no queries meanwhile.`);

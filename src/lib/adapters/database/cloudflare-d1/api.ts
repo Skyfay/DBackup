@@ -64,10 +64,13 @@ interface Envelope<T> {
     result_info?: { page?: number; per_page?: number; count?: number; total_count?: number };
 }
 
-/** Cloudflare's own error codes this adapter turns into a sentence a person can act on. */
+/**
+ * Cloudflare's own error codes this adapter turns into a sentence a person can act on. D1 answers
+ * 7500 for every failed statement, a syntax error, a write with a read-only token and a database
+ * busy with an import alike, so that code says nothing and its message is passed on instead.
+ */
 const AUTHENTICATION_ERROR = 10000;
 const INVALID_TOKEN = 1000;
-const NO_PERMISSION = 7500;
 
 /**
  * Whether an error is a call the API refused for a missing right, as opposed to a request that is
@@ -79,7 +82,7 @@ export function isPermissionRefusal(error: unknown): boolean {
     const context = error instanceof Error ? (error as Error & { context?: { status?: number; codes?: number[] } }).context : undefined;
     const status = context?.status;
     const codes = Array.isArray(context?.codes) ? context.codes : [];
-    return status === 401 || status === 403 || codes.includes(AUTHENTICATION_ERROR) || codes.includes(NO_PERMISSION);
+    return status === 401 || status === 403 || codes.includes(AUTHENTICATION_ERROR);
 }
 
 /** The account ID of a config, refused unless it has the form Cloudflare gives it. */
@@ -125,7 +128,7 @@ function describeFailure(status: number, envelope: Envelope<unknown> | null): { 
     if (status === 401 || codes.includes(AUTHENTICATION_ERROR) || codes.includes(INVALID_TOKEN)) {
         return { codes, message: "Cloudflare refused the API token. Check that it is active, belongs to this account and has the permission D1 Edit." };
     }
-    if (status === 403 || codes.includes(NO_PERMISSION)) {
+    if (status === 403) {
         return { codes, message: "The API token is missing a permission for this. It needs D1 Edit." };
     }
     const detail = errors.map((error) => error.message).filter(Boolean).join("; ");

@@ -1,6 +1,6 @@
 import { AdapterError } from "@/lib/logging/errors";
 import { d1Request, databaseIdOf, isPermissionRefusal, type D1Connection } from "./api";
-import { downloadTo, md5Of, signedUrlOf, uploadFrom, type ImportBody } from "./transfer";
+import { downloadTo, measure, signedUrlOf, uploadFrom, type ImportBody } from "./transfer";
 
 /**
  * The export and the import of D1, both long running work that Cloudflare does on its side and
@@ -146,14 +146,14 @@ export async function importDatabase(config: D1Connection, uuid: string, body: I
     const id = databaseIdOf(uuid);
     const path = `/d1/database/${id}/import`;
     const started = Date.now();
-    const etag = await md5Of(body);
+    const { etag, size } = await measure(body);
 
     let { result: answer } = await d1Request<PollAnswer>(config, "import", "POST", path, { action: "init", etag });
 
     if (answer.upload_url) {
         const url = signedUrlOf(answer.upload_url, "import");
         log(`Uploading the dump to ${url.hostname}`);
-        await uploadFrom(url, body, etag);
+        await uploadFrom(url, body, etag, size);
         if (typeof answer.filename !== "string" || !answer.filename) {
             throw new AdapterError("cloudflare-d1", "import", "Cloudflare answered the import without a file name.");
         }
@@ -186,7 +186,11 @@ export async function importDatabase(config: D1Connection, uuid: string, body: I
     }
 
     if (answer.status === "error") {
-        throw new AdapterError("cloudflare-d1", "import", `The import failed and the database was left as it was: ${answer.error?.trim() || "Cloudflare did not say why."}`);
+        const reason = answer.error?.trim() || "Cloudflare did not say why.";
+        const tooLong = /TOOBIG|too long/i.test(reason)
+            ? " D1 takes no statement over 100 KB, and the export writes each row as one statement, so a row with a text over about 100 KB or a BLOB over about 50 KB cannot be imported back into D1."
+            : "";
+        throw new AdapterError("cloudflare-d1", "import", `The import failed and the database was left as it was: ${reason}${tooLong}`);
     }
 
     return {

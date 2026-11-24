@@ -28,7 +28,7 @@ test("[cloud] cloudflare-d1 restores under a new name and over a changed databas
     try {
         const connection = {
             adapterId: "cloudflare-d1",
-            config: { accountId: account!.accountId, database: "", checkLargeIntegers: true, newDatabaseLocation: "auto" },
+            config: { accountId: account!.accountId, database: "", checkValues: true, newDatabaseLocation: "auto" },
             primaryCredentialId: await app.credential(`${name} token`, "TOKEN", { token: account!.token }),
         };
         const tested = await app.testConnection(connection);

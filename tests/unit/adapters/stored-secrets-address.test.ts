@@ -65,7 +65,7 @@ describe("a Cloudflare D1 source", () => {
     const stored = { accountId: account, token: "cf-token" };
 
     it("keeps its token for the same account, also written in capitals", () => {
-        expect(merge("cloudflare-d1", { accountId: account.toUpperCase(), checkLargeIntegers: false }, stored).token).toBe("cf-token");
+        expect(merge("cloudflare-d1", { accountId: account.toUpperCase(), checkValues: false }, stored).token).toBe("cf-token");
     });
 
     it("never sends the saved token to another account, which the fixed API host alone does not tell apart", () => {

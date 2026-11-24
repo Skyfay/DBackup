@@ -47,38 +47,60 @@ export async function downloadTo(url: URL, destinationPath: string): Promise<num
 }
 
 /**
- * What an import uploads: SQL text put ahead of a file, then the file. Streamed from both, so the
- * dump is never written a second time to disk.
+ * What an import uploads: SQL text put ahead of a file, the file, and SQL put after it. Streamed
+ * from all three, so the dump is never written a second time to disk.
  */
 export interface ImportBody {
     filePath: string;
     prefix?: string;
+    suffix?: string;
+}
+
+/**
+ * A NUL character of a text value as SQL that keeps it. The export of Cloudflare writes it raw into
+ * the string literal, and the import reads the file only up to that byte: it runs the statements
+ * before it, skips the rest without an error and reports the import complete. A NUL byte of a dump
+ * only ever stands inside a single-quoted text value (a BLOB is written as hex, a name cannot hold
+ * one), so closing the literal around `char(0)` writes the same value.
+ */
+const NUL_AS_SQL = Buffer.from("'||char(0)||'", "utf8");
+
+function withoutNul(chunk: Buffer): Buffer {
+    if (!chunk.includes(0)) return chunk;
+    const parts: Buffer[] = [];
+    let start = 0;
+    for (let at = chunk.indexOf(0); at !== -1; at = chunk.indexOf(0, start)) {
+        parts.push(chunk.subarray(start, at), NUL_AS_SQL);
+        start = at + 1;
+    }
+    parts.push(chunk.subarray(start));
+    return Buffer.concat(parts);
 }
 
 function streamOf(body: ImportBody): Readable {
     return Readable.from((async function* () {
         if (body.prefix) yield Buffer.from(body.prefix, "utf8");
-        for await (const chunk of fs.createReadStream(body.filePath)) yield chunk as Buffer;
+        for await (const chunk of fs.createReadStream(body.filePath)) yield withoutNul(chunk as Buffer);
+        if (body.suffix) yield Buffer.from(body.suffix, "utf8");
     })());
 }
 
-async function sizeOf(body: ImportBody): Promise<number> {
-    return Buffer.byteLength(body.prefix ?? "", "utf8") + (await fs.promises.stat(body.filePath)).size;
-}
-
-/** The MD5 of an import body in hex, the `etag` the import of D1 asks for. */
-export async function md5Of(body: ImportBody): Promise<string> {
+/** The MD5 in hex, the `etag` the import of D1 asks for, and the size of an import body as it is uploaded. */
+export async function measure(body: ImportBody): Promise<{ etag: string; size: number }> {
     const hash = createHash("md5");
-    await pipeline(streamOf(body), hash);
-    return hash.digest("hex");
+    let size = 0;
+    for await (const chunk of streamOf(body)) {
+        hash.update(chunk as Buffer);
+        size += (chunk as Buffer).length;
+    }
+    return { etag: hash.digest("hex"), size };
 }
 
 /**
  * Streams an import body to a presigned URL with PUT, as Wrangler does. R2 answers the MD5 of what it
  * got as the ETag, which has to be the one the import was started with.
  */
-export async function uploadFrom(url: URL, body: ImportBody, etag: string): Promise<void> {
-    const size = await sizeOf(body);
+export async function uploadFrom(url: URL, body: ImportBody, etag: string, size: number): Promise<void> {
     const response = await fetch(url, {
         method: "PUT",
         headers: { "Content-Length": String(size) },

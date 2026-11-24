@@ -57,7 +57,7 @@ export async function seedCloudflareD1(config: LabConfig, note: Note, log: strin
         name: "Lab Cloudflare D1",
         type: "database",
         adapterId: "cloudflare-d1",
-        config: { accountId: account.accountId, database: "", checkLargeIntegers: true, newDatabaseLocation: "auto" },
+        config: { accountId: account.accountId, database: "", checkValues: true, newDatabaseLocation: "auto" },
         primaryCredentialId: token,
     }, "cloudflare-d1");
 }

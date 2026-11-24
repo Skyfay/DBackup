@@ -87,7 +87,7 @@ describe("a backup of a D1 database", () => {
             }
             return listing({ shop: DB_ID })(call);
         });
-        await CloudflareD1Adapter.dumpOne!({ ...config, checkLargeIntegers: true }, "shop", path.join(dir, "d.sql"), host);
+        await CloudflareD1Adapter.dumpOne!({ ...config, checkValues: true }, "shop", path.join(dir, "d.sql"), host);
         const scan = calls.find((call) => (call.body as { sql?: string })?.sql?.startsWith("SELECT SUM("));
         expect((scan?.body as { sql: string }).sql).toContain(`typeof("n") = 'integer'`);
         expect(calls.some((call) => call.path.endsWith("/export"))).toBe(true);
@@ -126,7 +126,7 @@ describe("a restore into D1", () => {
         const uploaded = calls.find((call) => call.method === "PUT")?.uploaded ?? "";
         expect(uploaded.indexOf('DROP TRIGGER IF EXISTS "touch";')).toBeLessThan(uploaded.indexOf('DROP VIEW IF EXISTS "paid";'));
         expect(uploaded.indexOf('DROP VIEW IF EXISTS "paid";')).toBeLessThan(uploaded.indexOf('DROP TABLE IF EXISTS "orders";'));
-        expect(uploaded.endsWith(DUMP)).toBe(true);
+        expect(uploaded).toMatch(new RegExp(`${DUMP.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\nCREATE TABLE "_dbackup_restore_[0-9a-f]{12}" \\(done INTEGER\\);\\n$`));
         const init = calls.find((call) => (call.body as { action?: string })?.action === "init");
         expect((init?.body as { etag: string }).etag).toBe(md5(uploaded));
         expect(calls.some((call) => call.method === "DELETE" || (call.method === "POST" && call.path === "/d1/database"))).toBe(false);
@@ -146,7 +146,7 @@ describe("a restore into D1", () => {
         expect(filter).toContain("NOT LIKE 'sqlite\\_%'");
         expect(filter).toContain("NOT LIKE '\\_cf\\_%'");
         // An empty database gets the dump as it is.
-        expect(calls.find((call) => call.method === "PUT")?.uploaded).toBe(DUMP);
+        expect(calls.find((call) => call.method === "PUT")?.uploaded?.startsWith(DUMP)).toBe(true);
     });
 
     it("creates a database under a new name in the jurisdiction of the database the backup came from", async () => {
@@ -247,5 +247,49 @@ describe("a restore that loses track of Cloudflare", () => {
         const fake = importingNew(() => refused(400, 7400, "bookmark unknown"));
         await expect(CloudflareD1Adapter.restoreOne!(config, dumpPath, "copy", host)).rejects.toThrow(/may still finish it/);
         expect(fake.calls.some((call) => call.method === "DELETE")).toBe(false);
+    });
+});
+
+describe("a dump Cloudflare's import would cut short", () => {
+    it("writes a NUL character of a text as char(0), since the import stops reading at a raw NUL byte", async () => {
+        const dumpPath = path.join(dir, "dump.sql");
+        fs.writeFileSync(dumpPath, "CREATE TABLE a (x TEXT);\nINSERT INTO \"a\" VALUES('before\u0000after');\nCREATE TABLE b (x);\n");
+        const fake = importingNew(() => ok({ status: "complete", result: { num_queries: 4 } }));
+        await CloudflareD1Adapter.restoreOne!(config, dumpPath, "copy", host);
+        const uploaded = fake.calls.find((call) => call.method === "PUT")?.uploaded ?? "";
+        expect(uploaded).toContain("VALUES('before'||char(0)||'after');");
+        expect(uploaded).not.toContain("\u0000");
+    });
+
+    it("fails a restore into a new database that Cloudflare reports complete but did not run to the end, and deletes that database", async () => {
+        const dumpPath = path.join(dir, "dump.sql");
+        fs.writeFileSync(dumpPath, DUMP);
+        let polls = 0;
+        const { calls } = fakeCloudflare((call) => {
+            if (call.method === "PUT") return { headers: { etag: `"${md5(call.uploaded ?? "")}"` } };
+            if (call.method === "POST" && call.path === "/d1/database") return ok({ uuid: NEW_ID, name: "copy" });
+            if (call.method === "DELETE") return ok(null);
+            if (call.path === `/d1/database/${NEW_ID}/import`) {
+                const action = (call.body as { action: string }).action;
+                if (action === "init") return ok({ upload_url: "https://abc.r2.cloudflarestorage.com/up?sig=1", filename: "f.sql" });
+                polls++;
+                return ok({ status: "complete", result: { num_queries: 1 } });
+            }
+            return listing({})(call);
+        }, { importRanToTheEnd: false });
+        await expect(CloudflareD1Adapter.restoreOne!(config, dumpPath, "copy", host)).rejects.toThrow(/did not run all of the backup/);
+        expect(polls).toBe(1);
+        expect(calls.find((call) => call.method === "DELETE")?.path).toBe(`/d1/database/${NEW_ID}`);
+    });
+
+    it("fails a restore over a database that did not run to the end, with the way back to the state before", async () => {
+        const dumpPath = path.join(dir, "dump.sql");
+        fs.writeFileSync(dumpPath, DUMP);
+        fakeCloudflare((call) => {
+            if (call.path.endsWith("/time_travel/bookmark")) return ok({ bookmark: "bm-before" });
+            if (call.path.endsWith("/query")) return ok([{ success: true, results: [] }]);
+            return importing(DB_ID)(call) ?? listing({ shop: DB_ID })(call);
+        }, { importRanToTheEnd: false });
+        await expect(CloudflareD1Adapter.restoreOne!(config, dumpPath, "shop", host)).rejects.toThrow(/holds only part of it.*--bookmark=bm-before/);
     });
 });

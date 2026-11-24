@@ -39,7 +39,22 @@ async function textOf(body: unknown): Promise<string | undefined> {
     return undefined;
 }
 
-export function fakeCloudflare(route: (call: Call) => Answer | undefined) {
+/** The table a restore makes its import end with, which it looks for and drops afterwards. */
+const MARK = "_dbackup_restore_";
+
+/**
+ * Answers the check of a restore whether its import ran to the end: found, unless
+ * `importRanToTheEnd` is false, like an import Cloudflare cut short.
+ */
+function completionCheck(call: Call, ranToTheEnd: boolean): Answer | undefined {
+    const body = call.body as { sql?: string; params?: unknown[] } | undefined;
+    if (!body?.sql) return undefined;
+    if (String(body.params?.[0] ?? "").startsWith(MARK)) return ok([{ success: true, results: [{ n: ranToTheEnd ? 1 : 0 }] }]);
+    if (body.sql.startsWith(`DROP TABLE IF EXISTS "${MARK}`)) return ok([{ success: true, results: [] }]);
+    return undefined;
+}
+
+export function fakeCloudflare(route: (call: Call) => Answer | undefined, options: { importRanToTheEnd?: boolean } = {}) {
     const calls: Call[] = [];
     const fetchMock = vi.fn(async (input: string | URL, init: RequestInit = {}) => {
         const url = String(input);
@@ -54,7 +69,7 @@ export function fakeCloudflare(route: (call: Call) => Answer | undefined) {
         };
         if (call.method === "PUT") call.uploaded = await textOf(init.body);
         calls.push(call);
-        const answer = route(call) ?? { status: 404, json: { success: false, errors: [{ code: 7404, message: `no route for ${call.method} ${call.path}` }] } };
+        const answer = completionCheck(call, options.importRanToTheEnd !== false) ?? route(call) ?? { status: 404, json: { success: false, errors: [{ code: 7404, message: `no route for ${call.method} ${call.path}` }] } };
         const body = answer.text ?? JSON.stringify(answer.json ?? {});
         return new Response(body, { status: answer.status ?? 200, headers: answer.headers });
     });
@@ -62,4 +77,4 @@ export function fakeCloudflare(route: (call: Call) => Answer | undefined) {
     return { calls, fetchMock };
 }
 
-export const config = { accountId: ACCOUNT, token: "test-token", database: "", checkLargeIntegers: false, newDatabaseLocation: "auto" };
+export const config = { accountId: ACCOUNT, token: "test-token", database: "", checkValues: false, newDatabaseLocation: "auto" };

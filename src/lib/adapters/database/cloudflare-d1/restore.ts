@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
 import type { LogLevel, LogType } from "@/lib/core/logs";
 import { AdapterError } from "@/lib/logging/errors";
@@ -79,17 +80,42 @@ async function deleteDatabase(config: D1Connection, uuid: string): Promise<void>
     await d1Request(config, "restore", "DELETE", `/d1/database/${databaseIdOf(uuid)}`);
 }
 
+/**
+ * A table the import creates as its very last statement. Cloudflare reports an import complete
+ * once it ran what it read, also when it read only part of the file, like up to a NUL byte of an
+ * older dump. Only when this table exists afterwards did every statement before it run.
+ */
+function completionMark(): { name: string; suffix: string } {
+    const name = `_dbackup_restore_${randomBytes(6).toString("hex")}`;
+    return { name, suffix: `\nCREATE TABLE "${name}" (done INTEGER);\n` };
+}
+
+/** Whether the import ran up to its mark, which is dropped again. */
+async function ranToTheEnd(config: D1Connection, uuid: string, mark: string, log: Log): Promise<boolean> {
+    const [found] = await query<{ n: number }>(config, uuid, "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = ?", [mark]);
+    if (!Number(found?.results?.[0]?.n)) return false;
+    await query(config, uuid, `DROP TABLE IF EXISTS ${quoteIdentifier(mark)}`)
+        .catch(() => log(`Could not drop the check table ${mark} again, drop it by hand.`, "warning"));
+    return true;
+}
+
+const INCOMPLETE = "Cloudflare reported the import complete, but it did not run all of the backup.";
+
 /** Restores one dump of `dumpOne` into the database named `targetDbName`. */
 export const restoreOne: NonNullable<DatabaseAdapter["restoreOne"]> = async (config, filePath, targetDbName, _host, onLog, _onProgress, originalDbName) => {
     const log: Log = (message, level = "info") => onLog?.(message, level);
     const connection = config as D1RestoreConfig;
     const existing = await findDatabase(connection, targetDbName);
+    const mark = completionMark();
 
     if (!existing) {
         log(`${targetDbName} does not exist yet`);
         const created = await createDatabase(connection, targetDbName, originalDbName, log);
         try {
-            const outcome = await importDatabase(connection, created.uuid, { filePath }, log);
+            const outcome = await importDatabase(connection, created.uuid, { filePath, suffix: mark.suffix }, log);
+            if (!(await ranToTheEnd(connection, created.uuid, mark.name, log))) {
+                throw new AdapterError("cloudflare-d1", "restore", `${INCOMPLETE} The database ${targetDbName} it created is deleted again.`);
+            }
             log(`Restored ${targetDbName} (${outcome.queries ?? "?"} statements)`);
         } catch (error: unknown) {
             // Cloudflare may still finish an import it was handed, so that database stays.
@@ -113,7 +139,11 @@ export const restoreOne: NonNullable<DatabaseAdapter["restoreOne"]> = async (con
     log(drops.length > 0 ? `Replacing ${targetDbName}: dropping its ${drops.length} objects and importing the backup in one transaction` : `${targetDbName} is empty, importing the backup`);
 
     const prefix = drops.length > 0 ? ["PRAGMA defer_foreign_keys=TRUE;", ...drops, ""].join("\n") : undefined;
-    const outcome = await importDatabase(connection, uuid, { filePath, prefix }, log);
+    const outcome = await importDatabase(connection, uuid, { filePath, prefix, suffix: mark.suffix }, log);
+    if (!(await ranToTheEnd(connection, uuid, mark.name, log))) {
+        const back = bookmark ? ` Go back to the state before with: wrangler d1 time-travel restore ${targetDbName} --bookmark=${bookmark}` : "";
+        throw new AdapterError("cloudflare-d1", "restore", `${INCOMPLETE} ${targetDbName} now holds only part of it.${back}`);
+    }
     log(`Restored ${targetDbName} (${outcome.queries ?? "?"} statements)`);
 };
 

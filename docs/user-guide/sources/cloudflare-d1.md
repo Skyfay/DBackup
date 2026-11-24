@@ -35,7 +35,7 @@ A `TOKEN` [credential profile](/user-guide/security/credential-profiles) holds t
 | :--- | :--- | :--- | :--- |
 | **Account ID** | The 32 hex characters on the overview of the account in the Cloudflare dashboard | - | ✅ |
 | **Login** | `TOKEN` credential profile with the API token | - | ✅ |
-| **Check for large integers** | Warns in the run log when a column holds an integer the export rounds, see [below](#large-integers) | On | ❌ |
+| **Check the values before each backup** | Warns in the run log about values Cloudflare's export or import cannot carry, see [below](#values-cloudflare-cannot-carry) | On | ❌ |
 | **Location of new databases** | Where a restore under a new name creates the database: **Automatic**, a jurisdiction (EU, FedRAMP) or a location hint | Automatic | ❌ |
 
 ## Setup Guide
@@ -51,20 +51,25 @@ A `TOKEN` [credential profile](/user-guide/security/credential-profiles) holds t
 Each database is exported by Cloudflare as a SQL dump, the same file `wrangler d1 export` writes. DBackup starts the export, polls it until Cloudflare is done, downloads the dump from R2 and stores it as one `.sql` entry of the backup's archive, unchanged.
 
 ::: warning The database is locked during the export
-Cloudflare answers no queries on a database while its export runs. A small database takes a second or two, a large one longer. Schedule the backup for a quiet time.
+Cloudflare answers queries on a database with errors while its export runs. A small database takes a second or two, one of about 120 MB around 10 seconds. Schedule the backup for a quiet time. Cancelling a run does not stop an export that has started, so the database stays locked until Cloudflare finishes it.
 :::
 
 Databases are picked by name and looked up on every run, so a database that was deleted and created again under the same name is backed up under its new ID.
 
 ::: info Rows read count against the account
-Cloudflare bills rows read to the account. Besides the export, the check for large integers reads every table once per backup, and the [Database Explorer](/user-guide/features/database-explorer) counts the rows of every table it lists and reads the rows of each page it shows. On the free plan these count against the daily limit.
+Cloudflare bills rows read to the account. Besides the export, the check of the values reads every table once per backup, and the [Database Explorer](/user-guide/features/database-explorer) counts the rows of every table it lists and reads the rows of each page it shows. On the free plan these count against the daily limit.
 :::
 
-### Large integers
+### Values Cloudflare cannot carry
 
-SQLite stores integers with 64 bits, but the export of Cloudflare writes them through JavaScript numbers, which hold an integer exactly only up to 2^53 (9,007,199,254,740,991). A larger one lands in the dump rounded, and one near 2^63 comes back from a restore as a floating point number. This is a limit of Cloudflare's export that DBackup cannot work around. It mostly concerns IDs like those of Discord or Twitter stored as `INTEGER`. Store them as `TEXT` to keep them exact.
+Two kinds of values do not survive Cloudflare's export and import. DBackup takes the export as it is and cannot work around either:
 
-With **Check for large integers** on, DBackup reads every table once before the export and names each column that holds such a value in the run log. The backup runs either way. The check counts against the rows read of the account, so a connection with large databases can turn it off.
+- **Integers beyond 2^53** (9,007,199,254,740,991). SQLite stores integers with 64 bits, but the export writes them through JavaScript numbers. A larger one lands in the dump rounded, and one near 2^63 comes back from a restore as a floating point number. It mostly concerns IDs like those of Discord or Twitter stored as `INTEGER`. Store them as `TEXT` to keep them exact.
+- **Values too long for one statement.** The export writes each row as one `INSERT`, and the import of D1 takes no statement over 100 KB. A row with a text over about 100 KB or a BLOB over about 50 KB is in the backup, but a restore into D1 fails on it, and the target stays as it was.
+
+With **Check the values before each backup** on, DBackup reads every table once before the export and names each column that holds such a value in the run log. The backup runs either way. The check counts against the rows read of the account, so a connection with large databases can turn it off.
+
+A text with a NUL character is restored correctly. The export writes it raw into the dump, where Cloudflare's import would stop reading without an error, so DBackup writes it as `char(0)` on the way to the import.
 
 ## Restore
 
@@ -78,7 +83,9 @@ wrangler d1 time-travel restore <name> --bookmark=<bookmark>
 
 Restoring under a new name creates a new database. With **Location of new databases** on **Automatic**, it gets the jurisdiction of the database the backup came from while that one still exists, otherwise Cloudflare picks the location. The log names the ID of the new database, which a Worker needs as its `database_id`.
 
-Like the export, an import locks the database while it runs.
+Like the export, an import locks the database while it runs. A database of about 120 MB took around 25 seconds to restore under a new name and around 35 seconds to restore over itself.
+
+After the import DBackup checks that Cloudflare ran all of it, since Cloudflare can report an import complete that stopped early. A restore that did not run to the end fails with a message, and one into a database it created deletes that database again.
 
 ## Troubleshooting
 

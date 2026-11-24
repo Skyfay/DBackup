@@ -42,11 +42,15 @@ async function ensureVaultKey(): Promise<string> {
     return (await createEncryptionProfile("Lab key", "Created by the dev lab seed")).id;
 }
 
-/** Two jobs for each native host: PostgreSQL to SFTP, and MySQL through the mysqldump of Ubuntu. */
+/**
+ * Three jobs for each native host: PostgreSQL to SFTP, MySQL through the mysqldump of Ubuntu, and
+ * MongoDB, the only source of the lab that runs mongodump over SSH.
+ */
 function nativeJobs(hosts: string[]): JobSpec[] {
     return hosts.flatMap((host) => [
         { name: `Lab ${host} PostgreSQL to SFTP`, source: `${host}-postgres`, destinations: ["sftp"], encrypted: true },
         { name: `Lab ${host} MySQL to Local`, source: `${host}-mysql`, destinations: ["local"] },
+        { name: `Lab ${host} MongoDB to S3`, source: `${host}-mongodb`, destinations: ["s3"], encrypted: true },
     ]);
 }
 

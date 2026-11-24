@@ -32,6 +32,8 @@ async function removeNeverStarted(services: string[]): Promise<boolean> {
 
 /** Starts the services and waits until they are healthy. A service that does not come up shows in the result, it does not throw. */
 export async function startServices(services: string[]): Promise<RunResult> {
+    // `compose up` without a service starts every one, so a family that needs none, like cloud, starts nothing.
+    if (services.length === 0) return { code: 0, stdout: "", stderr: "" };
     // DBackup mounts the folder of SQL Server too, and Docker would make a missing one as root.
     await prepareMssqlFolder(lab);
     // --build rebuilds the images of the lab whose files changed, like the customer server, from the cache otherwise.

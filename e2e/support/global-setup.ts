@@ -85,7 +85,7 @@ async function prepare(): Promise<void> {
         if (trimmed.code !== 0) write(`Could not trim the build cache of the lab host: ${tail(trimmed)}`);
     }
 
-    write(`Starting ${services.join(", ")}`);
+    if (services.length) write(`Starting ${services.join(", ")}`);
     const started = await startServices(services);
     const unavailable = await servicesDown(services);
     if (started.code !== 0 && Object.keys(unavailable).length === 0) throw new Error(`Starting the services failed:\n${tail(started)}`);
